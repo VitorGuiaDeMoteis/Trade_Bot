@@ -1,60 +1,78 @@
+"""Explicit, bounded Market Data smoke test. No trading endpoint or persistence."""
+
 import asyncio
-import os
-import sys
-from datetime import datetime, UTC
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
-# Setup paths for importing services
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from pydantic import ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from services.api.config import get_settings
+from services.api.config import Settings
 from services.market_data.alpaca_provider import AlpacaMarketDataProvider
+from services.market_data.calendar import regular_session
+from services.market_data.errors import ProviderError
 
-async def main():
-    settings = get_settings()
-    if not settings.alpaca_api_key_id or not settings.alpaca_api_secret_key:
-        print("❌ Alpaca credentials not found in environment!")
-        print("Please export ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY")
-        sys.exit(1)
-        
-    print(f"✅ Credentials found. Connecting to Alpaca {settings.alpaca_data_feed} feed for {settings.market_symbols}...")
-    
+
+class SmokeSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    run_alpaca_smoke_test: bool = False
+
+
+async def main() -> int:
+    if not SmokeSettings().run_alpaca_smoke_test:
+        print("SKIPPED: RUN_ALPACA_SMOKE_TEST=1 required")
+        return 0
+    try:
+        settings = Settings(market_data_provider="alpaca")
+    except ValidationError:
+        print("configuration_error: check local settings and Alpaca Market Data credentials")
+        return 1
+    assert settings.alpaca_api_key_id and settings.alpaca_api_secret_key
     provider = AlpacaMarketDataProvider(
-        api_key=settings.alpaca_api_key_id,
+        api_key=settings.alpaca_api_key_id.get_secret_value(),
         secret_key=settings.alpaca_api_secret_key.get_secret_value(),
-        stream_id=uuid4(),
         feed=settings.alpaca_data_feed,
-        symbols=[s.strip() for s in settings.market_symbols.split(",")],
-        timeframe=settings.market_timeframe
+        symbols=["SPY"],
+        timeframe="1h",
     )
-    
-    print("\n--- Testing Historical Fetch ---")
     try:
-        candles = await provider.get_historical_candles("SPY", "1Hour", limit=5)
-        print(f"✅ Fetched {len(candles)} historical candles for SPY.")
-        if candles:
-            print(f"   Last candle: {candles[-1].close_time} | Close: {candles[-1].close}")
-    except Exception as e:
-        print(f"❌ Historical fetch failed: {e}")
-        
-    print("\n--- Testing WebSocket Subscription ---")
-    print("⏳ Waiting for 2 real-time candles... (Press Ctrl+C to abort if market is closed)")
-    
-    try:
-        count = 0
-        async for candle in provider.subscribe():
-            print(f"🟢 [WS] {candle.symbol} | {candle.close_time} | Open: {candle.open} | Close: {candle.close}")
-            count += 1
-            if count >= 2:
-                print("✅ Real-time data stream works!")
-                break
-    except asyncio.CancelledError:
-        print("Cancelled.")
-    except Exception as e:
-        print(f"❌ WebSocket failed: {e}")
+        async with asyncio.timeout(45):
+            bars = await provider.get_historical_candles("SPY", "1h", limit=5)
+            if not bars:
+                print("FAILED: no closed SPY history returned")
+                return 1
+            for bar in bars:
+                assert bar.provider == "alpaca" and bar.symbol == "SPY" and bar.is_closed
+                assert bar.open_time.utcoffset() == bar.close_time.utcoffset() == timedelta(0)
+                assert bar.close_time <= datetime.now(UTC)
+                assert all(
+                    isinstance(p, Decimal) and p.is_finite() and p > 0
+                    for p in (bar.open, bar.high, bar.low, bar.close)
+                )
+            print(f"PASS: {len(bars)} closed SPY 1h bars, provider=alpaca, UTC, Decimal")
+            now = datetime.now(UTC)
+            session = regular_session(now)
+            if session is None or not session[0] <= now < session[1]:
+                print("market_closed / streaming not validated (regular session)")
+                return 0
+            socket = await provider.socket_factory()
+            try:
+                await provider.handshake(socket)
+                print("PASS: WebSocket authentication and subscription acknowledged")
+                print("Hourly streaming not validated by this bounded handshake test")
+            finally:
+                await socket.close()
+        return 0
+    except (ProviderError, TimeoutError) as error:
+        code = error.code if isinstance(error, ProviderError) else "timeout"
+        print(f"FAILED: {code}")
+        return 1
+    except Exception:
+        print("FAILED: unexpected smoke test failure (details withheld to protect credentials)")
+        return 1
+    finally:
+        await provider.close()
+
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nSmoke test interrupted by user.")
+    raise SystemExit(asyncio.run(main()))
