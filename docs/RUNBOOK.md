@@ -1,11 +1,12 @@
-# Execução e recuperação — M1
+# Execução e recuperação — M1.5
 
-Comandos PowerShell, a partir da raiz salvo indicação. Nenhuma credencial externa necessária.
+Comandos PowerShell, a partir da raiz salvo indicação. Simulador não exige credencial externa. Alpaca exige chaves locais e autorização explícita do teste real. Nunca executar dois backends/produtores ao mesmo tempo.
 
 ## Preparar banco e API
 
     if (-not (Test-Path .env)) { Copy-Item .env.example .env }
     uv sync --locked
+    $env:MARKET_DATA_PROVIDER = 'simulator'
     docker compose config --quiet
     docker compose up -d --wait
     uv run alembic upgrade head
@@ -13,7 +14,9 @@ Comandos PowerShell, a partir da raiz salvo indicação. Nenhuma credencial exte
     uv run alembic check
     uv run uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --no-access-log --log-config infrastructure/docker/logging.json --ws websockets-sansio
 
-Revisão esperada 0002_m1; tabelas alembic_version, candles e system_events. Migração explícita antes do servidor, não por worker. PostgreSQL 17 com timezone UTC. Não renomear o projeto Compose trading-bot-m0: nome preservado para reutilizar o volume do M0.
+Revisão esperada 0006_m15_integrity; tabelas alembic_version, candles, system_events, signals, risk_decisions e legacy_market_archive. Pare o backend anterior antes de migrar. Migração explícita antes do servidor, não por worker. PostgreSQL 17 com timezone UTC. Não renomear o projeto Compose trading-bot-m0: nome preservado para reutilizar o volume do M0.
+
+A migração 0006 preserva o grafo Alpaca legado em quarentena porque misturava horas/minutos. Não expõe esse conteúdo na API. Foi feito backup local em .artifacts/m15-before-quarantine.sql. Em outro ambiente, faça backup antes de migrar. Downgrade com novos candles Alpaca falha deliberadamente: exporte e planeje a reversão, sem apagar dados para contornar.
 
 Pré-requisitos: Flutter 3.44.7/Dart 3.12.2, Python 3.12, uv e Docker Desktop Linux. Se faltar uv: py -3.12 -m pip install --user uv. Se faltar Python 3.12: winget install --id Python.Python.3.12 -e. O projeto usa .venv; não mudar Python padrão.
 
@@ -25,7 +28,10 @@ Outro terminal:
 
 | Resultado | Diagnóstico/ação |
 | --- | --- |
-| 200, up/running | Banco, schema e simulador operacionais |
+| 200, up/connected | Banco, schema e provider operacionais |
+| 200, up/market_closed | Sessão regular fechada; não é falha |
+| 503, configuration_error | Corrigir chaves/feed/assinatura localmente |
+| 503, reconnecting ou delayed | Ver código controlado do provider; aguardar backoff/fechamento |
 | 503, schema_pending | Aplicar alembic upgrade head |
 | 503, down/degraded | Ver Compose, porta e configuração local |
 | 503, stopped | SIMULATOR_ENABLED=false |
@@ -80,7 +86,37 @@ Configuração local em .env; reiniciar backend após alterar:
 
 Start UTC no início de hora. Intervalo de 0,1 a 3600 segundos: 2 demonstra modo acelerado; 3600 modo normal. Cada avanço fecha uma hora virtual. Regimes em blocos de 24 candles. Ritmo não muda dados; seed/início mudam stream. Paradas congelam relógio virtual, sem backfill de tempo real.
 
-Um único worker/produtor. Não usar --workers >1 nem múltiplos servidores para o mesmo stream. Histórico é mantido no banco; não há limpeza automática. Cliente guarda até 500 e desenha últimos 60. Desativar simulador deixa histórico disponível com saúde 503/stopped. Não há endpoint de controle.
+Um único worker/produtor. Não usar --workers >1 nem múltiplos servidores para o mesmo stream. Histórico é mantido no banco; não há limpeza automática. Cliente guarda até 2.000 e desenha últimos 60. Desativar simulador deixa histórico disponível com saúde 503/stopped. Não há endpoint de controle. Alterar apenas seed no mesmo início virtual pode conflitar com a identidade global; para outra simulação, use também outro início UTC.
+
+## Alpaca Market Data — habilitar somente na etapa autorizada
+
+Obtenha ALPACA_API_KEY_ID e ALPACA_API_SECRET_KEY no [painel Alpaca](https://app.alpaca.markets/), seguindo a [documentação Market Data](https://docs.alpaca.markets/us/docs/market-data-faq). Permissões dependem do feed/plano. Não enviar chaves no chat nem incluir no aplicativo.
+
+No .env local:
+
+    MARKET_DATA_PROVIDER=alpaca
+    ALPACA_API_KEY_ID=<preencher somente localmente>
+    ALPACA_API_SECRET_KEY=<preencher somente localmente>
+    ALPACA_DATA_FEED=iex
+    MARKET_SYMBOLS=SPY,AAPL,TSLA
+    MARKET_TIMEFRAME=1h
+    RUN_ALPACA_SMOKE_TEST=1
+
+Variáveis da sessão prevalecem sobre .env. Se esta sessão foi usada para simulação, alterar explicitamente o provider:
+
+    $env:MARKET_DATA_PROVIDER = 'alpaca'
+    uv run python -m scripts.smoke_test
+
+Sem opt-in a saída é SKIPPED. Com opt-in, timeout global de 45 s, histórico SPY, provider/UTC/Decimal/fechamento e, se sessão regular aberta, handshake WS. Sessão fechada informa market_closed / streaming not validated. O smoke não persiste dados nem comprova nova hora ao vivo.
+
+Após smoke, iniciar o único Uvicorn pelo comando acima. Consultar:
+
+    Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/market/candles?symbol=SPY&timeframe=1h'
+    Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/market/candles?symbol=AAPL&timeframe=1h'
+
+Somente REST 1Hour fechada é persistida; WS de minuto não vira hora. Refresh a cada 60 s e catch-up paginado ao iniciar/reconectar. Conflito de conteúdo interrompe ingestão em degraded; não apagar candles nem repetir decisões para esconder a divergência. Veja [CONTRACTS](CONTRACTS.md).
+
+O seletor só aparece com os ativos do provider do backend. Em simulator mostra TEST; em alpaca mostra os símbolos configurados. Nunca alimentar o banco de desenvolvimento com fixtures para fingir mercado real.
 
 ## Qualidade
 
@@ -108,11 +144,13 @@ Em apps/mobile_app:
     flutter analyze --fatal-infos --fatal-warnings
     flutter test
 
-## Tablet e reconexão real
+## Tablet e transporte real com dados simulados
 
 Backend/banco ativos e adb reverse configurado. Em apps/mobile_app:
 
     flutter drive -d 1791a20e --driver=test_driver/integration_test.dart --target=integration_test/app_test.dart --dart-define=API_BASE_URL=http://127.0.0.1:8000 --dart-define=CAPTURE_SCREENSHOTS=true --dart-define=RUN_RECONNECT_TEST=true
+
+O teste de orientação exige provider=simulator e novos candles acelerados. Não usá-lo como prova de streaming Alpaca. A aprovação de cada orientação registra M15_SIMULATOR_TABLET_PASS.
 
 1. Esperar M1_RECONNECT_READY.
 2. Ctrl+C no terminal **deste backend**.
@@ -126,9 +164,9 @@ Imagens em .artifacts/m1-tablet-integration-portrait.png, landscape, offline e r
 
 Android pode mostrar retrato em janela de compatibilidade quando fisicamente em paisagem. Preferir girar o tablet. Se impossível, com app normal aberto, executar na raiz:
 
-    ./scripts/capture-tablet.ps1 -Device 1791a20e
+    ./scripts/capture-tablet.ps1 -Device 1791a20e -Prefix m15-tablet-simulator
 
-Script captura display completo em retrato/paisagem e restaura modo/rotação anteriores em finally; não altera resolução/densidade. Arquivos .artifacts/m1-tablet-full-portrait.png e m1-tablet-full-landscape.png.
+Script exige o app em primeiro plano, captura display completo em retrato/paisagem e restaura modo/rotação anteriores em finally; não altera resolução/densidade. Prefixo evita sobrescrever evidência anterior.
 
 ## Falha real do PostgreSQL
 
@@ -144,7 +182,7 @@ Manter backend ativo:
     }
     curl.exe -i http://127.0.0.1:8000/health
 
-Durante falha: 503 e simulador degraded. Após próxima tentativa: 200/running. Não resetar banco.
+Durante falha: 503 e simulador degraded. Após próxima tentativa: 200/connected. Não resetar banco.
 
 Conferência SQL:
 
@@ -159,4 +197,3 @@ Backend: Ctrl+C. Banco: docker compose stop postgres; retomar com docker compose
 INSTALL_FAILED_USER_RESTRICTED / Install canceled by user: instalador Android recusou. Confirmar instalação no aparelho ao repetir flutter run. Não desativar proteções para contornar.
 
 Docker 4.68.0 teve sockets NTFS inacessíveis no M0. A recuperação preservou diretórios de sockets como .stale, listados em [SECURITY](SECURITY.md) e [STATUS-M0](STATUS-M0.md). Não apagar diretórios preservados, imagens ou volumes. Não usar factory reset como primeira tentativa. Se voltar, inspecionar logs e considerar reinício/atualização com o usuário; [incidente Docker correspondente](https://github.com/docker/desktop-feedback/issues/460).
-

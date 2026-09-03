@@ -28,7 +28,7 @@ Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar cand
 
 ## Implementação atual: M1.5 — Real Market Data
 
-**M1.5 — em validação.** A implementação de Alpaca Market Data e do seletor SPY/AAPL/TSLA contém problemas de timeframe, cursor e recuperação em correção. Não considerar dados reais ou idempotência validados apenas pela existência do código.
+**M1.5 — em validação.** As correções de timeframe, cursor, idempotência e seletor SPY/AAPL/TSLA possuem testes offline e PostgreSQL real. O fluxo com Alpaca real até o tablet ainda está pendente e não é comprovado pelos testes com fakes.
 O escopo autorizado é dados de mercado e análise/decisão simulada. Trading API, ordens e executor permanecem proibidos. Veja resultados efetivamente executados em [STATUS](docs/STATUS.md).
 
 ### Pré-requisitos
@@ -45,6 +45,7 @@ Na raiz:
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 uv sync --locked
+$env:MARKET_DATA_PROVIDER = 'simulator'
 docker compose up -d --wait
 uv run alembic upgrade head
 uv run uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --no-access-log --log-config infrastructure/docker/logging.json --ws websockets-sansio
@@ -65,7 +66,17 @@ flutter run -d 1791a20e --dart-define=API_BASE_URL=http://127.0.0.1:8000
 
 O serial é o Xiaomi utilizado no aceite; substitua pelo retorno de `adb devices` em outro dispositivo. Aceite o diálogo de instalação Android se solicitado. `API_BASE_URL` é obrigatório: sem ele a tela apresenta erro de configuração. Não há endereço padrão embutido no Dart. HTTP sem TLS está liberado somente no build Android de debug; o tráfego da demo usa USB. Mantenha a API em loopback.
 
-`/health` retorna 200 apenas com banco/migração prontos e simulador funcionando. Banco indisponível, schema pendente ou simulador parado/degradado retornam 503. A primeira leitura pode observar `starting`; aguarde o primeiro candle.
+`/health` retorna 200 com banco/migração prontos e provider conectado ou sessão regular fechada. Banco indisponível, schema pendente ou produtor parado/degradado retornam 503. A primeira leitura pode observar `starting`; aguarde o primeiro candle.
+
+Pare qualquer backend anterior antes da migração. A revisão atual é `0006_m15_integrity`: registros Alpaca antigos de origem horária não comprovada são preservados em quarentena com seus eventos/sinais/decisões. Não são mostrados como dados horários válidos. Veja o [runbook de migração](docs/RUNBOOK.md).
+
+### Dados reais — etapa pendente
+
+Somente Alpaca **Market Data**. `ALPACA_API_KEY_ID` e `ALPACA_API_SECRET_KEY` ficam no `.env` local; nunca no chat ou Flutter. Configure `MARKET_DATA_PROVIDER=alpaca`, feed `iex`, símbolos `SPY,AAPL,TSLA` e timeframe `1h`. A sessão PowerShell pode sobrescrever o provider do arquivo.
+
+`uv run python -m scripts.smoke_test` retorna **SKIPPED** por padrão. Habilitar `RUN_ALPACA_SMOKE_TEST=1` é o opt-in explícito para o smoke real, com timeout de 45 s. Mercado fechado informa que streaming não foi validado. Instruções e limites em [RUNBOOK](docs/RUNBOOK.md) e [DEMO](docs/DEMO.md).
+
+Candles 1h vêm da REST nativa `1Hour`, após fechamento + 60 s; barras WS de minuto não são rebatizadas como horas. Cada ativo tem seu cursor persistente. Duplicatas não geram outros Signal/RiskDecision; conflitos de conteúdo falham explicitamente. Nenhuma ordem é criada.
 
 ### Verificar
 
@@ -85,12 +96,13 @@ Para testar a interrupção real, acrescente `--dart-define=RUN_RECONNECT_TEST=t
 apps/mobile_app/lib/src/market/     API, contratos Dart, conexão e gráfico
 services/api/                      REST, WebSocket, persistência e runtime
 services/market_simulator/          Gerador puro determinístico
-services/strategy_engine/           Fronteira reservada, sem estratégia
-services/risk_engine/               Fronteira reservada, sem risco ativo
+services/market_data/               Adapters simulator/Alpaca Market Data
+services/strategy_engine/           BaseStrategy existente, análise simulada
+services/risk_engine/               RiskEngine existente, decisão simulada
 services/paper_executor/            Fronteira reservada, sem executor
 packages/domain/                   Candle, invariantes e relógio virtual
-packages/contracts/                Saúde 1.1, snapshot/eventos 1.0
-infrastructure/docker/migrations/   0001_m0 e 0002_m1
+packages/contracts/                Saúde 1.1, snapshot/eventos 2.0
+infrastructure/docker/migrations/   Cadeia até 0006_m15_integrity
 infrastructure/docker/logging.json  Logs JSON
 scripts/                           Qualidade, SDK por sessão e captura
 tests/                            Testes Python, fronteiras e PostgreSQL
@@ -100,4 +112,4 @@ docker-compose.yml                PostgreSQL dev e banco isolado de testes
 pyproject.toml / uv.lock           Python 3.12 e dependências fixadas
 ```
 
-Veja [STATUS](docs/STATUS.md), [DECISIONS](docs/DECISIONS.md), [SECURITY](docs/SECURITY.md), [DEMO](docs/DEMO.md) e os [contratos M1](docs/CONTRACTS.md). O registro de aceite do M0 foi preservado em [STATUS-M0](docs/STATUS-M0.md).
+Veja [STATUS](docs/STATUS.md), [DECISIONS](docs/DECISIONS.md), [SECURITY](docs/SECURITY.md), [DEMO](docs/DEMO.md) e os [contratos atuais](docs/CONTRACTS.md). M0 e M1 possuem registros históricos separados. A visão completa v0.1 acima descreve etapas futuras: ordens, carteira, IA e M2/M3 não estão autorizados nesta correção.

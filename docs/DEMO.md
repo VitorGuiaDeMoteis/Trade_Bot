@@ -1,36 +1,33 @@
-# Demonstração — M1
+# Demonstração — M1.5 em validação
 
-## Preparar
+Resultados anteriores pertencem a [DEMO-M1](DEMO-M1.md). O estado atual e os comandos executados estão em [STATUS](STATUS.md); instalação e recuperação em [RUNBOOK](RUNBOOK.md).
 
-Seguir [RUNBOOK](RUNBOOK.md): Compose saudável, migração 0002_m1, API loopback, adb reverse e flutter run com API_BASE_URL. SIMULATOR_INTERVAL_SECONDS=2; sem qualquer chave externa.
+## Demonstrado nesta correção
 
-## Roteiro de 3 minutos
+1. Backend corrigido em modo simulator, PostgreSQL na revisão 0006_m15_integrity e /health 200.
+2. APK normal instalado e aberto no Xiaomi 23073RPBFG, serial 1791a20e, Android 15.
+3. Histórico TEST/1h, selo SIMULADO, simulação acelerada e atualização por WebSocket.
+4. Retrato 1200×1920 e paisagem 1920×1200 com layout rolável, textos legíveis e sem overflow visível.
+5. Botões de inspeção com área mínima 48 dp verificada em testes.
+6. Rotação restaurada: free, user_rotation=0, accelerometer_rotation=1.
 
-1. Abrir app normal no Xiaomi 1791a20e. Mostrar SIMULADO, Conectado, ACELERADA, TEST / 1h e horário de recebimento em UTC.
-2. Mostrar histórico carregado e esperar dois novos candles. Cada candle representa uma hora virtual; não se trata de preço de mercado real.
-3. Tocar um candle ou usar anterior/próximo; conferir abertura, máxima, mínima, fechamento, volume e regime fictício. A inspeção não salta enquanto chegam candles novos, salvo saída da janela dos últimos 60.
-4. Ver retrato/paisagem. Na falta de rotação física, usar script de captura temporária e confirmar restauração.
-5. Parar **somente o backend da demo**, no terminal correspondente. App mostra Offline e conserva gráfico/último horário. Reiniciar com mesma seed/início; app preenche lacuna via REST e volta a acompanhar WS.
-6. Conferir /health e SQL de unicidade. Não existem ordens, carteira, lucro ou decisões de estratégia.
+Os [testes físicos](evidence/m15-tablet-tests.txt) passaram nas duas orientações, recebendo histórico REST e novo evento WS e acionando a inspeção por toque. Após a integração, o APK normal foi reinstalado com sucesso; a recusa inicial do instalador foi resolvida na nova tentativa.
 
-## Evidências desta execução
+Capturas revisadas:
 
-- [Resultados de integração no tablet](evidence/m1-tablet-tests.txt): REST + WS + inspeção nas duas orientações; backend interrompido, seis candles recuperados, segunda conexão.
-- [Retrato em janela Android de compatibilidade](evidence/m1-tablet-integration-portrait.png).
-- [Paisagem na integração](evidence/m1-tablet-integration-landscape.png).
-- [Offline com gráfico preservado](evidence/m1-tablet-offline.png).
-- [Conexão recuperada](evidence/m1-tablet-recovered.png).
-- [544 candles/eventos sem duplicação](evidence/m1-sql-integrity.txt).
-- [494 candles anteriores preservados integralmente](evidence/m1-restart-preservation.json).
-- [PostgreSQL parado/recuperado](evidence/m1-database-outage.json).
+- [Retrato no display inteiro](evidence/m15-tablet-simulator-portrait.png).
+- [Paisagem no display inteiro](evidence/m15-tablet-simulator-landscape.png).
 
-Capturas foram inspecionadas: textos/selos legíveis e sem overflow visível; detalhes são acessíveis por rolagem. Testes verificam botões >=48 dp e toque funcional.
+São **dados simulados no código corrigido**, não prova de Alpaca real.
 
-## Pendência para repetir no app normal
+## Próxima demonstração de dados reais — ainda pendente
 
-A integração passou, mas a reinstalação posterior do APK normal foi recusada pelo instalador Android (INSTALL_FAILED_USER_RESTRICTED). O app normal não ficou instalado após essas tentativas. É necessário confirmar a instalação no tablet quando flutter run solicitar. Não desativar proteções para contornar.
+1. Confirmar as credenciais localmente e habilitar explicitamente RUN_ALPACA_SMOKE_TEST=1.
+2. Executar o smoke limitado. Mercado regular fechado deve informar streaming not validated.
+3. Iniciar um único backend com MARKET_DATA_PROVIDER=alpaca.
+4. Conferir SPY/1h fechado no PostgreSQL, REST e replay WS.
+5. Abrir app normal no Xiaomi; trocar SPY → AAPL → TSLA e conferir séries independentes.
+6. Durante sessão apropriada, observar uma nova hora fechada nativa, com margem de fechamento e intervalo de atualização.
+7. Reiniciar backend e recuperar conexão sem duplicar candle/evento/Signal/RiskDecision.
 
-Capturas de retrato ocupando o display inteiro e revisão visual final do app normal aguardam essa confirmação. A captura atual de retrato é 984×1200 em janela de compatibilidade, não prova display inteiro de 1200×1920. O modo de rotação permanece free, user_rotation=0, accelerometer_rotation=1.
-
-Resultado final e eventuais atualizações dessa pendência ficam em [STATUS](STATUS.md). M2 não está implementado.
-
+A tela deve identificar DADOS REAIS e fonte/feed; análise/decisão permanecem simuladas. Nenhuma ordem existe. Não concluir M1.5 por histórico sozinho, ACK do socket ou teste com fake.

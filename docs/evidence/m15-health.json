@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.1",
+  "service": "trading-bot-api",
+  "version": "0.1.0",
+  "mode": "SIMULADO",
+  "status": "ok",
+  "database": "up",
+  "checked_at": "2026-09-03T23:05:40.648613Z",
+  "correlation_id": "8426ff7b-e453-455e-b5b2-57da637c722b",
+  "market_data": {
+    "state": "connected",
+    "provider": "simulator",
+    "feed": "local",
+    "symbols": [
+      "TEST"
+    ],
+    "last_persisted_at": "2026-09-03T23:05:40.449566Z",
+    "error": null,
+    "timeframe": "1h",
+    "session": null,
+    "last_message_at": null,
+    "last_bar_at": null,
+    "accelerated": true,
+    "interval_seconds": 2.0
+  }
+}

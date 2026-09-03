@@ -1,0 +1,132 @@
+Resolved 51 packages in 1ms
+Checked 50 packages in 4ms
+67 files already formatted
+All checks passed!
+Success: no issues found in 38 source files
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\vitor\OneDrive\Documentos\ChatGPT\TradingBot
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.0
+collected 114 items / 18 deselected / 96 selected
+
+tests\test_alpaca_provider.py .......................................... [ 43%]
+.....................                                                    [ 65%]
+tests\test_boundaries.py ......                                          [ 71%]
+tests\test_generator.py ........                                         [ 80%]
+tests\test_health.py .................                                   [ 97%]
+tests\test_strategy_and_risk.py ..                                       [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\starlette\testclient.py:53
+  C:\Users\vitor\OneDrive\Documentos\ChatGPT\TradingBot\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================ 96 passed, 18 deselected, 1 warning in 2.79s =================
+ Container trading-bot-m0-postgres_test-1 Running
+ Container trading-bot-m0-postgres_test-1 Waiting
+ Container trading-bot-m0-postgres_test-1 Healthy
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\vitor\OneDrive\Documentos\ChatGPT\TradingBot
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.0
+collected 114 items / 96 deselected / 18 selected
+
+tests\test_alpaca_database.py ........                                   [ 44%]
+tests\test_database_integration.py .                                     [ 50%]
+tests\test_market_integration.py .........                               [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\starlette\testclient.py:53
+  C:\Users\vitor\OneDrive\Documentos\ChatGPT\TradingBot\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================ 18 passed, 96 deselected, 1 warning in 10.61s ================
+Resolving dependencies...
+Downloading packages...
+  clock 1.1.2 (1.1.3 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.14 available)
+  vector_math 2.2.0 (2.4.2 available)
+Got dependencies!
+7 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Formatted 13 files (0 changed) in 0.05 seconds.
+Resolving dependencies...
+Downloading packages...
+  clock 1.1.2 (1.1.3 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.14 available)
+  vector_math 2.2.0 (2.4.2 available)
+Got dependencies!
+7 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Analyzing mobile_app...
+No issues found! (ran in 3.2s)
+Resolving dependencies...
+Downloading packages...
+  clock 1.1.2 (1.1.3 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.14 available)
+  vector_math 2.2.0 (2.4.2 available)
+Got dependencies!
+7 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart
+00:00 +0: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/api_test.dart: REST usa endereço configurado e transmite cursor/limite
+00:00 +1: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +2: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +3: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +4: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +5: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +6: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +7: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +8: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +9: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seleção consulta REST independente e reinicia cursor por ativo
+00:00 +10: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(320.0, 568.0) texto 1.0
+00:00 +11: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(320.0, 568.0) texto 1.0
+00:00 +12: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(320.0, 568.0) texto 1.0
+00:00 +13: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(320.0, 568.0) texto 1.0
+00:00 +14: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(320.0, 568.0) texto 1.0
+00:01 +15: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(320.0, 568.0) texto 1.0
+00:01 +16: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seletor Alpaca sem overflow Size(320.0, 568.0) escala 2.0
+00:01 +17: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(320.0, 568.0) texto 2.0
+00:01 +18: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seletor Alpaca sem overflow Size(800.0, 1280.0) escala 1.0
+00:01 +19: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(390.0, 844.0) texto 1.0
+00:01 +20: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seletor Alpaca sem overflow Size(800.0, 1280.0) escala 2.0
+00:01 +21: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(390.0, 844.0) texto 2.0
+00:01 +22: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(390.0, 844.0) texto 2.0
+00:01 +23: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/alpaca_series_test.dart: seletor Alpaca sem overflow Size(1280.0, 800.0) escala 2.0
+00:01 +24: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(844.0, 390.0) texto 1.0
+00:01 +25: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(844.0, 390.0) texto 2.0
+00:01 +26: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(800.0, 1280.0) texto 1.0
+00:01 +27: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(800.0, 1280.0) texto 2.0
+00:01 +28: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(1280.0, 800.0) texto 1.0
+00:01 +29: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: histórico, inspeção, atualização e layout Size(1280.0, 800.0) texto 2.0
+00:01 +30: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: acessibilidade: contraste, labels e alvos de toque
+00:02 +31: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: carregamento inicial e estado vazio
+00:02 +32: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: offline, backoff, paginação da lacuna e deduplicação
+00:02 +33: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: lacuna no stream recupera via REST
+00:02 +34: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: stream alterado reinicia snapshot sem misturar históricos
+00:02 +35: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: heartbeat e dispose cancelam tentativas
+00:02 +36: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: estado (FailureKind.offline, Offline) e recuperação manual
+00:02 +37: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: estado (FailureKind.degraded, Degradado) e recuperação manual
+00:02 +38: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: estado (FailureKind.invalid, Erro de configuração) e recuperação manual
+00:02 +39: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: estado (FailureKind.configuration, Erro de configuração) e recuperação manual
+00:02 +40: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: simulador parado degrada tela com gráfico preservado
+00:02 +41: C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot/apps/mobile_app/test/market_test.dart: dados inválidos não entram no gráfico
+00:02 +42: All tests passed!

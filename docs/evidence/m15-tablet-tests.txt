@@ -1,0 +1,4 @@
+I/flutter ( 6029): M15_SIMULATOR_TABLET_PASS orientation=DeviceOrientation.portraitUp REST=114 WS=1 cursor=114
+I/flutter ( 6029): M15_SIMULATOR_TABLET_PASS orientation=DeviceOrientation.landscapeLeft REST=115 WS=1 cursor=115
+I/flutter ( 6029): 00:05 +3: All tests passed!
+All tests passed.

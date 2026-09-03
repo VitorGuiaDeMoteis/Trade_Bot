@@ -1,0 +1,17 @@
+ candles | events | signals | risk
+---------+--------+---------+------
+     325 |    325 |     325 |  325
+(1 row)
+
+      kind      | count
+----------------+-------
+ candles        |   739
+ risk_decisions |   739
+ signals        |   739
+ system_events  |   739
+(4 rows)
+
+ market_identities | distinct_market_identities
+-------------------+----------------------------
+               325 |                        325
+(1 row)

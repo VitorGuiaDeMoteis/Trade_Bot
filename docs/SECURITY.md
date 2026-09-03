@@ -1,41 +1,41 @@
-# Segurança — M1
+# Segurança — M1.5
 
-## Superfície atual
+## Escopo autorizado
 
-Monitoramento local de candles fictícios. Saúde, OpenAPI, histórico REST e WebSocket de leitura. Sem comandos de trading, autenticação pública, corretora, IA, ordens, posições ou lucro. Estratégia, risco e execução permanecem fronteiras reservadas.
+Dados reais de mercado + análise/decisão simulada. A integração existente Candle → BaseStrategy → Signal → RiskEngine → RiskDecision permanece local. Nenhuma ordem, carteira, executor paper, Trading API, dinheiro real ou IA com autoridade de execução. Não avançar M2/M3.
 
-## Controles presentes
+Alpaca utiliza exclusivamente data.alpaca.markets e stream.data.alpaca.markets. O SDK alpaca-py não é necessário e foi removido. HTTP e WebSocket diretos têm timeouts e erros classificados. Calendário XNYS é local; não consulta clock/calendar da Trading API.
 
-- API em 127.0.0.1 e Compose vinculado a loopback. Não usar 0.0.0.0, LAN ou Internet.
-- Tablet acessa por adb reverse; endpoint obrigatório por dart-define, sem host padrão no Dart.
-- Android permite HTTP apenas no manifest de debug. Release requer HTTPS; não é alvo de distribuição deste marco.
-- WebSocket rejeita Origin externo quando presente. Não constitui autenticação; cliente nativo local sem Origin é permitido.
-- Nenhuma chave externa. .env, SDK, logs e builds ignorados; .env.example somente com valores fictícios.
-- SQLAlchemy com parâmetros. REST até 500; WS em lotes de 100. Timeouts de conexão/pool/consultas.
-- Candles/eventos atômicos, IDs determinísticos, UNIQUE, checks OHLCV e UTC. Replay não cria nova linha.
-- Cliente valida versão/invariantes antes de atualizar gráfico; lacunas iniciam recuperação.
-- /health 503 para banco indisponível ou simulador não operacional. Sem DSN/stack trace no erro REST.
-- Logs JSON UTC com correlation_id. Não registrar cabeçalhos, corpo, senha ou query string. Usar --no-access-log.
-- OHLC em strings decimais; double apenas para coordenadas de desenho. Nenhum cálculo de dinheiro no Flutter.
-- Migrações destrutivas testadas somente no banco descartável trading_bot_test, porta 5433. Volume dev preservado.
-- Testes de fronteira protegem domínio/gerador da camada HTTP e mantêm estratégia/risco/execução separados.
+## Configuração e segredos
 
-## Limites deliberados
+.env é local e ignorado; .env.example contém nomes seguros e chaves vazias. ALPACA_API_KEY_ID e ALPACA_API_SECRET_KEY são SecretStr no backend e obrigatórios com provider=alpaca. Erros de validação ocultam valores de entrada. Nunca colocar segredos no Flutter, dart-define, URL, log ou chat.
 
-Sem login, TLS local, quotas por usuário, auditoria de produção ou proteção contra usuários maliciosos do próprio computador. Não publicar o serviço. Senha fictícia somente para PostgreSQL de desenvolvimento isolado. Android debug.
+Logs estruturados contêm códigos controlados, UTC e correlation_id. Não registrar respostas de autenticação, headers ou texto bruto de exceções externas. Desabilitar access log do servidor. Não compartilhar logcat completo: outros aplicativos do aparelho podem aparecer nele.
 
-Antes de comandos futuros, revisar autenticação/autorização. Execução futura exigirá decisão determinística de risco e idempotência; frontend não autoriza operação nem é fonte de saldo. Nada disso foi antecipado.
+Smoke test exige RUN_ALPACA_SMOKE_TEST=1; sem opt-in retorna SKIPPED antes de criar provider. Testes automatizados bloqueiam HTTP/WS externos e usam fakes; PostgreSQL de teste fica em localhost:5433.
 
-Banco cresce enquanto simulador está ativo. Não há retenção automática; não apagar volume para recuperar falhas. Intervalo configurável reduz geração.
+## Superfície local
 
-## Dispositivo e recuperação
+API 127.0.0.1, PostgreSQL Compose em loopback e tablet via adb reverse. Sem autenticação pública/TLS local: não publicar em LAN/Internet. Android permite HTTP somente em debug. Origin externo no WebSocket é rejeitado, mas isso não constitui autenticação.
 
-Sem mudança permanente de SDK/PATH/rotação. Capturas usam rotação temporária e finally. Autorizações do instalador Android devem ser confirmadas no aparelho, sem desativar proteções.
+Consultas parametrizadas, limites REST/WS, pools/timeouts e constraints de integridade. Preços são Decimal no backend, strings no contrato e doubles somente para desenho. Somente candles fechados alimentam estratégia; decisões existentes são simuladas e não autorizam execução.
 
-Diretórios preservados da recuperação M0:
+Duplicatas não repetem sinais/risco. Conteúdo divergente falha explicitamente. Transações atômicas incluem as quatro tabelas. Precisão fora da capacidade do banco é rejeitada, não arredondada silenciosamente.
+
+## Preservação de dados e dispositivos
+
+Migração 0006_m15_integrity move o grafo Alpaca legado para legacy_market_archive, com payload completo, motivo e UUID original. Backup local pré-migração em .artifacts/m15-before-quarantine.sql. Esse arquivo fica ignorado e não foi publicado. Quarentena é evidência não validada; não reaproveitar automaticamente como histórico correto.
+
+Downgrade com novos candles Alpaca é bloqueado para não misturá-los ao legado. Downgrades destrutivos gerais pertencem ao banco descartável de testes. Não apagar volumes para recuperar falhas.
+
+SDK e PATH são configurados apenas na sessão. Captura do tablet modifica temporariamente a rotação e restaura modo/valor anteriores em finally. Não desativar proteção do instalador Android.
+
+Docker 4.68.0 voltou a falhar com sockets inacessíveis. Recuperação preservou diretórios, sem factory reset ou remoção de volumes:
+
 - C:/Users/vitor/AppData/Local/Docker/run.stale-20260903103306
 - C:/Users/vitor/AppData/Local/Docker/run.stale-20260903103549
 - C:/Users/vitor/AppData/Local/docker-secrets-engine.stale-20260903103549
+- C:/Users/vitor/AppData/Local/Docker/run.stale-20260903193627
+- C:/Users/vitor/AppData/Local/docker-secrets-engine.stale-20260903193627
 
-Não usar factory reset/exclusão ampla de AppData como rotina. Se um segredo real for introduzido por engano, revogar na origem e remover do histórico antes de publicar. Não compartilhar logs brutos de outros apps do tablet.
-
+Esses caminhos não devem ser apagados automaticamente. Não há distribuição de produção, execução financeira ou garantia de qualidade do feed real sem as validações pendentes do STATUS.

@@ -40,4 +40,32 @@ M0 foi formalmente aprovado. As decisões D001–D013 registram o estado histór
 
 O painter usa a API estável [CustomPainter](https://api.flutter.dev/flutter/rendering/CustomPainter-class.html). Referências de transporte: [Flutter WebSockets](https://docs.flutter.dev/cookbook/networking/web-sockets), [web_socket_channel](https://pub.dev/packages/web_socket_channel) e [FastAPI WebSockets](https://fastapi.tiangolo.com/advanced/websockets/).
 
-M2 permanece sem autorização e sem implementação.
+Esse era o limite do M1. A base c08ddf8 já continha BaseStrategy/Signal/RiskEngine/RiskDecision; o pedido atual autoriza corrigir sua integração e idempotência, sem ampliar M2 e sem iniciar M3.
+
+## M1.5 — correções autorizadas em 2026-09-03
+
+As decisões abaixo substituem, somente no escopo autorizado, as restrições históricas incompatíveis com Alpaca Market Data. Não alteram Flutter/FastAPI nem autorizam Trading API, executor ou ordens.
+
+| ID | Decisão | Motivo e limite |
+| --- | --- | --- |
+| D026 | Apenas timeframe 1h; conversão explícita para REST 1Hour | Outros timeframes falham até validação específica. Uma chamada histórica solicita um único símbolo. |
+| D027 | REST hourly nativa é a fonte canônica; WS minute bars apenas sinalizam atividade | Barras b/u nunca são persistidas como horas. A cada até 60 s, REST recupera horas fechadas, após margem adicional de 60 s. Sem agregador próprio nem suposição de que todo minuto possui negócios. |
+| D028 | Identidade provider/symbol/timeframe/open_time separada da sequence | Sequence consecutiva por série é alocada no commit PostgreSQL sob advisory lock; rollback não cria lacuna. Flutter mantém cursor da série selecionada. |
+| D029 | Quarentena transacional de todo o grafo Alpaca anterior | Foram encontrados candles de minuto rotulados 1h. Não se pode distinguir com confiança a origem de cada linha; archive preserva IDs/payloads e dependências, sem apresentá-los como dados válidos. Backup anterior mantido localmente. |
+| D030 | Sessão regular pelo calendário XNYS local | Inclui feriados, DST e early closes sem Trading API. market_closed significa sessão regular fechada; REST pode conter pré/after-market. Não aplicar stalled do simulador à espera de horas reais. |
+| D031 | ACK explícito de conexão/auth/subscrição e backoff 1/2/5/10/30 | Reset apenas após 60 s de conexão estável. Erros de credenciais/feed não entram em loop agressivo. Sem mensagens brutas contendo segredos. |
+| D032 | Candle/evento/sinal/risco atômicos, duplicidade explícita e conflito fatal | Mesmo conteúdo recupera evento existente sem recalcular decisões. Alteração posterior da fonte para identidade conhecida exige investigação; não corrigir preços/decisões automaticamente. |
+| D033 | NUMERIC(28,10), validação Decimal e contratos de mercado 2.0 | Preserva precisão suportada sem float; preços fora da precisão falham. Hora/sequence antigos deixam de ser compatíveis. Saúde mantém envelope 1.1. |
+| D034 | Séries independentes no Flutter, até 2.000 candles, chart cronológico | Troca de ativo cancela requisições/socket anteriores e busca snapshot próprio. Timestamp de mercado e ordem de ingestão podem divergir em backfill. |
+| D035 | Smoke opt-in separado de testes offline | Testes bloqueiam internet; RUN_ALPACA_SMOKE_TEST=1 autoriza smoke real limitado. Sem flag: SKIPPED. ACK não é prova de nova hora ao vivo nem da cadeia até o tablet. |
+| D036 | Calendário com biblioteca dedicada e stubs locais mínimos | exchange_calendars 4.13.2 não fornece py.typed; stubs descrevem somente a API utilizada, em vez de desabilitar mypy. alpaca-py removido por não ser necessário. |
+
+Fontes oficiais consultadas:
+
+- [Alpaca Stock Bars](https://docs.alpaca.markets/us/reference/stockbars): símbolos, timeframe, ordenação e paginação.
+- [Alpaca real-time stock data](https://docs.alpaca.markets/us/docs/real-time-stock-pricing-data): bars de minuto e updatedBars por negócios atrasados.
+- [Alpaca streaming market data](https://docs.alpaca.markets/us/docs/streaming-market-data): autenticação, assinatura e códigos de erro.
+- [NYSE horários e calendários](https://www.nyse.com/trade/hours-calendars): sessão regular e encerramentos antecipados.
+- [exchange_calendars](https://github.com/gerrymanoim/exchange_calendars): calendário XNYS local.
+
+Limitação explícita: margem de 60 s reduz correções tardias, mas não promete imutabilidade futura do provedor. Conflitos recebidos interrompem a ingestão. Feed/permissões, latência e nova hora real no tablet ainda exigem smoke e demonstração autorizados.
