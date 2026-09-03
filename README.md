@@ -28,8 +28,8 @@ Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar cand
 
 ## Implementação atual: M1.5 — Real Market Data
 
-O M1.5 foi concluído, conectando a aplicação à **Alpaca API** para coletar dados reais (SPY, AAPL, TSLA) usando a feed IEX (ou SIP).
-O dashboard Flutter foi atualizado para possuir um seletor de ativos, refletindo com precisão os dados que vêm via WebSocket, atualizando no banco de dados e enviando broadcast para os clientes simultaneamente. A persistência é absolutamente idempotente e segura, resistindo a desconexões e duplicações. Estratégia, risco ativo, ordens e posições (M2) aguardam aprovação para ativação.
+**M1.5 — em validação.** A implementação de Alpaca Market Data e do seletor SPY/AAPL/TSLA contém problemas de timeframe, cursor e recuperação em correção. Não considerar dados reais ou idempotência validados apenas pela existência do código.
+O escopo autorizado é dados de mercado e análise/decisão simulada. Trading API, ordens e executor permanecem proibidos. Veja resultados efetivamente executados em [STATUS](docs/STATUS.md).
 
 ### Pré-requisitos
 
