@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     simulator_start: datetime = datetime(2026, 1, 1, tzinfo=UTC)
     simulator_interval_seconds: float = Field(default=2.0, ge=0.1, le=3600)
 
+    market_data_provider: str = "simulator"
+    alpaca_api_key_id: str | None = None
+    alpaca_api_secret_key: SecretStr | None = None
+    alpaca_data_feed: str = "iex"
+    market_symbols: str = "SPY,AAPL,TSLA"
+    market_timeframe: str = "1h"
+
     @model_validator(mode="after")
     def validate_simulator(self) -> "Settings":
         SimulationSpec(self.simulator_seed, self.simulator_start)

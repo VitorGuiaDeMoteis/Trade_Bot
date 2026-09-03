@@ -11,8 +11,10 @@ from sqlalchemy.dialects.postgresql import insert
 
 from packages.contracts.market import CandleEvent, CandleResponse
 from packages.domain.market import Candle
-from services.api.models import candles, system_events
+from services.api.models import candles, system_events, signals, risk_decisions
 from services.market_simulator.generator import CandleGenerator
+from services.strategy_engine.engine import BaseStrategy
+from services.risk_engine.engine import RiskEngine
 
 
 class CursorReset(ValueError):
@@ -38,10 +40,14 @@ class MarketStore:
         engine: Engine,
         stream_id: UUID,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        strategy: BaseStrategy | None = None,
+        risk: RiskEngine | None = None,
     ) -> None:
         self.engine = engine
         self.stream_id = stream_id
         self.clock = clock
+        self.strategy = strategy
+        self.risk = risk
 
     def _persist(self, connection: Connection, candle: Candle) -> CandleEvent:
         if candle.stream_id != self.stream_id:
@@ -49,7 +55,7 @@ class MarketStore:
         inserted = connection.scalar(
             insert(candles)
             .values(**asdict(candle))
-            .on_conflict_do_nothing(index_elements=["stream_id", "sequence"])
+            .on_conflict_do_nothing()
             .returning(candles.c.candle_id)
         )
         if inserted is not None:
@@ -73,6 +79,16 @@ class MarketStore:
                     correlation_id=event.correlation_id,
                 )
             )
+            if self.strategy is not None:
+                signal = self.strategy.process_candle(candle, event.occurred_at)
+                connection.execute(
+                    signals.insert().values(**asdict(signal))
+                )
+                if self.risk is not None:
+                    decision = self.risk.evaluate(signal, event.occurred_at)
+                    connection.execute(
+                        risk_decisions.insert().values(**asdict(decision))
+                    )
             return event
         row = (
             connection.execute(

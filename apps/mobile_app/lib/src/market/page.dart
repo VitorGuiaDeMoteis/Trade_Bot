@@ -57,7 +57,7 @@ class _MarketPageState extends State<MarketPage> {
               MarketConnectionState.degraded,
               MarketConnectionState.error,
             ].contains(state);
-            final info = controller.simulator;
+            final info = controller.marketData;
             return Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1200),
@@ -74,8 +74,8 @@ class _MarketPageState extends State<MarketPage> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const _Badge(
-                          label: 'SIMULADO',
+                        _Badge(
+                          label: info?.provider != 'simulator' ? 'DADOS REAIS' : 'SIMULADO',
                           icon: Icons.science_outlined,
                         ),
                         Semantics(
@@ -87,23 +87,23 @@ class _MarketPageState extends State<MarketPage> {
                                 : Icons.wifi_off,
                           ),
                         ),
-                        if (info != null)
+                        if (info?.provider == 'alpaca')
                           _Badge(
-                            label: info.accelerated
-                                ? 'ACELERADA · 1h a cada ${info.interval.toStringAsFixed(1)} s'
-                                : 'NORMAL · 1h a cada hora',
-                            icon: Icons.schedule,
+                            label: 'FONTE: ALPACA / ${info?.feed?.toUpperCase() ?? 'IEX'}',
+                            icon: Icons.source,
                           ),
                       ],
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'TEST / 1h',
+                      '${info?.symbols?.join(', ') ?? 'TEST'} / 1h',
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 4),
-                    const Text(
-                      'Ativo fictício · candles fechados · relógio virtual em UTC',
+                    Text(
+                      info?.provider != 'simulator'
+                          ? 'Ativos reais · candles fechados · relógio em UTC'
+                          : 'Ativo fictício · candles fechados · relógio virtual em UTC',
                     ),
                     const SizedBox(height: 8),
                     Wrap(

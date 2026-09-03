@@ -37,7 +37,7 @@ def history(
         raise HTTPException(503, detail="database_unavailable") from error
     return MarketSnapshot(
         stream_id=store.stream_id,
-        simulator=request.app.state.simulator.status(),
+        market_data=request.app.state.simulator.status(),
         correlation_id=request.state.correlation_id,
         **asdict(page),
     )
@@ -82,7 +82,7 @@ async def events(
                         "cursor": cursor,
                         "correlation_id": str(uuid4()),
                         "database": database,
-                        "simulator": simulator.model_dump(mode="json"),
+                        "market_data": simulator.model_dump(mode="json"),
                     }
                 )
                 status_at = monotonic()

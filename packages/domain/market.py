@@ -33,6 +33,9 @@ class Candle:
     candle_id: UUID
     stream_id: UUID
     sequence: int
+    symbol: str
+    timeframe: str
+    provider: str
     open_time: datetime
     close_time: datetime
     open: Decimal

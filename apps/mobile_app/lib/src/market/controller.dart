@@ -35,7 +35,7 @@ class MarketController extends ChangeNotifier {
   String? message, streamId;
   int cursor = 0;
   DateTime? lastUpdatedAt;
-  SimulationInfo? simulator;
+  MarketDataInfo? marketData;
   // Contadores para validar transporte real sem expor controles de teste na UI.
   int liveEvents = 0;
   int recoveredCandles = 0;
@@ -151,7 +151,7 @@ class MarketController extends ChangeNotifier {
     );
     streamId = page.streamId;
     cursor = page.cursor;
-    simulator = page.simulator;
+    marketData = page.marketData;
     lastUpdatedAt = page.updatedAt ?? lastUpdatedAt;
     notifyListeners();
   }
@@ -161,10 +161,10 @@ class MarketController extends ChangeNotifier {
       throw const FormatException('Contrato do stream inválido');
     }
     if (event['type'] == 'stream.status') {
-      simulator = SimulationInfo.fromJson(
-        Map<String, dynamic>.from(event['simulator'] as Map),
+      marketData = MarketDataInfo.fromJson(
+        Map<String, dynamic>.from(event['market_data'] ?? event['simulator'] as Map),
       );
-      state = event['database'] == 'up' && simulator!.state == 'running'
+      state = event['database'] == 'up' && marketData!.state == 'running' || marketData!.state == 'connected'
           ? MarketConnectionState.live
           : MarketConnectionState.degraded;
       message = state == MarketConnectionState.degraded

@@ -1,7 +1,6 @@
 # Status — Trading Bot Dashboard v0.1
 
-Data: 2026-09-03. Marco autorizado: **M0 — Fundação**. **M0 implementado e validado, aguardando revisão do usuário.** M1 não iniciado e exige aprovação explícita.
-
+Data: 2026-09-03. Marco autorizado: **M1.5 — Real Market Data (em andamento)**. **M1 implementado e validado**. Estrutura do **M2** (Strategy/Risk) implementada, porém será temporariamente suspensa/adaptada para a integração de dados reais do M1.5.
 ## Implementado
 
 - Monorepo e especificação preservada na raiz.
@@ -128,4 +127,4 @@ Referência do erro observado: [Docker desktop-feedback #460](https://github.com
 - Recuperação do Docker resolveu o ambiente observado, mas não corrige o bug do produto Docker. Diretórios de sockets anteriores foram preservados, não removidos.
 - Git local já existia sem commits e sem remote. Nada foi publicado ou enviado para GitHub.
 
-Após o M0 estar aceito, propor M1 conforme MILESTONES: candles determinísticos com seed fixa, persistência, histórico REST, WebSocket, gráfico e conexão/última atualização. Nenhum desses itens foi implementado.
+Após o M1 ser aceito e a estrutura base do M2 ser criada, o foco agora muda para o **M1.5 — Real Market Data**, integrando a API da Alpaca mantendo o projeto na fase de testes em tempo real sem ordens reais.

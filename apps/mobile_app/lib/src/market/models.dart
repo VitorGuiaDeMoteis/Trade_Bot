@@ -12,11 +12,12 @@ class Candle {
       low = json['low'] as String,
       close = json['close'] as String,
       volume = json['volume'] as int,
-      regime = json['regime'] as String {
+      regime = json['regime'] as String,
+      symbol = json['symbol'] as String,
+      timeframe = json['timeframe'] as String,
+      provider = json['provider'] as String {
     final prices = [open, high, low, close].map(double.parse).toList();
-    if (json['symbol'] != 'TEST' ||
-        json['timeframe'] != '1h' ||
-        sequence < 1 ||
+    if (sequence < 1 ||
         volume < 0 ||
         !openTime.isUtc ||
         !closeTime.isUtc ||
@@ -30,25 +31,29 @@ class Candle {
     }
   }
 
-  final String id, streamId, open, high, low, close, regime;
+  final String id, streamId, open, high, low, close, regime, symbol, timeframe, provider;
   final int sequence, volume;
   final DateTime openTime, closeTime;
 }
 
-class SimulationInfo {
-  SimulationInfo.fromJson(Json json)
+class MarketDataInfo {
+  MarketDataInfo.fromJson(Json json)
     : state = json['state'] as String,
-      accelerated = json['accelerated'] as bool,
-      interval = (json['interval_seconds'] as num).toDouble();
+      provider = json['provider'] as String?,
+      feed = json['feed'] as String?,
+      symbols = (json['symbols'] as List?)?.cast<String>();
 
   final String state;
-  final bool accelerated;
-  final double interval;
+  final String? provider;
+  final String? feed;
+  final List<String>? symbols;
 }
 
 class Snapshot {
   Snapshot.fromJson(Json json)
     : streamId = json['stream_id'] as String,
+      symbol = json['symbol'] as String?,
+      timeframe = json['timeframe'] as String?,
       candles = (json['candles'] as List)
           .map(
             (item) => Candle.fromJson(Map<String, dynamic>.from(item as Map)),
@@ -60,8 +65,8 @@ class Snapshot {
       updatedAt = json['last_updated_at'] == null
           ? null
           : DateTime.parse(json['last_updated_at'] as String),
-      simulator = SimulationInfo.fromJson(
-        Map<String, dynamic>.from(json['simulator'] as Map),
+      marketData = MarketDataInfo.fromJson(
+        Map<String, dynamic>.from(json['simulator'] ?? json['market_data'] ?? {'state': 'offline'}),
       ) {
     if (json['schema_version'] != '1.0' ||
         cursor < 0 ||
@@ -73,9 +78,10 @@ class Snapshot {
   }
 
   final String streamId;
+  final String? symbol, timeframe;
   final List<Candle> candles;
   final int cursor, highWatermark;
   final bool hasMore;
   final DateTime? updatedAt;
-  final SimulationInfo simulator;
+  final MarketDataInfo marketData;
 }

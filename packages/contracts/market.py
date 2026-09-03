@@ -16,8 +16,9 @@ class CandleResponse(BaseModel):
     candle_id: UUID
     stream_id: UUID
     sequence: int = Field(ge=1)
-    symbol: Literal["TEST"] = "TEST"
-    timeframe: Literal["1h"] = "1h"
+    symbol: str = "TEST"
+    timeframe: str = "1h"
+    provider: str = "simulator"
     open_time: datetime
     close_time: datetime
     open: Decimal
@@ -42,14 +43,13 @@ class CandleEvent(BaseModel):
     payload: CandleResponse
 
 
-class SimulationStatus(BaseModel):
+class MarketDataStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    state: SimulatorState
-    seed: int
-    start: datetime
-    interval_seconds: float
-    accelerated: bool
+    state: str
+    provider: str | None = None
+    feed: str | None = None
+    symbols: list[str] | None = None
     last_persisted_at: datetime | None = None
     error: str | None = None
 
@@ -57,12 +57,12 @@ class SimulationStatus(BaseModel):
 class MarketSnapshot(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
     stream_id: UUID
-    symbol: Literal["TEST"] = "TEST"
-    timeframe: Literal["1h"] = "1h"
+    symbol: str = "TEST"
+    timeframe: str = "1h"
     candles: list[CandleResponse]
     cursor: int
     high_watermark: int
     has_more: bool
     last_updated_at: datetime | None
-    simulator: SimulationStatus
+    market_data: MarketDataStatus
     correlation_id: UUID

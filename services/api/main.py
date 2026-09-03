@@ -23,13 +23,43 @@ logger = logging.getLogger("trading_bot.api")
 def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        from services.market_data.simulator import SimulatorMarketDataProvider
+        from services.market_data.alpaca_provider import AlpacaMarketDataProvider
+        from services.strategy_engine.engine import BaseStrategy
+        from services.risk_engine.engine import RiskEngine
+
         configuration = settings or get_settings()
         engine = create_database_engine(configuration)
         app.state.database = engine
         spec = SimulationSpec(configuration.simulator_seed, configuration.simulator_start)
-        app.state.market = MarketStore(engine, spec.stream_id)
+        
+        if configuration.market_data_provider == "alpaca":
+            from services.market_data.alpaca_provider import AlpacaMarketDataProvider
+            from uuid import uuid5, NAMESPACE_URL
+            alpaca_stream_id = uuid5(NAMESPACE_URL, f"trading-bot/alpaca/{configuration.market_symbols}/{configuration.market_timeframe}")
+            symbols = [s.strip() for s in configuration.market_symbols.split(",")]
+            provider = AlpacaMarketDataProvider(
+                api_key=configuration.alpaca_api_key_id or "",
+                secret_key=configuration.alpaca_api_secret_key.get_secret_value() if configuration.alpaca_api_secret_key else "",
+                stream_id=alpaca_stream_id,
+                feed=configuration.alpaca_data_feed,
+                symbols=symbols,
+                timeframe=configuration.market_timeframe
+            )
+        else:
+            provider = SimulatorMarketDataProvider(spec, configuration.simulator_interval_seconds)
+            
+        strategy = BaseStrategy()
+        risk = RiskEngine()
+        
+        app.state.market = MarketStore(
+            engine,
+            alpaca_stream_id if configuration.market_data_provider == "alpaca" else spec.stream_id,
+            strategy=strategy,
+            risk=risk
+        )
         app.state.simulator = SimulatorRuntime(
-            configuration, app.state.market, CandleGenerator(spec)
+            configuration, app.state.market, provider
         )
         app.state.simulator.start()
         try:
@@ -70,16 +100,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health", response_model=HealthResponse, responses={503: {"model": HealthResponse}})
     def health(request: Request, response: Response) -> HealthResponse:
         database = check_database(request.app.state.database)
-        simulator = request.app.state.simulator.status()
-        ready = database == "up" and simulator.state == "running"
+        provider_status = request.app.state.simulator.provider.get_status()
+        state = provider_status.get("state", "offline")
+        ready = database == "up" and state == "connected"
         response.status_code = 200 if ready else 503
         response.headers["Cache-Control"] = "no-store"
+        
+        mode = "DADOS REAIS / EXECUÇÃO SIMULADA" if provider_status.get("provider") != "simulator" else "SIMULADO"
+        
         return HealthResponse(
             status="ok" if ready else "degraded",
+            mode=mode,
             database=database,
             checked_at=datetime.now(UTC),
             correlation_id=request.state.correlation_id,
-            simulator=simulator,
+            market_data=provider_status,
         )
 
     return app

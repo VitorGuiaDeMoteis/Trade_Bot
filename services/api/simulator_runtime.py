@@ -8,19 +8,19 @@ from time import monotonic
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from packages.contracts.market import SimulationStatus, SimulatorState
+from packages.contracts.market import MarketDataStatus, SimulatorState
 from services.api.config import Settings
 from services.api.market_store import MarketStore
-from services.market_simulator.generator import CandleGenerator
+from packages.contracts.provider import MarketDataProvider
 
 logger = logging.getLogger("trading_bot.simulator")
 
 
 class SimulatorRuntime:
-    def __init__(self, settings: Settings, store: MarketStore, generator: CandleGenerator) -> None:
+    def __init__(self, settings: Settings, store: MarketStore, provider: MarketDataProvider) -> None:
         self.settings = settings
         self.store = store
-        self.generator = generator
+        self.provider = provider
         self.task: asyncio.Task[None] | None = None
         self.state: SimulatorState = "stopped"
         self.error: str | None = None
@@ -41,57 +41,78 @@ class SimulatorRuntime:
                 pass
         self.state = "stopped"
 
-    def status(self) -> SimulationStatus:
+    def status(self) -> MarketDataStatus:
         state = self.state
         if state == "running" and monotonic() - self.last_progress > max(
             10,
             self.settings.simulator_interval_seconds * 2 + 5,
         ):
             state = "stalled"
-        return SimulationStatus(
+            
+        provider_status = self.provider.get_status()
+            
+        return MarketDataStatus(
             state=state,
-            seed=self.generator.spec.seed,
-            start=self.generator.spec.start,
-            interval_seconds=self.settings.simulator_interval_seconds,
-            accelerated=self.settings.simulator_interval_seconds < 3600,
+            provider=provider_status.get("provider"),
+            feed=provider_status.get("feed"),
+            symbols=provider_status.get("symbols"),
             last_persisted_at=self.last_persisted_at,
             error=self.error,
         )
 
     async def _run(self) -> None:
-        while True:
-            try:
-                event = await asyncio.to_thread(self.store.advance, self.generator)
-                self.last_persisted_at = event.occurred_at
-                self.last_progress = monotonic()
-                self.state = "running"
-                self.error = None
-                logger.info(
-                    json.dumps(
-                        {
-                            "event": "market.candle.persisted",
-                            "occurred_at": datetime.now(UTC).isoformat(),
-                            "correlation_id": str(event.correlation_id),
-                            "stream_id": str(event.stream_id),
-                            "sequence": event.sequence,
-                        }
+        try:
+            # Backfill historical candles
+            symbols = self.settings.market_symbols.split(",")
+            for symbol in symbols:
+                symbol = symbol.strip()
+                if not symbol: continue
+                
+                historical_candles = await self.provider.get_historical_candles(symbol, self.settings.market_timeframe)
+                for candle in historical_candles:
+                    try:
+                        event = await asyncio.to_thread(self.store.append, candle)
+                        self.last_persisted_at = event.occurred_at
+                    except ValueError:
+                        pass # Ignore duplicates or sequence errors from backfill
+            
+            # Subscribe to real-time stream
+            async for candle in self.provider.subscribe():
+                try:
+                    event = await asyncio.to_thread(self.store.append, candle)
+                    self.last_persisted_at = event.occurred_at
+                    self.last_progress = monotonic()
+                    self.state = "running"
+                    self.error = None
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "market.candle.persisted",
+                                "occurred_at": datetime.now(UTC).isoformat(),
+                                "correlation_id": str(event.correlation_id),
+                                "stream_id": str(event.stream_id),
+                                "sequence": event.sequence,
+                            }
+                        )
                     )
-                )
-            except (SQLAlchemyError, ValueError, OverflowError) as error:
-                self.state = "degraded"
-                self.error = (
-                    "database_unavailable"
-                    if isinstance(error, SQLAlchemyError)
-                    else "invalid_candle"
-                )
-                logger.warning(
-                    json.dumps(
-                        {
-                            "event": "simulator.degraded",
-                            "occurred_at": datetime.now(UTC).isoformat(),
-                            "correlation_id": str(self.generator.spec.stream_id),
-                            "reason": self.error,
-                        }
+                except (SQLAlchemyError, ValueError, OverflowError) as error:
+                    self.state = "degraded"
+                    self.error = (
+                        "database_unavailable"
+                        if isinstance(error, SQLAlchemyError)
+                        else "invalid_candle"
                     )
-                )
-            await asyncio.sleep(self.settings.simulator_interval_seconds)
+                    logger.warning(
+                        json.dumps(
+                            {
+                                "event": "simulator.degraded",
+                                "occurred_at": datetime.now(UTC).isoformat(),
+                                "correlation_id": str(candle.stream_id),
+                                "reason": self.error,
+                            }
+                        )
+                    )
+        except Exception as e:
+            self.state = "stopped"
+            self.error = str(e)
+            logger.error(f"Provider failed: {e}")
