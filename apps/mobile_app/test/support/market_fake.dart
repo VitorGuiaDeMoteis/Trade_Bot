@@ -18,12 +18,16 @@ Json candleJson(int sequence, {String stream = 'stream-1'}) {
     'close': '101.0000',
     'volume': 120,
     'regime': 'uptrend',
+    'provider': 'simulator',
+    'is_closed': true,
   };
 }
 
 Json simulationJson([String state = 'running']) => {
   'state': state,
   'accelerated': true,
+  'provider': 'simulator',
+  'symbols': ['TEST'],
   'interval_seconds': 2,
 };
 Json snapshotJson(
@@ -35,7 +39,7 @@ Json snapshotJson(
 }) {
   final last = cursor ?? (sequences.isEmpty ? 0 : sequences.last);
   return {
-    'schema_version': '1.0',
+    'schema_version': '2.0',
     'symbol': 'TEST',
     'timeframe': '1h',
     'stream_id': stream,
@@ -44,13 +48,13 @@ Json snapshotJson(
     'high_watermark': high ?? last,
     'has_more': (high ?? last) > last,
     'last_updated_at': '2026-09-03T12:00:00Z',
-    'simulator': simulationJson(state),
+    'market_data': simulationJson(state),
   };
 }
 
 Json eventJson(int sequence) => {
   'type': 'event',
-  'schema_version': '1.0',
+  'schema_version': '2.0',
   'event_id': 'event-$sequence',
   'event_type': 'market.candle.closed',
   'stream_id': 'stream-1',
@@ -65,10 +69,10 @@ Json statusJson({
   String stream = 'stream-1',
 }) => {
   'type': 'stream.status',
-  'schema_version': '1.0',
+  'schema_version': '2.0',
   'stream_id': stream,
   'database': database,
-  'simulator': simulationJson(state),
+  'market_data': simulationJson(state),
 };
 
 class FakeSocket implements MarketSocket {
@@ -89,6 +93,7 @@ class FakeApi implements MarketApi {
   FakeApi({this.initial = const [1, 2, 3]});
   final List<int> initial;
   final requests = <({int? after, int? through, String? stream})>[];
+  final requestedSymbols = <String?>[];
   final sockets = <FakeSocket>[];
   final responses = <Future<Snapshot> Function()>[];
   final connectCursors = <int>[];
@@ -98,7 +103,10 @@ class FakeApi implements MarketApi {
     int? through,
     String? streamId,
     int limit = 200,
+    String? symbol,
+    String timeframe = '1h',
   }) async {
+    requestedSymbols.add(symbol);
     requests.add((after: after, through: through, stream: streamId));
     if (responses.isNotEmpty) return responses.removeAt(0)();
     return Snapshot.fromJson(
@@ -107,7 +115,12 @@ class FakeApi implements MarketApi {
   }
 
   @override
-  Future<MarketSocket> connect(String streamId, int after) async {
+  Future<MarketSocket> connect(
+    String streamId,
+    int after, {
+    String? symbol,
+    String timeframe = '1h',
+  }) async {
     connectCursors.add(after);
     final socket = FakeSocket();
     sockets.add(socket);

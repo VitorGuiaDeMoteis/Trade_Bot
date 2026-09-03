@@ -1,6 +1,9 @@
 # Requer o aplicativo aberto em primeiro plano. Captura retrato/paisagem
 # quando o dispositivo nao pode ser girado fisicamente, restaurando a rotacao.
-param([string]$Device = '1791a20e')
+param(
+  [string]$Device = '1791a20e',
+  [ValidatePattern('^[a-zA-Z0-9-]+$')][string]$Prefix = 'm1-tablet-full'
+)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'use-android.ps1')
@@ -30,7 +33,7 @@ try {
     Invoke-AdbChecked @('shell', 'wm', 'user-rotation', 'lock', $rotation.Value)
     Start-Sleep -Seconds 3
     Invoke-AdbChecked @('shell', 'screencap', '-p', '/data/local/tmp/trading-bot-capture.png')
-    Invoke-AdbChecked @('pull', '/data/local/tmp/trading-bot-capture.png', (Join-Path $artifactDirectory "m1-tablet-full-$($rotation.Name).png"))
+    Invoke-AdbChecked @('pull', '/data/local/tmp/trading-bot-capture.png', (Join-Path $artifactDirectory "$Prefix-$($rotation.Name).png"))
   }
 } finally {
   Invoke-AdbChecked @('shell', 'wm', 'user-rotation', 'lock', $originalRotation)

@@ -35,7 +35,7 @@ void main() {
             find.byKey(const Key('candle-count')),
             120,
           );
-          expect(find.text('3 candles carregados'), findsOneWidget);
+          expect(find.text('3 candles carregados para TEST'), findsOneWidget);
           final previous = find.byKey(const Key('previous-candle'));
           await tester.scrollUntilVisible(previous, 150);
           await tester.pump();
@@ -129,7 +129,7 @@ void main() {
     expect(controller.candles.map((c) => c.id).toSet().length, 8);
     expect(api.requests.last, (after: 6, through: 8, stream: 'stream-1'));
     expect(api.connectCursors, [3, 8]);
-    expect(controller.state, MarketConnectionState.live);
+    expect(controller.state, MarketConnectionState.connected);
     controller.dispose();
   });
   testWidgets('lacuna no stream recupera via REST', (tester) async {
@@ -179,8 +179,8 @@ void main() {
   for (final entry in [
     (FailureKind.offline, 'Offline'),
     (FailureKind.degraded, 'Degradado'),
-    (FailureKind.invalid, 'Erro de conexão'),
-    (FailureKind.configuration, 'Erro de conexão'),
+    (FailureKind.invalid, 'Erro de configuração'),
+    (FailureKind.configuration, 'Erro de configuração'),
   ]) {
     testWidgets('estado $entry e recuperação manual', (tester) async {
       final api = FakeApi()
@@ -195,7 +195,7 @@ void main() {
       expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
       await tester.tap(button);
       await tester.pump();
-      expect(controller.state, MarketConnectionState.live);
+      expect(controller.state, MarketConnectionState.connected);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
@@ -227,7 +227,7 @@ void main() {
     (event['payload'] as Json)['high'] = '0';
     api.sockets.last.add(event);
     await tester.pump();
-    expect(controller.state, MarketConnectionState.error);
+    expect(controller.state, MarketConnectionState.configurationError);
     expect(controller.cursor, 3);
     controller.dispose();
   });

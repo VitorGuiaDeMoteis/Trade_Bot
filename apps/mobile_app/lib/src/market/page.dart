@@ -50,24 +50,25 @@ class _MarketPageState extends State<MarketPage> {
               MarketConnectionState.connecting => 'Conectando',
               MarketConnectionState.connected => 'Conectado',
               MarketConnectionState.reconnecting => 'Reconectando',
-              MarketConnectionState.market_closed => 'Mercado Fechado',
+              MarketConnectionState.marketClosed => 'Sessão regular fechada',
               MarketConnectionState.delayed => 'Atrasado',
               MarketConnectionState.degraded => 'Degradado',
               MarketConnectionState.offline => 'Offline',
-              MarketConnectionState.configuration_error => 'Erro Config',
+              MarketConnectionState.configurationError =>
+                'Erro de configuração',
             };
             final stateColor = switch (state) {
               MarketConnectionState.connected => Colors.green,
-              MarketConnectionState.market_closed => Colors.grey,
+              MarketConnectionState.marketClosed => Colors.grey,
               MarketConnectionState.reconnecting => Colors.orange,
               MarketConnectionState.delayed => Colors.yellow,
               MarketConnectionState.degraded => Colors.deepOrange,
-              MarketConnectionState.configuration_error => Colors.red,
+              MarketConnectionState.configurationError => Colors.red,
               _ => null,
             };
             final stateIcon = switch (state) {
               MarketConnectionState.connected => Icons.wifi,
-              MarketConnectionState.market_closed => Icons.nightlight_round,
+              MarketConnectionState.marketClosed => Icons.nightlight_round,
               MarketConnectionState.delayed => Icons.timer,
               MarketConnectionState.reconnecting => Icons.sync,
               _ => Icons.wifi_off,
@@ -75,7 +76,7 @@ class _MarketPageState extends State<MarketPage> {
             final warning = [
               MarketConnectionState.offline,
               MarketConnectionState.degraded,
-              MarketConnectionState.configuration_error,
+              MarketConnectionState.configurationError,
             ].contains(state);
             final info = controller.marketData;
             final availableSymbols = info?.symbols ?? [];
@@ -96,7 +97,11 @@ class _MarketPageState extends State<MarketPage> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _Badge(
-                          label: info?.provider != 'simulator' ? 'DADOS REAIS' : 'SIMULADO',
+                          label: switch (info?.provider) {
+                            'alpaca' => 'DADOS REAIS',
+                            'simulator' => 'SIMULADO',
+                            _ => 'AGUARDANDO FONTE',
+                          },
                           icon: Icons.science_outlined,
                         ),
                         Semantics(
@@ -109,24 +114,35 @@ class _MarketPageState extends State<MarketPage> {
                         ),
                         if (info?.provider == 'alpaca')
                           _Badge(
-                            label: 'FONTE: ALPACA / ${info?.feed?.toUpperCase() ?? 'IEX'}',
+                            label:
+                                'FONTE: ALPACA / ${info?.feed?.toUpperCase() ?? 'IEX'}',
                             icon: Icons.source,
                           ),
                       ],
                     ),
                     const SizedBox(height: 20),
                     if (availableSymbols.isNotEmpty)
-                      SegmentedButton<String>(
-                        segments: availableSymbols
-                            .map((s) => ButtonSegment<String>(
-                                  value: s,
-                                  label: Text(s),
-                                ))
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: availableSymbols
+                            .map(
+                              (symbol) => ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minWidth: 64,
+                                  minHeight: 48,
+                                ),
+                                child: ChoiceChip(
+                                  label: Text(symbol),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.padded,
+                                  selected: controller.selectedSymbol == symbol,
+                                  onSelected: (_) =>
+                                      controller.setSymbol(symbol),
+                                ),
+                              ),
+                            )
                             .toList(),
-                        selected: {controller.selectedSymbol},
-                        onSelectionChanged: (Set<String> newSelection) {
-                          controller.setSymbol(newSelection.first);
-                        },
                       )
                     else
                       Text(
@@ -134,8 +150,11 @@ class _MarketPageState extends State<MarketPage> {
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     const SizedBox(height: 12),
+                    Text('${controller.selectedSymbol} / 1h'),
+                    if (info?.accelerated == true)
+                      const Text('Simulação acelerada'),
                     Text(
-                      info?.provider != 'simulator'
+                      info?.provider == 'alpaca'
                           ? 'Ativos reais · candles fechados · relógio em UTC'
                           : 'Ativo fictício · candles fechados · relógio virtual em UTC',
                     ),
@@ -181,7 +200,7 @@ class _MarketPageState extends State<MarketPage> {
                       const SizedBox(height: 24),
                       const Center(child: CircularProgressIndicator()),
                       const SizedBox(height: 12),
-                      const Center(child: Text('Buscando histórico simulado…')),
+                      const Center(child: Text('Buscando histórico…')),
                     ],
                     const SizedBox(height: 16),
                     if (controller.filteredCandles.isNotEmpty)
@@ -197,7 +216,7 @@ class _MarketPageState extends State<MarketPage> {
                       ),
                     const SizedBox(height: 16),
                     Text(
-                      'M1 · Monitoramento de dados simulados. Sem ordens ou conexão com corretoras.',
+                      'M1.5 · Análise e decisão simuladas. Nenhuma ordem é criada.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -228,7 +247,15 @@ class _Badge extends StatelessWidget {
       child: Wrap(
         spacing: 6,
         crossAxisAlignment: WrapCrossAlignment.center,
-        children: [Icon(icon, size: 18, color: color), Text(label, style: color != null ? TextStyle(color: color, fontWeight: FontWeight.bold) : null)],
+        children: [
+          Icon(icon, size: 18, color: color),
+          Text(
+            label,
+            style: color != null
+                ? TextStyle(color: color, fontWeight: FontWeight.bold)
+                : null,
+          ),
+        ],
       ),
     ),
   );

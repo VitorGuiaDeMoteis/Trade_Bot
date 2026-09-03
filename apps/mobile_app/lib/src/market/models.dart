@@ -5,11 +5,11 @@ enum MarketConnectionState {
   connecting,
   connected,
   reconnecting,
-  market_closed,
+  marketClosed,
   delayed,
   degraded,
   offline,
-  configuration_error,
+  configurationError,
 }
 
 MarketConnectionState parseMarketState(String raw) {
@@ -23,14 +23,16 @@ MarketConnectionState parseMarketState(String raw) {
     case 'reconnecting':
       return MarketConnectionState.reconnecting;
     case 'market_closed':
-      return MarketConnectionState.market_closed;
+      return MarketConnectionState.marketClosed;
     case 'delayed':
       return MarketConnectionState.delayed;
+    case 'stopped':
+    case 'stalled':
     case 'degraded':
       return MarketConnectionState.degraded;
     case 'configuration_error':
     case 'error':
-      return MarketConnectionState.configuration_error;
+      return MarketConnectionState.configurationError;
     case 'offline':
     default:
       return MarketConnectionState.offline;
@@ -49,12 +51,16 @@ class Candle {
       low = json['low'] as String,
       close = json['close'] as String,
       volume = json['volume'] as int,
-      regime = json['regime'] as String,
+      regime = json['regime'] as String?,
+      isClosed = json['is_closed'] as bool,
       symbol = json['symbol'] as String,
       timeframe = json['timeframe'] as String,
       provider = json['provider'] as String {
     final prices = [open, high, low, close].map(double.parse).toList();
-    if (sequence < 1 ||
+    if (!isClosed ||
+        timeframe != '1h' ||
+        closeTime.difference(openTime) != const Duration(hours: 1) ||
+        sequence < 1 ||
         volume < 0 ||
         !openTime.isUtc ||
         !closeTime.isUtc ||
@@ -67,7 +73,17 @@ class Candle {
     }
   }
 
-  final String id, streamId, open, high, low, close, regime, symbol, timeframe, provider;
+  final String id,
+      streamId,
+      open,
+      high,
+      low,
+      close,
+      symbol,
+      timeframe,
+      provider;
+  final String? regime;
+  final bool isClosed;
   final int sequence, volume;
   final DateTime openTime, closeTime;
 }
@@ -78,8 +94,10 @@ class MarketDataInfo {
       connectionState = parseMarketState(json['state'] as String),
       provider = json['provider'] as String?,
       feed = json['feed'] as String?,
-      symbols = (json['symbols'] as List?)?.cast<String>();
+      symbols = (json['symbols'] as List?)?.cast<String>(),
+      accelerated = json['accelerated'] == true;
 
+  final bool accelerated;
   final String state;
   final MarketConnectionState connectionState;
   final String? provider;
@@ -90,8 +108,8 @@ class MarketDataInfo {
 class Snapshot {
   Snapshot.fromJson(Json json)
     : streamId = json['stream_id'] as String,
-      symbol = json['symbol'] as String?,
-      timeframe = json['timeframe'] as String?,
+      symbol = json['symbol'] as String,
+      timeframe = json['timeframe'] as String,
       candles = (json['candles'] as List)
           .map(
             (item) => Candle.fromJson(Map<String, dynamic>.from(item as Map)),
@@ -104,9 +122,9 @@ class Snapshot {
           ? null
           : DateTime.parse(json['last_updated_at'] as String),
       marketData = MarketDataInfo.fromJson(
-        Map<String, dynamic>.from(json['simulator'] ?? json['market_data'] ?? {'state': 'offline'}),
+        Map<String, dynamic>.from(json['market_data'] as Map),
       ) {
-    if (json['schema_version'] != '1.0' ||
+    if (json['schema_version'] != '2.0' ||
         cursor < 0 ||
         highWatermark < cursor ||
         hasMore != (cursor < highWatermark) ||
@@ -116,7 +134,7 @@ class Snapshot {
   }
 
   final String streamId;
-  final String? symbol, timeframe;
+  final String symbol, timeframe;
   final List<Candle> candles;
   final int cursor, highWatermark;
   final bool hasMore;

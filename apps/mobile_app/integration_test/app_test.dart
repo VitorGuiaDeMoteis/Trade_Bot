@@ -1,3 +1,4 @@
+import 'package:mobile_app/src/market/models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -40,12 +41,17 @@ void main() {
       await waitFor(
         tester,
         () =>
-            controller.state == MarketConnectionState.live &&
+            controller.state == MarketConnectionState.connected &&
             controller.candles.isNotEmpty,
       );
       expect(
         tester.view.physicalSize.width > tester.view.physicalSize.height,
         orientation == DeviceOrientation.landscapeLeft,
+      );
+      expect(
+        controller.marketData?.provider,
+        'simulator',
+        reason: 'Este teste exige o simulador; não valida streaming Alpaca.',
       );
       final initial = controller.cursor;
       await waitFor(
@@ -65,7 +71,7 @@ void main() {
       expect(find.text('Candle #${controller.cursor - 1}'), findsOneWidget);
       expect(tester.takeException(), isNull);
       debugPrint(
-        'M1_TABLET_PASS orientation=$orientation REST=${controller.candles.length} WS=${controller.liveEvents} cursor=${controller.cursor}',
+        'M15_SIMULATOR_TABLET_PASS orientation=$orientation REST=${controller.candles.length} WS=${controller.liveEvents} cursor=${controller.cursor}',
       );
       if (capture) {
         await tester.scrollUntilVisible(find.text('TRADING BOT'), -200);
@@ -89,7 +95,7 @@ void main() {
         await tester.pumpWidget(TradingBotApp(controller: controller));
         await waitFor(
           tester,
-          () => controller.state == MarketConnectionState.live,
+          () => controller.state == MarketConnectionState.connected,
         );
         final originalCursor = controller.cursor;
         debugPrint('M1_RECONNECT_READY cursor=$originalCursor');
@@ -108,7 +114,7 @@ void main() {
         await waitFor(
           tester,
           () =>
-              controller.state == MarketConnectionState.live &&
+              controller.state == MarketConnectionState.connected &&
               controller.successfulConnections >= 2 &&
               controller.recoveredCandles > 0 &&
               controller.cursor > originalCursor,

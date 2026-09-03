@@ -24,8 +24,15 @@ abstract class MarketApi {
     int? through,
     String? streamId,
     int limit = 200,
+    String? symbol,
+    String timeframe = '1h',
   });
-  Future<MarketSocket> connect(String streamId, int after);
+  Future<MarketSocket> connect(
+    String streamId,
+    int after, {
+    String? symbol,
+    String timeframe = '1h',
+  });
   void dispose();
 }
 
@@ -60,9 +67,13 @@ class HttpMarketApi implements MarketApi {
     int? through,
     String? streamId,
     int limit = 200,
+    String? symbol,
+    String timeframe = '1h',
   }) async {
     final uri = _endpoint('/api/v1/market/candles', {
       'limit': limit.toString(),
+      'symbol': ?symbol,
+      'timeframe': timeframe,
       if (after != null) 'after': after.toString(),
       if (through != null) 'through': through.toString(),
       'stream_id': ?streamId,
@@ -81,11 +92,18 @@ class HttpMarketApi implements MarketApi {
   }
 
   @override
-  Future<MarketSocket> connect(String streamId, int after) async {
+  Future<MarketSocket> connect(
+    String streamId,
+    int after, {
+    String? symbol,
+    String timeframe = '1h',
+  }) async {
     final channel = WebSocketChannel.connect(
       _endpoint('/api/v1/market/events', {
         'stream_id': streamId,
         'after': after.toString(),
+        'symbol': ?symbol,
+        'timeframe': timeframe,
       }, socket: true),
     );
     try {

@@ -5,8 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'api.dart';
 import 'models.dart';
 
-
-
 class MarketController extends ChangeNotifier {
   MarketController({
     required this.api,
@@ -27,13 +25,26 @@ class MarketController extends ChangeNotifier {
   String get selectedSymbol => _selectedSymbol;
 
   List<Candle> get filteredCandles =>
-      candles.where((c) => c.symbol == _selectedSymbol).toList();
+      [...candles]..sort((a, b) => a.openTime.compareTo(b.openTime));
 
   void setSymbol(String symbol) {
-    if (_selectedSymbol != symbol) {
-      _selectedSymbol = symbol;
-      notifyListeners();
+    if (_selectedSymbol == symbol ||
+        !(marketData?.symbols ?? []).contains(symbol)) {
+      return;
     }
+    ++_generation;
+    _selectedSymbol = symbol;
+    _retry?.cancel();
+    _heartbeat?.cancel();
+    unawaited(_subscription?.cancel());
+    unawaited(_close(_socket));
+    _socket = null;
+    streamId = null;
+    candles = const [];
+    cursor = 0;
+    lastUpdatedAt = null;
+    _failures = 0;
+    unawaited(_connect());
   }
 
   List<Candle> candles = const [];
@@ -70,6 +81,7 @@ class MarketController extends ChangeNotifier {
       Snapshot page;
       try {
         page = await api.history(
+          symbol: _selectedSymbol == 'TEST' ? null : _selectedSymbol,
           after: fresh ? null : cursor,
           streamId: streamId,
         );
@@ -77,12 +89,15 @@ class MarketController extends ChangeNotifier {
         if (error.kind != FailureKind.reset) rethrow;
         if (!_active(generation)) return;
         fresh = true;
-        page = await api.history();
+        page = await api.history(
+          symbol: _selectedSymbol == 'TEST' ? null : _selectedSymbol,
+        );
       }
       if (!_active(generation)) return;
       _applyPage(page, fresh: fresh);
       while (page.hasMore) {
         page = await api.history(
+          symbol: _selectedSymbol == 'TEST' ? null : _selectedSymbol,
           after: cursor,
           through: page.highWatermark,
           streamId: streamId,
@@ -92,7 +107,11 @@ class MarketController extends ChangeNotifier {
       }
       state = MarketConnectionState.connecting;
       notifyListeners();
-      final socket = await api.connect(streamId!, cursor);
+      final socket = await api.connect(
+        streamId!,
+        cursor,
+        symbol: _selectedSymbol,
+      );
       if (!_active(generation)) {
         await _close(socket);
         return;
@@ -121,6 +140,10 @@ class MarketController extends ChangeNotifier {
   }
 
   void _applyPage(Snapshot page, {required bool fresh}) {
+    if (page.timeframe != '1h' ||
+        (_selectedSymbol != 'TEST' && page.symbol != _selectedSymbol)) {
+      throw const FormatException('Série diferente');
+    }
     final previous = fresh ? 0 : cursor;
     if (!fresh && page.streamId != streamId) {
       throw const FormatException('Stream diferente');
@@ -132,22 +155,36 @@ class MarketController extends ChangeNotifier {
     final timesPerSymbol = <String, Set<DateTime>>{};
     if (!fresh) {
       for (final c in candles) {
-        timesPerSymbol.putIfAbsent(c.symbol, () => <DateTime>{}).add(c.openTime);
+        timesPerSymbol
+            .putIfAbsent(c.symbol, () => <DateTime>{})
+            .add(c.openTime);
       }
     }
     for (final candle in page.candles) {
-      if (candle.streamId != page.streamId) {
-        throw const FormatException('Histórico inconsistente (stream diferente)');
+      if (candle.streamId != page.streamId ||
+          candle.symbol != page.symbol ||
+          candle.timeframe != page.timeframe ||
+          candle.provider != page.marketData.provider) {
+        throw const FormatException(
+          'Histórico inconsistente (stream diferente)',
+        );
       }
       if (candle.sequence != expected++) {
-        throw const FormatException('Histórico inconsistente (sequência inválida)');
+        throw const FormatException(
+          'Histórico inconsistente (sequência inválida)',
+        );
       }
       if (!ids.add(candle.id)) {
         throw const FormatException('Histórico inconsistente (id duplicado)');
       }
-      final times = timesPerSymbol.putIfAbsent(candle.symbol, () => <DateTime>{});
+      final times = timesPerSymbol.putIfAbsent(
+        candle.symbol,
+        () => <DateTime>{},
+      );
       if (!times.add(candle.openTime)) {
-         throw const FormatException('Histórico inconsistente (tempo duplicado)');
+        throw const FormatException(
+          'Histórico inconsistente (tempo duplicado)',
+        );
       }
     }
     if (page.candles.isEmpty && page.cursor != previous) {
@@ -164,36 +201,35 @@ class MarketController extends ChangeNotifier {
     cursor = page.cursor;
     marketData = page.marketData;
     lastUpdatedAt = page.updatedAt ?? lastUpdatedAt;
-    
-    final availableSymbols = marketData?.symbols ?? [];
-    if (availableSymbols.isNotEmpty && (!availableSymbols.contains(_selectedSymbol) || _selectedSymbol == 'TEST')) {
-      _selectedSymbol = availableSymbols.first;
-    }
+
+    _selectedSymbol = page.symbol;
     notifyListeners();
   }
 
   void _onMessage(Json event) {
-    if (event['schema_version'] != '1.0' || event['stream_id'] != streamId) {
+    if (event['schema_version'] != '2.0' || event['stream_id'] != streamId) {
       throw const FormatException('Contrato do stream inválido');
     }
     if (event['type'] == 'stream.status') {
       marketData = MarketDataInfo.fromJson(
-        Map<String, dynamic>.from(event['market_data'] ?? event['simulator'] as Map),
+        Map<String, dynamic>.from(event['market_data'] as Map),
       );
-      state = marketData!.connectionState;
-      if (state == MarketConnectionState.degraded || state == MarketConnectionState.configuration_error) {
-         message = 'Problema de conexão: ${state.name}';
-      } else if (state == MarketConnectionState.offline || state == MarketConnectionState.market_closed) {
-         message = 'Mercado fechado ou offline.';
+      state = event['database'] == 'up'
+          ? marketData!.connectionState
+          : MarketConnectionState.degraded;
+      if (state == MarketConnectionState.degraded ||
+          state == MarketConnectionState.configurationError) {
+        message = 'Problema de conexão: ${state.name}';
+      } else if (state == MarketConnectionState.offline ||
+          state == MarketConnectionState.marketClosed) {
+        message = state == MarketConnectionState.marketClosed
+            ? 'Sessão regular fechada.'
+            : 'Fonte offline.';
       } else {
-         message = null;
+        message = null;
       }
       _failures = 0;
-      
-      final availableSymbols = marketData?.symbols ?? [];
-      if (availableSymbols.isNotEmpty && (!availableSymbols.contains(_selectedSymbol) || _selectedSymbol == 'TEST')) {
-        _selectedSymbol = availableSymbols.first;
-      }
+
       notifyListeners();
       return;
     }
@@ -204,14 +240,21 @@ class MarketController extends ChangeNotifier {
     final candle = Candle.fromJson(
       Map<String, dynamic>.from(event['payload'] as Map),
     );
-    if (candle.streamId != streamId || candle.sequence != event['sequence']) {
+    if (candle.streamId != streamId ||
+        candle.sequence != event['sequence'] ||
+        candle.symbol != _selectedSymbol ||
+        candle.provider != marketData?.provider) {
       throw const FormatException('Identidade do candle inválida');
     }
     if (candle.sequence <= cursor) return;
     if (candle.sequence != cursor + 1) {
       throw const ApiFailure(FailureKind.degraded);
     }
-    final isDuplicate = candles.any((old) => old.id == candle.id || (old.symbol == candle.symbol && old.openTime == candle.openTime));
+    final isDuplicate = candles.any(
+      (old) =>
+          old.id == candle.id ||
+          (old.symbol == candle.symbol && old.openTime == candle.openTime),
+    );
     if (isDuplicate) {
       throw const ApiFailure(FailureKind.degraded);
     }
@@ -248,7 +291,7 @@ class MarketController extends ChangeNotifier {
     state = switch (kind) {
       FailureKind.degraded => MarketConnectionState.degraded,
       FailureKind.invalid ||
-      FailureKind.configuration => MarketConnectionState.configuration_error,
+      FailureKind.configuration => MarketConnectionState.configurationError,
       _ => MarketConnectionState.offline,
     };
     message = switch (kind) {

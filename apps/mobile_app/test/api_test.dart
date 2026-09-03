@@ -18,6 +18,8 @@ void main() {
           'through': '5',
           'stream_id': 'stream-1',
           'limit': '20',
+          'timeframe': '1h',
+          'symbol': 'SPY',
         });
         return http.Response(jsonEncode(snapshotJson([4, 5])), 200);
       }),
@@ -27,6 +29,7 @@ void main() {
       through: 5,
       streamId: 'stream-1',
       limit: 20,
+      symbol: 'SPY',
     );
     expect(page.candles.first.close, '101.0000');
     api.dispose();
@@ -92,7 +95,7 @@ void main() {
     expect(
       () => Snapshot.fromJson({
         ...snapshotJson([1]),
-        'schema_version': '2.0',
+        'schema_version': '1.0',
       }),
       throwsFormatException,
     );
