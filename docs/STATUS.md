@@ -1,8 +1,16 @@
 # Status — Trading Bot Dashboard v0.1
 
-## M1.5 — em validação
+## **M1.5 — Validação de Dados Reais concluída parcialmente.** As correções de timeframe, cursor, idempotência e seletor SPY/AAPL/TSLA foram validadas com PostgreSQL real, histórico real da Alpaca (SPY, AAPL, TSLA) via REST e WS interno persistido. O escopo autorizado é dados de mercado e análise/decisão simulada. Trading API, ordens e executor permanecem proibidos.
 
-Base: main, c08ddf87216efb2e09bea55e497ec6439392d8ef. Checkout inicialmente limpo. Remoto informado pelo usuário e origin atual resolveram para o mesmo commit. Correções autorizadas: dados reais + análise/decisão simulada. Sem Trading API, ordens, executor paper ou avanço de marco.
+### Validação Real (Mercado Fechado)
+* Alpaca REST real ✅
+* Histórico real SPY/AAPL/TSLA ✅
+* PostgreSQL real ✅
+* REST Trade_Bot ✅
+* WS interno/replay ✅
+* Flutter Xiaomi com histórico Alpaca real ⏳ pendente (dispositivo offline)
+* Alpaca streaming ao vivo ⏳ pendente de sessão regular
+* nova hora fechada recebida ao vivo ⏳ pendente
 
 ## Histórico M0
 
