@@ -1,0 +1,42 @@
+name: trading-bot-m0
+services:
+  postgres:
+    image: postgres:17.9-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Copie .env.example para .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Copie .env.example para .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copie .env.example para .env}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  postgres_test:
+    profiles: ["test"]
+    image: postgres:17.9-alpine
+    environment:
+      POSTGRES_DB: trading_bot_test
+      POSTGRES_USER: test_only
+      POSTGRES_PASSWORD: test_only
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_only -d trading_bot_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres_data:

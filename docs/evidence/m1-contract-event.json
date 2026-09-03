@@ -1,0 +1,25 @@
+{
+  "type": "event",
+  "schema_version": "1.0",
+  "event_id": "0a6d758a-b854-5c7b-ace6-ef51e68eb615",
+  "event_type": "market.candle.closed",
+  "occurred_at": "2026-09-03T14:40:31.288416Z",
+  "correlation_id": "b40c0434-54b7-4f83-8d9c-d3a7369578af",
+  "stream_id": "a1a88443-8679-5407-b463-d042a5de7b61",
+  "sequence": 776,
+  "payload": {
+    "candle_id": "03ec9ce7-c92d-5581-ab23-bb5a95bd2004",
+    "stream_id": "a1a88443-8679-5407-b463-d042a5de7b61",
+    "sequence": 776,
+    "symbol": "TEST",
+    "timeframe": "1h",
+    "open_time": "2026-02-02T07:00:00Z",
+    "close_time": "2026-02-02T08:00:00Z",
+    "open": "145.7933",
+    "high": "147.4888",
+    "low": "145.2393",
+    "close": "146.9305",
+    "volume": 1295,
+    "regime": "uptrend"
+  }
+}

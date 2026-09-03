@@ -1,0 +1,21 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\vitor\OneDrive\Documentos\ChatGPT\TradingBot
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.0
+collected 40 items
+
+tests\test_boundaries.py ......                                          [ 15%]
+tests\test_database_integration.py .                                     [ 17%]
+tests\test_generator.py ........                                         [ 37%]
+tests\test_health.py ................                                    [ 77%]
+tests\test_market_integration.py .........                               [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\starlette\testclient.py:53
+  C:\Users\vitor\OneDrive\Documentos\ChatGPT\TradingBot\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 40 passed, 1 warning in 9.20s ========================

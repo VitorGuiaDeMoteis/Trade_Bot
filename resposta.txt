@@ -1,0 +1,30 @@
+Contexto para o Codex/ChatGPT:
+
+Olá! O usuário e eu estivemos trabalhando no Milestone 2 (M2) do projeto Trading Bot (baseado nas especificações `trading-bot-v01-spec`).
+
+O que já implementei e testei no backend:
+1. **Modelos de Domínio (`packages/domain/strategy.py` e `packages/domain/risk.py`)**:
+   - `Signal` (com `SignalType` BUY, SELL, HOLD).
+   - `RiskDecision` (com `DecisionType` APPROVED, REJECTED e uma `reason`).
+   - Todos os timestamps validados para garantir UTC puro.
+
+2. **Modelos do Banco de Dados (`services/api/models.py`)**:
+   - Adicionei as tabelas `signals` e `risk_decisions` usando o SQLAlchemy.
+   - Restrições adicionadas (CheckConstraints e UniqueConstraints).
+
+3. **Migração do Alembic**:
+   - Gerei a migration automática e já rodei `alembic upgrade head` no banco de dados.
+
+4. **Motores de Lógica (M2)**:
+   - `services/strategy_engine/engine.py`: Estratégia determinística baseada no preço de fechamento (close > open = BUY).
+   - `services/risk_engine/engine.py`: Motor de risco que bloqueia sinais vencidos (mais de 1h) e aceita uma flag de `system_paused`.
+
+5. **Testes Unitários**:
+   - Criei o arquivo `tests/test_strategy_and_risk.py` verificando a geração de sinais e as regras de risco. Todos os testes estão passando perfeitamente (`pytest`).
+
+**Próximos passos sugeridos para você (Codex) continuar:**
+1. **Integração no Backend (Atomicidade)**: Precisamos chamar o `StrategyEngine` e o `RiskEngine` para cada novo candle gerado no `MarketStore._persist` (ou no orquestrador `SimulatorRuntime`) e persistir o `Signal` e o `RiskDecision` no banco de forma atômica (junto com o `Candle` e o `SystemEvent`).
+2. **API (Rotas)**: Incluir os dados de `Signal` e `RiskDecision` na resposta do endpoint de histórico e WebSocket (se necessário) para alimentar o frontend.
+3. **Frontend (Flutter - M2)**: Construir a "Timeline de decisões" na tela do aplicativo, consumindo as novas justificativas (motivos de aprovação/rejeição) e mostrando os sinais de BUY/SELL gerados.
+
+O aplicativo já está rodando no tablet do usuário (dispositivo 1791a20e) via `flutter run` com a API na porta 8000. Pode dar sequência a partir daqui!

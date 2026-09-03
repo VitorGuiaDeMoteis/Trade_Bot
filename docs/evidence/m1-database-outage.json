@@ -1,0 +1,15 @@
+[
+  {
+    "database": "down",
+    "simulator": "degraded",
+    "health_http": 503,
+    "phase": "database_stopped",
+    "rest_http": 503
+  },
+  {
+    "database": "up",
+    "simulator": "running",
+    "health_http": 200,
+    "phase": "database_recovered"
+  }
+]

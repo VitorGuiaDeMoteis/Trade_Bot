@@ -1,0 +1,7 @@
+I/flutter (25196): M1_TABLET_PASS orientation=DeviceOrientation.portraitUp REST=201 WS=1 cursor=485
+I/flutter (25196): M1_TABLET_PASS orientation=DeviceOrientation.landscapeLeft REST=201 WS=1 cursor=487
+I/flutter (25196): M1_RECONNECT_READY cursor=488
+I/flutter (25196): M1_OFFLINE_OBSERVED cursor=494
+I/flutter (25196): M1_RECONNECT_PASS recovered=6 cursor=500 connections=2
+I/flutter (25196): 01:05 +4: All tests passed!
+All tests passed.
