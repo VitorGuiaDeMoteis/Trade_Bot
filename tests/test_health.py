@@ -31,7 +31,7 @@ def test_health_contract(settings, database, code, status):
     correlation_id = str(uuid4())
     with patch("services.api.main.check_database", return_value=database):
         with TestClient(create_app(settings)) as client:
-            client.app.state.simulator.state = "running"
+            client.app.state.simulator.state = "connected"
             response = client.get("/health", headers={"X-Correlation-ID": correlation_id})
     assert response.status_code == code
     body = response.json()
@@ -109,9 +109,19 @@ def test_health_reports_simulator_not_ready(settings, state):
     with patch("services.api.main.check_database", return_value="up"):
         with TestClient(create_app(settings)) as client:
             client.app.state.simulator.state = state
-            client.app.state.simulator.provider._state = "offline"
-            # mock get_status to return the right state
-            with patch.object(client.app.state.simulator.provider, 'get_status', return_value=type('obj', (object,), {'state': state, 'provider': 'simulator', 'feed': 'local', 'symbols': ['TEST'], 'last_persisted_at': None, 'error': None})):
-                response = client.get("/health")
+            response = client.get("/health")
     assert response.status_code == 503
     assert response.json()["market_data"]["state"] == state
+
+
+def test_health_regular_market_closed_is_not_failure(settings):
+    from packages.contracts.market import MarketDataStatus
+
+    status = MarketDataStatus(provider="alpaca", state="market_closed", session="regular")
+    with patch("services.api.main.check_database", return_value="up"):
+        with TestClient(create_app(settings)) as client:
+            with patch.object(client.app.state.simulator, "status", return_value=status):
+                response = client.get("/health")
+                assert response.status_code == 200
+                assert response.json()["mode"] == "DADOS REAIS / EXECUÇÃO SIMULADA"
+                assert response.json()["market_data"]["state"] == "market_closed"

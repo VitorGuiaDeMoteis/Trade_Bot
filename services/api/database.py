@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from services.api.config import Settings
 
-SCHEMA_REVISION = "d4ae1863048a"
+SCHEMA_REVISION = "0006_m15_integrity"
 DatabaseStatus = Literal["up", "down", "schema_pending"]
 
 

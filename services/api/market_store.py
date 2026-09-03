@@ -1,20 +1,24 @@
 """PostgreSQL: candle + evento atômicos, leitura paginada e replay durável."""
 
+import json
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import Connection, Engine, RowMapping, func, select, text
-from sqlalchemy.dialects.postgresql import insert
 
 from packages.contracts.market import CandleEvent, CandleResponse
 from packages.domain.market import Candle
-from services.api.models import candles, system_events, signals, risk_decisions
+from packages.domain.market_bar import MarketBar, series_id
+from services.api.models import candles, risk_decisions, signals, system_events
+from services.market_data.errors import ContentConflict, PartialCandle
 from services.market_simulator.generator import CandleGenerator
-from services.strategy_engine.engine import BaseStrategy
 from services.risk_engine.engine import RiskEngine
+from services.strategy_engine.engine import BaseStrategy
 
 
 class CursorReset(ValueError):
@@ -49,85 +53,124 @@ class MarketStore:
         self.strategy = strategy
         self.risk = risk
 
-    def _persist(self, connection: Connection, candle: Candle) -> CandleEvent:
-        if candle.stream_id != self.stream_id:
-            raise ValueError("Stream incorreto.")
-        inserted = connection.scalar(
-            insert(candles)
-            .values(**asdict(candle))
-            .on_conflict_do_nothing()
-            .returning(candles.c.candle_id)
-        )
-        if inserted is not None:
-            event = CandleEvent(
-                event_id=uuid5(candle.candle_id, "market.candle.closed"),
-                occurred_at=self.clock(),
-                correlation_id=uuid4(),
-                stream_id=self.stream_id,
-                sequence=candle.sequence,
-                payload=CandleResponse.model_validate(candle),
-            )
-            connection.execute(
-                system_events.insert().values(
-                    event_id=event.event_id,
-                    candle_id=candle.candle_id,
-                    stream_id=self.stream_id,
-                    sequence=event.sequence,
-                    event_type=event.event_type,
-                    schema_version=event.schema_version,
-                    occurred_at=event.occurred_at,
-                    correlation_id=event.correlation_id,
-                )
-            )
-            if self.strategy is not None:
-                signal = self.strategy.process_candle(candle, event.occurred_at)
-                connection.execute(
-                    signals.insert().values(**asdict(signal))
-                )
-                if self.risk is not None:
-                    decision = self.risk.evaluate(signal, event.occurred_at)
-                    connection.execute(
-                        risk_decisions.insert().values(**asdict(decision))
-                    )
-            return event
+    def _persist(self, connection: Connection, candle: Candle | MarketBar) -> CandleEvent:
+        if not candle.is_closed or (
+            candle.provider == "alpaca" and candle.close_time > self.clock()
+        ):
+            raise PartialCandle("partial_candle")
+        lock_id = int.from_bytes(self.stream_id.bytes[:8], signed=True)
+        connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_id})
         row = (
             connection.execute(
                 select(candles, system_events)
                 .join(system_events)
                 .where(
-                    (
-                        (candles.c.stream_id == self.stream_id) & (candles.c.sequence == candle.sequence)
-                    ) | (
-                        (candles.c.provider == candle.provider) & 
-                        (candles.c.symbol == candle.symbol) & 
-                        (candles.c.timeframe == candle.timeframe) & 
-                        (candles.c.open_time == candle.open_time)
-                    )
+                    candles.c.provider == candle.provider,
+                    candles.c.symbol == candle.symbol,
+                    candles.c.timeframe == candle.timeframe,
+                    candles.c.open_time == candle.open_time,
                 )
             )
             .mappings()
             .first()
         )
-        if row is None:
-            raise ValueError("No matching row found after conflict.")
-        
-        # We don't strictly compare candle_response(row) == candle because sequences might differ,
-        # but we can compare the core market data properties to ensure no content conflict.
-        existing_candle = candle_response(row)
-        if (existing_candle.open != candle.open or
-            existing_candle.high != candle.high or
-            existing_candle.low != candle.low or
-            existing_candle.close != candle.close or
-            existing_candle.volume != candle.volume):
-            raise ValueError("Conflito de conteúdo para candle já persistido.")
-            
-        return self._event(row)
+        if row is not None:
+            fields = (
+                "provider",
+                "symbol",
+                "timeframe",
+                "open_time",
+                "close_time",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "is_closed",
+            )
+            if any(row[name] != getattr(candle, name) for name in fields):
+                raise ContentConflict("market_identity_content_conflict")
+            if isinstance(candle, Candle) and any(
+                row[name] != getattr(candle, name) for name in ("candle_id", "sequence", "regime")
+            ):
+                raise ContentConflict("simulator_identity_content_conflict")
+            if row["stream_id"] != self.stream_id:
+                raise ContentConflict("market_identity_stream_conflict")
+            logging.getLogger("trading_bot.market").info(
+                json.dumps(
+                    {
+                        "event": "market.candle.duplicate",
+                        "candle_id": str(row["candle_id"]),
+                        "correlation_id": str(row["correlation_id"]),
+                        "occurred_at": self.clock().isoformat(),
+                    }
+                )
+            )
+            return self._event(row)
+        last = int(
+            connection.scalar(
+                select(func.coalesce(func.max(candles.c.sequence), 0)).where(
+                    candles.c.stream_id == self.stream_id
+                )
+            )
+            or 0
+        )
+        if isinstance(candle, MarketBar):
+            if self.stream_id != series_id(candle.provider, candle.symbol, candle.timeframe):
+                raise ValueError("incorrect_series")
+            candle = Candle(
+                **asdict(candle),
+                candle_id=candle.candle_id,
+                stream_id=self.stream_id,
+                sequence=last + 1,
+                regime=None,
+            )
+        elif candle.stream_id != self.stream_id or candle.sequence != last + 1:
+            raise ValueError("invalid_stream_sequence")
+        connection.execute(candles.insert().values(**asdict(candle)))
+        event = CandleEvent(
+            event_id=uuid5(candle.candle_id, "market.candle.closed"),
+            occurred_at=self.clock(),
+            correlation_id=uuid4(),
+            stream_id=self.stream_id,
+            sequence=candle.sequence,
+            payload=CandleResponse.model_validate(candle),
+        )
+        connection.execute(
+            system_events.insert().values(
+                event_id=event.event_id,
+                candle_id=candle.candle_id,
+                stream_id=self.stream_id,
+                sequence=event.sequence,
+                event_type=event.event_type,
+                schema_version=event.schema_version,
+                occurred_at=event.occurred_at,
+                correlation_id=event.correlation_id,
+            )
+        )
+        if self.strategy is not None:
+            signal = self.strategy.process_candle(candle, event.occurred_at)
+            connection.execute(signals.insert().values(**asdict(signal)))
+            if self.risk is not None:
+                decision = self.risk.evaluate(signal, event.occurred_at)
+                connection.execute(risk_decisions.insert().values(**asdict(decision)))
+        return event
 
-    def append(self, candle: Candle) -> CandleEvent:
+    def append(self, candle: Candle | MarketBar) -> CandleEvent:
         with self.engine.begin() as connection:
             event = self._persist(connection, candle)
-        # Só retorna ao produtor após o commit das duas tabelas.
         return event
+
+    def latest_open(self) -> datetime | None:
+        with self.engine.connect() as connection:
+            return cast(
+                datetime | None,
+                connection.scalar(
+                    select(func.max(candles.c.open_time)).where(
+                        candles.c.stream_id == self.stream_id
+                    )
+                ),
+            )
 
     def advance(self, generator: CandleGenerator) -> CandleEvent:
         with self.engine.begin() as connection:

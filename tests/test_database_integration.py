@@ -54,9 +54,12 @@ def test_postgres_migration_round_trip_and_health(monkeypatch):
             "alembic_version",
             "candles",
             "system_events",
+            "signals",
+            "risk_decisions",
+            "legacy_market_archive",
         }
         with TestClient(create_app(settings)) as client:
-            client.app.state.simulator.state = "running"
+            client.app.state.simulator.state = "connected"
             assert client.get("/health").status_code == 200
             command.downgrade(config, "base")
             degraded = client.get("/health")

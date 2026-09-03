@@ -1,5 +1,6 @@
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 
 metadata = MetaData()
 candles = Table(
@@ -24,12 +26,14 @@ candles = Table(
     Column("provider", String(32), nullable=False, server_default="simulator"),
     Column("open_time", DateTime(timezone=True), nullable=False),
     Column("close_time", DateTime(timezone=True), nullable=False),
-    Column("open", Numeric(24, 4), nullable=False),
-    Column("high", Numeric(24, 4), nullable=False),
-    Column("low", Numeric(24, 4), nullable=False),
-    Column("close", Numeric(24, 4), nullable=False),
+    Column("open", Numeric(28, 10), nullable=False),
+    Column("high", Numeric(28, 10), nullable=False),
+    Column("low", Numeric(28, 10), nullable=False),
+    Column("close", Numeric(28, 10), nullable=False),
     Column("volume", BigInteger, nullable=False),
-    Column("regime", String(16), nullable=False),
+    Column("regime", String(16), nullable=True),
+    Column("is_closed", Boolean, nullable=False, server_default="true"),
+    CheckConstraint("is_closed", name="ck_candles_closed"),
     UniqueConstraint("stream_id", "sequence", name="uq_candles_stream_sequence"),
     UniqueConstraint("provider", "symbol", "timeframe", "open_time", name="uq_candles_market_time"),
     CheckConstraint("sequence > 0 AND volume >= 0", name="ck_candles_sequence_volume"),
@@ -79,4 +83,14 @@ risk_decisions = Table(
     Column("reason", String(255), nullable=False),
     Column("decided_at", DateTime(timezone=True), nullable=False),
     CheckConstraint("decision IN ('APPROVED', 'REJECTED')", name="ck_risk_decisions_type"),
+)
+
+# Immutable evidence from the pre-validation provider. Never exposed as market data.
+legacy_market_archive = Table(
+    "legacy_market_archive",
+    metadata,
+    Column("kind", String(32), primary_key=True),
+    Column("record_id", Uuid, primary_key=True),
+    Column("payload", JSONB, nullable=False),
+    Column("reason", String(128), nullable=False),
 )

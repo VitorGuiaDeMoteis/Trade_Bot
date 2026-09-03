@@ -20,6 +20,7 @@ from services.api.main import create_app
 from services.api.market_store import MarketStore
 from services.api.models import candles, system_events
 from services.api.simulator_runtime import SimulatorRuntime
+from services.market_data.simulator import SimulatorMarketDataProvider
 from services.market_simulator.generator import CandleGenerator
 
 pytestmark = [
@@ -49,12 +50,23 @@ def market(monkeypatch):
     )
     engine = create_database_engine(settings)
     with engine.begin() as connection:
-        connection.execute(text("TRUNCATE system_events, candles"))
+        connection.execute(
+            text("TRUNCATE risk_decisions, signals, system_events, candles, legacy_market_archive")
+        )
     generator = CandleGenerator(SimulationSpec())
     store = MarketStore(engine, generator.spec.stream_id)
-    yield settings, engine, generator, store
-    engine.dispose()
-    get_settings.cache_clear()
+    try:
+        yield settings, engine, generator, store
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "TRUNCATE risk_decisions, signals, system_events, "
+                    "candles, legacy_market_archive"
+                )
+            )
+        engine.dispose()
+        get_settings.cache_clear()
 
 
 def test_atomic_persistence_before_visibility_and_publication(market):
@@ -125,7 +137,7 @@ def test_rest_limits_pagination_watermark_and_stream_reset(market):
         body = initial.json()
         assert [c["sequence"] for c in body["candles"]] == [6, 7, 8]
         assert body["cursor"] == body["high_watermark"] == 8
-        assert body["schema_version"] == "1.0"
+        assert body["schema_version"] == "2.0"
         assert isinstance(body["candles"][0]["open"], str)
         page = client.get("/api/v1/market/candles?after=2&limit=3").json()
         assert [c["sequence"] for c in page["candles"]] == [3, 4, 5]
@@ -155,7 +167,7 @@ def test_snapshot_to_websocket_race_replay_and_status(market):
             assert event["event_type"] == "market.candle.closed"
             status = socket.receive_json()
             assert status["type"] == "stream.status"
-            assert status["simulator"]["state"] == "stopped"
+            assert status["market_data"]["state"] == "stopped"
             third = store.advance(generator)
             assert socket.receive_json()["event_id"] == str(third.event_id)
         with client.websocket_connect(
@@ -172,7 +184,7 @@ def test_empty_snapshot_and_simulator_stopped_health(market):
         assert body["cursor"] == 0
         health = client.get("/health")
         assert health.status_code == 503
-        assert health.json()["simulator"]["state"] == "stopped"
+        assert health.json()["market_data"]["state"] == "stopped"
 
 
 def test_runtime_runs_stops_and_recovers_from_real_database_error(market):
@@ -180,15 +192,17 @@ def test_runtime_runs_stops_and_recovers_from_real_database_error(market):
 
     async def scenario():
         runtime = SimulatorRuntime(
-            settings.model_copy(update={"simulator_enabled": True}), store, generator
+            settings.model_copy(update={"simulator_enabled": True}),
+            store,
+            SimulatorMarketDataProvider(generator.spec),
         )
         runtime.start()
         try:
             for _ in range(100):
-                if runtime.status().state == "running":
+                if runtime.status().state == "connected":
                     break
                 await asyncio.sleep(0.02)
-            assert runtime.status().state == "running"
+            assert runtime.status().state == "connected"
             assert store.history(10).cursor > 0
             runtime.last_progress = monotonic() - 100
             assert runtime.status().state == "stalled"
@@ -215,10 +229,10 @@ def test_runtime_runs_stops_and_recovers_from_real_database_error(market):
                 )
         try:
             for _ in range(100):
-                if runtime.status().state == "running":
+                if runtime.status().state == "connected":
                     break
                 await asyncio.sleep(0.02)
-            assert runtime.status().state == "running"
+            assert runtime.status().state == "connected"
         finally:
             await runtime.stop()
 
@@ -238,4 +252,4 @@ def test_real_connection_failure_rest_health_and_runtime(market):
         health = client.get("/health")
         assert health.status_code == 503
         assert health.json()["database"] == "down"
-        assert health.json()["simulator"]["state"] == "degraded"
+        assert health.json()["market_data"]["state"] == "degraded"

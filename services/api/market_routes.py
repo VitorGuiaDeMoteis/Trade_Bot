@@ -25,8 +25,14 @@ def history(
     after: Annotated[int | None, Query(ge=0)] = None,
     through: Annotated[int | None, Query(ge=0)] = None,
     stream_id: UUID | None = None,
+    symbol: str | None = None,
+    timeframe: str = "1h",
 ) -> MarketSnapshot:
-    store: MarketStore = request.app.state.market
+    symbols = request.app.state.configuration.symbols
+    selected = symbol or symbols[0]
+    if selected not in symbols or timeframe != "1h":
+        raise HTTPException(422, detail="unsupported_series")
+    store: MarketStore = request.app.state.markets[selected]
     if stream_id is not None and stream_id != store.stream_id:
         raise HTTPException(409, detail="stream_changed")
     try:
@@ -37,6 +43,8 @@ def history(
         raise HTTPException(503, detail="database_unavailable") from error
     return MarketSnapshot(
         stream_id=store.stream_id,
+        symbol=selected,
+        timeframe=timeframe,
         market_data=request.app.state.simulator.status(),
         correlation_id=request.state.correlation_id,
         **asdict(page),
@@ -48,12 +56,21 @@ async def events(
     websocket: WebSocket,
     stream_id: UUID,
     after: Annotated[int, Query(ge=0)] = 0,
+    symbol: str | None = None,
+    timeframe: str = "1h",
 ) -> None:
     origin = websocket.headers.get("origin")
     if origin and urlparse(origin).hostname not in {"localhost", "127.0.0.1", "::1"}:
         await websocket.close(code=1008, reason="local_origin_required")
         return
-    store: MarketStore = websocket.app.state.market
+    stores: dict[str, MarketStore] = websocket.app.state.markets
+    selected = symbol or next(
+        (s for s, store in stores.items() if store.stream_id == stream_id), ""
+    )
+    if selected not in stores or timeframe != "1h":
+        await websocket.close(code=1008, reason="unsupported_series")
+        return
+    store = stores[selected]
     runtime: SimulatorRuntime = websocket.app.state.simulator
     if stream_id != store.stream_id:
         await websocket.close(code=1008, reason="stream_changed")
@@ -77,7 +94,7 @@ async def events(
                 await websocket.send_json(
                     {
                         "type": "stream.status",
-                        "schema_version": "1.0",
+                        "schema_version": "2.0",
                         "stream_id": str(store.stream_id),
                         "cursor": cursor,
                         "correlation_id": str(uuid4()),
