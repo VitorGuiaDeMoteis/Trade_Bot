@@ -100,13 +100,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health", response_model=HealthResponse, responses={503: {"model": HealthResponse}})
     def health(request: Request, response: Response) -> HealthResponse:
         database = check_database(request.app.state.database)
-        provider_status = request.app.state.simulator.provider.get_status()
-        state = provider_status.get("state", "offline")
+        provider_status = request.app.state.simulator.status()
+        state = provider_status.state
         ready = database == "up" and state == "connected"
         response.status_code = 200 if ready else 503
         response.headers["Cache-Control"] = "no-store"
         
-        mode = "DADOS REAIS / EXECUÇÃO SIMULADA" if provider_status.get("provider") != "simulator" else "SIMULADO"
+        mode = "DADOS REAIS / EXECUÇÃO SIMULADA" if provider_status.provider != "simulator" else "SIMULADO"
         
         return HealthResponse(
             status="ok" if ready else "degraded",

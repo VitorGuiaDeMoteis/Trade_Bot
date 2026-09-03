@@ -31,7 +31,7 @@ candles = Table(
     Column("volume", BigInteger, nullable=False),
     Column("regime", String(16), nullable=False),
     UniqueConstraint("stream_id", "sequence", name="uq_candles_stream_sequence"),
-    UniqueConstraint("stream_id", "open_time", name="uq_candles_stream_time"),
+    UniqueConstraint("provider", "symbol", "timeframe", "open_time", name="uq_candles_market_time"),
     CheckConstraint("sequence > 0 AND volume >= 0", name="ck_candles_sequence_volume"),
     CheckConstraint(
         '"low" > 0 AND "low" <= "open" AND "low" <= "close" AND '

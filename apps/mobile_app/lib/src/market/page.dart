@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'chart.dart';
 import 'controller.dart';
+import 'models.dart';
 
 class MarketPage extends StatefulWidget {
   const MarketPage({super.key, this.controller});
@@ -47,17 +48,37 @@ class _MarketPageState extends State<MarketPage> {
             final label = switch (state) {
               MarketConnectionState.loading => 'Carregando',
               MarketConnectionState.connecting => 'Conectando',
-              MarketConnectionState.live => 'Conectado',
-              MarketConnectionState.offline => 'Offline',
+              MarketConnectionState.connected => 'Conectado',
+              MarketConnectionState.reconnecting => 'Reconectando',
+              MarketConnectionState.market_closed => 'Mercado Fechado',
+              MarketConnectionState.delayed => 'Atrasado',
               MarketConnectionState.degraded => 'Degradado',
-              MarketConnectionState.error => 'Erro de conexão',
+              MarketConnectionState.offline => 'Offline',
+              MarketConnectionState.configuration_error => 'Erro Config',
+            };
+            final stateColor = switch (state) {
+              MarketConnectionState.connected => Colors.green,
+              MarketConnectionState.market_closed => Colors.grey,
+              MarketConnectionState.reconnecting => Colors.orange,
+              MarketConnectionState.delayed => Colors.yellow,
+              MarketConnectionState.degraded => Colors.deepOrange,
+              MarketConnectionState.configuration_error => Colors.red,
+              _ => null,
+            };
+            final stateIcon = switch (state) {
+              MarketConnectionState.connected => Icons.wifi,
+              MarketConnectionState.market_closed => Icons.nightlight_round,
+              MarketConnectionState.delayed => Icons.timer,
+              MarketConnectionState.reconnecting => Icons.sync,
+              _ => Icons.wifi_off,
             };
             final warning = [
               MarketConnectionState.offline,
               MarketConnectionState.degraded,
-              MarketConnectionState.error,
+              MarketConnectionState.configuration_error,
             ].contains(state);
             final info = controller.marketData;
+            final availableSymbols = info?.symbols ?? [];
             return Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1200),
@@ -82,9 +103,8 @@ class _MarketPageState extends State<MarketPage> {
                           liveRegion: true,
                           child: _Badge(
                             label: label,
-                            icon: state == MarketConnectionState.live
-                                ? Icons.wifi
-                                : Icons.wifi_off,
+                            icon: stateIcon,
+                            color: stateColor,
                           ),
                         ),
                         if (info?.provider == 'alpaca')
@@ -95,11 +115,25 @@ class _MarketPageState extends State<MarketPage> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    Text(
-                      '${info?.symbols?.join(', ') ?? 'TEST'} / 1h',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 4),
+                    if (availableSymbols.isNotEmpty)
+                      SegmentedButton<String>(
+                        segments: availableSymbols
+                            .map((s) => ButtonSegment<String>(
+                                  value: s,
+                                  label: Text(s),
+                                ))
+                            .toList(),
+                        selected: {controller.selectedSymbol},
+                        onSelectionChanged: (Set<String> newSelection) {
+                          controller.setSymbol(newSelection.first);
+                        },
+                      )
+                    else
+                      Text(
+                        '${controller.selectedSymbol} / 1h',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    const SizedBox(height: 12),
                     Text(
                       info?.provider != 'simulator'
                           ? 'Ativos reais · candles fechados · relógio em UTC'
@@ -111,7 +145,7 @@ class _MarketPageState extends State<MarketPage> {
                       runSpacing: 4,
                       children: [
                         Text(
-                          '${controller.candles.length} candles carregados',
+                          '${controller.filteredCandles.length} candles carregados para ${controller.selectedSymbol}',
                           key: const Key('candle-count'),
                         ),
                         Text(
@@ -150,8 +184,8 @@ class _MarketPageState extends State<MarketPage> {
                       const Center(child: Text('Buscando histórico simulado…')),
                     ],
                     const SizedBox(height: 16),
-                    if (controller.candles.isNotEmpty)
-                      CandleChart(candles: controller.candles)
+                    if (controller.filteredCandles.isNotEmpty)
+                      CandleChart(candles: controller.filteredCandles)
                     else if (state != MarketConnectionState.loading)
                       const Card(
                         child: Padding(
@@ -178,9 +212,10 @@ class _MarketPageState extends State<MarketPage> {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({required this.label, required this.icon});
+  const _Badge({required this.label, required this.icon, this.color});
   final String label;
   final IconData icon;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -193,7 +228,7 @@ class _Badge extends StatelessWidget {
       child: Wrap(
         spacing: 6,
         crossAxisAlignment: WrapCrossAlignment.center,
-        children: [Icon(icon, size: 18), Text(label)],
+        children: [Icon(icon, size: 18, color: color), Text(label, style: color != null ? TextStyle(color: color, fontWeight: FontWeight.bold) : null)],
       ),
     ),
   );

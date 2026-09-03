@@ -11,6 +11,7 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 
 from packages.contracts.provider import MarketDataProvider
+from packages.contracts.market import MarketDataStatus
 from packages.domain.market import Candle, Regime
 
 logger = logging.getLogger("trading_bot.market_data.alpaca")
@@ -21,9 +22,9 @@ class AlpacaMarketDataProvider(MarketDataProvider):
         api_key: str,
         secret_key: str,
         stream_id: UUID,
-        feed: str = "iex",
-        symbols: list[str] = ["SPY"],
-        timeframe: str = "1h"
+        feed: str,
+        symbols: list[str],
+        timeframe: str,
     ):
         self.api_key = api_key
         self.secret_key = secret_key
@@ -31,9 +32,10 @@ class AlpacaMarketDataProvider(MarketDataProvider):
         self.feed = feed
         self.symbols = symbols
         self.timeframe = timeframe
-        self.state = "offline"
-        self.last_event_at = None
         self.sequence_counter = 0
+        self._state = "offline"
+        self._last_event_at = None
+        self._error = None
 
     def _generate_candle_id(self, symbol: str, open_time: datetime) -> tuple[UUID, UUID]:
         candle_id = uuid5(self.stream_id, f"{symbol}-{open_time.isoformat()}")
@@ -52,7 +54,7 @@ class AlpacaMarketDataProvider(MarketDataProvider):
         start_dt = end_dt - timedelta(days=limit / 8 + 5) # Rough estimation for 1h bars
         
         params = {
-            "symbols": self.symbols[0],
+            "symbols": ",".join(self.symbols),
             "timeframe": "1Hour",
             "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -66,32 +68,31 @@ class AlpacaMarketDataProvider(MarketDataProvider):
             data = response.json()
             
         candles = []
-        symbol = self.symbols[0]
-        bars = data.get("bars", {}).get(symbol, [])
-        for bar in bars:
-            open_time = datetime.strptime(bar["t"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-            stream_id, candle_id = self._generate_candle_id(symbol, open_time)
-            
-            symbol_idx = self.symbols.index(symbol) if symbol in self.symbols else 0
-            det_sequence = int(open_time.timestamp()) * 100 + symbol_idx
-            
-            c = Candle(
-                candle_id=candle_id,
-                stream_id=stream_id,
-                sequence=det_sequence,
-                symbol=symbol,
-                timeframe=self.timeframe,
-                provider="alpaca",
-                open_time=open_time,
-                close_time=open_time + timedelta(hours=1),
-                open=Decimal(str(bar["o"])),
-                high=Decimal(str(bar["h"])),
-                low=Decimal(str(bar["l"])),
-                close=Decimal(str(bar["c"])),
-                volume=int(bar["v"]),
-                regime="sideways" # Placeholder
-            )
-            candles.append(c)
+        for symbol, bars in data.get("bars", {}).items():
+            for bar in bars:
+                open_time = datetime.strptime(bar["t"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+                stream_id, candle_id = self._generate_candle_id(symbol, open_time)
+                
+                symbol_idx = self.symbols.index(symbol) if symbol in self.symbols else 0
+                det_sequence = int(open_time.timestamp()) * 100 + symbol_idx
+                
+                c = Candle(
+                    candle_id=candle_id,
+                    stream_id=stream_id,
+                    sequence=det_sequence,
+                    symbol=symbol,
+                    timeframe=self.timeframe,
+                    provider="alpaca",
+                    open_time=open_time,
+                    close_time=open_time + timedelta(hours=1),
+                    open=Decimal(str(bar["o"])),
+                    high=Decimal(str(bar["h"])),
+                    low=Decimal(str(bar["l"])),
+                    close=Decimal(str(bar["c"])),
+                    volume=int(bar["v"]),
+                    regime="sideways",  # default regime until strategy updates it
+                )
+                candles.append(c)
         return candles
 
     async def subscribe(self) -> AsyncIterator[Candle]:
@@ -99,7 +100,7 @@ class AlpacaMarketDataProvider(MarketDataProvider):
         uri = f"wss://stream.data.alpaca.markets/v2/{self.feed}"
         while True:
             try:
-                self.state = "connecting"
+                self._state = "connecting"
                 async with websockets.connect(uri) as ws:
                     # 1. Wait for connected
                     msg = await ws.recv()
@@ -112,18 +113,18 @@ class AlpacaMarketDataProvider(MarketDataProvider):
                     logger.info(f"Alpaca WS auth: {msg}")
                     
                     # 3. Subscribe
-                    sub = {"action": "subscribe", "bars": [self.symbols[0]]}
+                    sub = {"action": "subscribe", "bars": self.symbols}
                     await ws.send(json.dumps(sub))
                     msg = await ws.recv()
                     logger.info(f"Alpaca WS subscribe: {msg}")
                     
-                    self.state = "connected"
+                    self._state = "connected"
                     
                     # 4. Listen
                     while True:
                         msg = await ws.recv()
                         events = json.loads(msg)
-                        self.last_event_at = datetime.now(UTC)
+                        self._last_event_at = datetime.now(UTC)
                         
                         for event in events:
                             if event.get("T") == "b":
@@ -152,15 +153,17 @@ class AlpacaMarketDataProvider(MarketDataProvider):
                                 )
                                 yield c
             except (ConnectionClosed, OSError, Exception) as e:
-                self.state = "offline"
+                self._state = "offline"
+                self._error = str(e)
                 logger.warning(f"Alpaca WS disconnected: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
 
-    def get_status(self) -> dict:
-        return {
-            "provider": "alpaca",
-            "feed": self.feed,
-            "state": self.state,
-            "symbols": self.symbols,
-            "last_event_at": self.last_event_at.isoformat() if self.last_event_at else None
-        }
+    def get_status(self) -> MarketDataStatus:
+        return MarketDataStatus(
+            provider="alpaca",
+            feed=self.feed,
+            state=self._state,
+            symbols=self.symbols,
+            last_persisted_at=self._last_event_at,
+            error=self._error
+        )

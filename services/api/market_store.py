@@ -94,13 +94,33 @@ class MarketStore:
             connection.execute(
                 select(candles, system_events)
                 .join(system_events)
-                .where(candles.c.stream_id == self.stream_id, candles.c.sequence == candle.sequence)
+                .where(
+                    (
+                        (candles.c.stream_id == self.stream_id) & (candles.c.sequence == candle.sequence)
+                    ) | (
+                        (candles.c.provider == candle.provider) & 
+                        (candles.c.symbol == candle.symbol) & 
+                        (candles.c.timeframe == candle.timeframe) & 
+                        (candles.c.open_time == candle.open_time)
+                    )
+                )
             )
             .mappings()
-            .one()
+            .first()
         )
-        if candle_response(row) != CandleResponse.model_validate(candle):
+        if row is None:
+            raise ValueError("No matching row found after conflict.")
+        
+        # We don't strictly compare candle_response(row) == candle because sequences might differ,
+        # but we can compare the core market data properties to ensure no content conflict.
+        existing_candle = candle_response(row)
+        if (existing_candle.open != candle.open or
+            existing_candle.high != candle.high or
+            existing_candle.low != candle.low or
+            existing_candle.close != candle.close or
+            existing_candle.volume != candle.volume):
             raise ValueError("Conflito de conteúdo para candle já persistido.")
+            
         return self._event(row)
 
     def append(self, candle: Candle) -> CandleEvent:

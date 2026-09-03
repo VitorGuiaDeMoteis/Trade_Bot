@@ -52,12 +52,12 @@ class SimulatorRuntime:
         provider_status = self.provider.get_status()
             
         return MarketDataStatus(
-            state=state,
-            provider=provider_status.get("provider"),
-            feed=provider_status.get("feed"),
-            symbols=provider_status.get("symbols"),
-            last_persisted_at=self.last_persisted_at,
-            error=self.error,
+            state=provider_status.state if provider_status.state != "offline" else state,
+            provider=provider_status.provider,
+            feed=provider_status.feed,
+            symbols=provider_status.symbols,
+            last_persisted_at=self.last_persisted_at or provider_status.last_persisted_at,
+            error=self.error or provider_status.error,
         )
 
     async def _run(self) -> None:

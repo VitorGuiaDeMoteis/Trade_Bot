@@ -109,6 +109,9 @@ def test_health_reports_simulator_not_ready(settings, state):
     with patch("services.api.main.check_database", return_value="up"):
         with TestClient(create_app(settings)) as client:
             client.app.state.simulator.state = state
-            response = client.get("/health")
+            client.app.state.simulator.provider._state = "offline"
+            # mock get_status to return the right state
+            with patch.object(client.app.state.simulator.provider, 'get_status', return_value=type('obj', (object,), {'state': state, 'provider': 'simulator', 'feed': 'local', 'symbols': ['TEST'], 'last_persisted_at': None, 'error': None})):
+                response = client.get("/health")
     assert response.status_code == 503
-    assert response.json()["simulator"]["state"] == state
+    assert response.json()["market_data"]["state"] == state

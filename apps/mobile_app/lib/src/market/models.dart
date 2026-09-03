@@ -1,5 +1,42 @@
 typedef Json = Map<String, dynamic>;
 
+enum MarketConnectionState {
+  loading,
+  connecting,
+  connected,
+  reconnecting,
+  market_closed,
+  delayed,
+  degraded,
+  offline,
+  configuration_error,
+}
+
+MarketConnectionState parseMarketState(String raw) {
+  switch (raw) {
+    case 'connected':
+    case 'running':
+    case 'live':
+      return MarketConnectionState.connected;
+    case 'connecting':
+      return MarketConnectionState.connecting;
+    case 'reconnecting':
+      return MarketConnectionState.reconnecting;
+    case 'market_closed':
+      return MarketConnectionState.market_closed;
+    case 'delayed':
+      return MarketConnectionState.delayed;
+    case 'degraded':
+      return MarketConnectionState.degraded;
+    case 'configuration_error':
+    case 'error':
+      return MarketConnectionState.configuration_error;
+    case 'offline':
+    default:
+      return MarketConnectionState.offline;
+  }
+}
+
 class Candle {
   Candle.fromJson(Json json)
     : id = json['candle_id'] as String,
@@ -21,7 +58,6 @@ class Candle {
         volume < 0 ||
         !openTime.isUtc ||
         !closeTime.isUtc ||
-        closeTime.difference(openTime) != const Duration(hours: 1) ||
         prices.any((value) => !value.isFinite || value <= 0) ||
         prices[1] < prices[0] ||
         prices[1] < prices[3] ||
@@ -39,11 +75,13 @@ class Candle {
 class MarketDataInfo {
   MarketDataInfo.fromJson(Json json)
     : state = json['state'] as String,
+      connectionState = parseMarketState(json['state'] as String),
       provider = json['provider'] as String?,
       feed = json['feed'] as String?,
       symbols = (json['symbols'] as List?)?.cast<String>();
 
   final String state;
+  final MarketConnectionState connectionState;
   final String? provider;
   final String? feed;
   final List<String>? symbols;

@@ -1,5 +1,6 @@
 import abc
 from packages.domain.market import Candle
+from packages.contracts.market import MarketDataStatus
 from typing import AsyncIterator
 
 class MarketDataProvider(abc.ABC):
@@ -14,6 +15,6 @@ class MarketDataProvider(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_status(self) -> dict:
+    def get_status(self) -> MarketDataStatus:
         """Get provider health status."""
         pass

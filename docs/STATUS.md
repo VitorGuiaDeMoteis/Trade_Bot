@@ -1,6 +1,6 @@
 # Status — Trading Bot Dashboard v0.1
 
-Data: 2026-09-03. Marco autorizado: **M1.5 — Real Market Data (em andamento)**. **M1 implementado e validado**. Estrutura do **M2** (Strategy/Risk) implementada, porém será temporariamente suspensa/adaptada para a integração de dados reais do M1.5.
+Data: 2026-09-03. Marco autorizado: **M1.5 — Real Market Data (concluído)**. Estrutura do **M2** (Strategy/Risk) implementada, porém aguardando liberação para envio de ordens.
 ## Implementado
 
 - Monorepo e especificação preservada na raiz.
@@ -11,8 +11,12 @@ Data: 2026-09-03. Marco autorizado: **M1.5 — Real Market Data (em andamento)**
 - Dependências fixadas em `uv.lock` e `pubspec.lock`.
 - Ruff, mypy, pytest, Flutter analyze e testes de layout/acessibilidade.
 - Módulos separados e reservados para mercado, estratégia, risco e execução.
-- Documentos STATUS, DECISIONS, RUNBOOK, SECURITY e DEMO.
-
+- Integração real com API da Alpaca (WebSocket/REST) via `MarketDataProvider`.
+- Suporte a múltiplos ativos simultâneos (`SPY,AAPL,TSLA`).
+- Identificadores de candles (Stream ID, Event IDs, Sequences) determinísticos e idempotentes baseados em provedor e tempo.
+- Dashboard Flutter com seletor de ativo (SPY/AAPL/TSLA), gráfico real-time filtrado e feedback visual de status (Conectado/Fechado).
+- Testes robustos de backend, incluindo testes de integração do banco e endpoints de saúde, mockando com sucesso dados da Alpaca.
+- Prevenção rigorosa a conflitos e duplicidades de candles no PostgreSQL via constraints únicas multi-colunas.
 ## Ambiente detectado
 
 | Comando | Resultado |

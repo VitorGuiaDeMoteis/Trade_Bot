@@ -26,9 +26,10 @@ Este pacote congela o escopo da v0.1 antes da implementação. O objetivo da pri
 
 Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar candles, saldo simulado, P&L, posições, sinais, decisões do risco e status do sistema em tempo real. O sistema pode ser reiniciado sem duplicar ordens e possui um botão funcional para bloquear novas operações.
 
-## Implementação atual: M1 — Fatia vertical visual
+## Implementação atual: M1.5 — Real Market Data
 
-M0 foi aprovado pelo usuário. M1 adiciona **candles fictícios TEST / 1h**: geração determinística, PostgreSQL, snapshot REST, eventos WebSocket e gráfico Flutter. A demo avança uma hora virtual a cada dois segundos, claramente marcada como **ACELERADA**. Estratégia, risco ativo, ordens, posições, lucro, corretoras e IA continuam fora da implementação. M2 depende de nova aprovação.
+O M1.5 foi concluído, conectando a aplicação à **Alpaca API** para coletar dados reais (SPY, AAPL, TSLA) usando a feed IEX (ou SIP).
+O dashboard Flutter foi atualizado para possuir um seletor de ativos, refletindo com precisão os dados que vêm via WebSocket, atualizando no banco de dados e enviando broadcast para os clientes simultaneamente. A persistência é absolutamente idempotente e segura, resistindo a desconexões e duplicações. Estratégia, risco ativo, ordens e posições (M2) aguardam aprovação para ativação.
 
 ### Pré-requisitos
 

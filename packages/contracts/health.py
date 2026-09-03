@@ -20,4 +20,4 @@ class HealthResponse(BaseModel):
     database: Literal["up", "down", "schema_pending"]
     checked_at: datetime
     correlation_id: UUID
-    market_data: dict
+    market_data: MarketDataStatus

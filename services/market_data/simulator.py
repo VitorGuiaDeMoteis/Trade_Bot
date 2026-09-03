@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from packages.contracts.provider import MarketDataProvider
+from packages.contracts.market import MarketDataStatus
 from packages.domain.market import Candle, SimulationSpec
 from services.market_simulator.generator import CandleGenerator
 from typing import AsyncIterator
@@ -29,10 +30,10 @@ class SimulatorMarketDataProvider(MarketDataProvider):
             yield candle
             await asyncio.sleep(self.interval_seconds)
 
-    def get_status(self) -> dict:
-        return {
-            "provider": "simulator",
-            "feed": "local",
-            "state": "connected",
-            "symbols": ["TEST"]
-        }
+    def get_status(self) -> MarketDataStatus:
+        return MarketDataStatus(
+            provider="simulator",
+            feed="local",
+            state="connected",
+            symbols=["TEST"]
+        )
