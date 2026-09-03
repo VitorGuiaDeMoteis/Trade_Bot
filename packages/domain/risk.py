@@ -1,11 +1,12 @@
 """Definição de domínio para Decisões do Motor de Risco."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
 DecisionType = Literal["APPROVED", "REJECTED"]
+
 
 @dataclass(frozen=True)
 class RiskDecision:
@@ -22,4 +23,4 @@ class RiskDecision:
             raise ValueError("Toda decisão de rejeição deve ter uma justificativa (reason).")
         if self.decision == "APPROVED" and not self.reason:
             # Mesmo aprovado, é bom ter um reason padrão como 'OK' ou justificativa do limite
-            pass 
+            pass

@@ -1,11 +1,12 @@
 """Definição de domínio para Sinais gerados pelas Estratégias."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
 SignalType = Literal["BUY", "SELL", "HOLD"]
+
 
 @dataclass(frozen=True)
 class Signal:

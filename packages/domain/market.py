@@ -6,6 +6,8 @@ from decimal import Decimal
 from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from packages.domain.timeframes import timeframe_duration
+
 Regime = Literal["uptrend", "downtrend", "sideways", "volatile"]
 
 
@@ -43,7 +45,8 @@ class Candle:
     low: Decimal
     close: Decimal
     volume: int
-    regime: Regime
+    regime: Regime | None
+    is_closed: bool = True
 
     def __post_init__(self) -> None:
         prices = (self.open, self.high, self.low, self.close)
@@ -57,5 +60,5 @@ class Candle:
             0
         ):
             raise ValueError("Timestamps devem estar em UTC.")
-        if self.close_time - self.open_time != timedelta(hours=1):
+        if self.close_time - self.open_time != timeframe_duration(self.timeframe):
             raise ValueError("Candle deve representar exatamente uma hora fechada.")

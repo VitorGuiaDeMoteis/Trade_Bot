@@ -8,6 +8,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from packages.domain.market import Regime
 
 SimulatorState = Literal["starting", "running", "stopped", "degraded", "stalled"]
+ProviderState = Literal[
+    "connecting",
+    "connected",
+    "reconnecting",
+    "market_closed",
+    "delayed",
+    "degraded",
+    "offline",
+    "configuration_error",
+    "starting",
+    "stopped",
+    "stalled",
+]
 
 
 class CandleResponse(BaseModel):
@@ -26,14 +39,15 @@ class CandleResponse(BaseModel):
     low: Decimal
     close: Decimal
     volume: int = Field(ge=0)
-    regime: Regime
+    regime: Regime | None
+    is_closed: bool
 
 
 class CandleEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["event"] = "event"
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["2.0"] = "2.0"
     event_id: UUID
     event_type: Literal["market.candle.closed"] = "market.candle.closed"
     occurred_at: datetime
@@ -46,16 +60,22 @@ class CandleEvent(BaseModel):
 class MarketDataStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    state: str
+    state: ProviderState
     provider: str | None = None
     feed: str | None = None
     symbols: list[str] | None = None
     last_persisted_at: datetime | None = None
     error: str | None = None
+    timeframe: str = "1h"
+    session: str | None = None
+    last_message_at: datetime | None = None
+    last_bar_at: datetime | None = None
+    accelerated: bool = False
+    interval_seconds: float | None = None
 
 
 class MarketSnapshot(BaseModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["2.0"] = "2.0"
     stream_id: UUID
     symbol: str = "TEST"
     timeframe: str = "1h"

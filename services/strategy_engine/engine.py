@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from packages.domain.market import Candle
-from packages.domain.strategy import Signal
+from packages.domain.strategy import Signal, SignalType
 
 
 class BaseStrategy:
@@ -12,7 +12,11 @@ class BaseStrategy:
 
     def process_candle(self, candle: Candle, current_time: datetime) -> Signal:
         """Processa um candle e retorna um sinal determinístico."""
-        signal_type = "HOLD"
+        if not candle.is_closed or (
+            candle.provider == "alpaca" and candle.close_time > current_time
+        ):
+            raise ValueError("partial_candle")
+        signal_type: SignalType = "HOLD"
         if candle.close > candle.open:
             signal_type = "BUY"
         elif candle.close < candle.open:

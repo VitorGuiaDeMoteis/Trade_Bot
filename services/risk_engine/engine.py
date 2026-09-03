@@ -8,9 +8,11 @@ from packages.domain.strategy import Signal
 
 
 class RiskEngine:
-    def evaluate(self, signal: Signal, current_time: datetime, system_paused: bool = False) -> RiskDecision:
+    def evaluate(
+        self, signal: Signal, current_time: datetime, system_paused: bool = False
+    ) -> RiskDecision:
         """Avalia um sinal emitido pela estratégia e aprova ou bloqueia."""
-        
+
         if system_paused:
             return RiskDecision(
                 decision_id=uuid4(),

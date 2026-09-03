@@ -1,10 +1,10 @@
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 from packages.domain.market import Candle
-from services.strategy_engine.engine import BaseStrategy
 from services.risk_engine.engine import RiskEngine
+from services.strategy_engine.engine import BaseStrategy
 
 
 def test_strategy_generates_correct_signals():
