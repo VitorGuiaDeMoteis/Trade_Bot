@@ -2,7 +2,20 @@
 
 Resultados anteriores pertencem a [DEMO-M1](DEMO-M1.md). O estado atual e os comandos executados estão em [STATUS](STATUS.md); instalação e recuperação em [RUNBOOK](RUNBOOK.md).
 
-## Demonstrado nesta correção
+## Histórico Alpaca real no Xiaomi — aprovado em 2026-09-03, 21:14 BRT
+
+Xiaomi 1791a20e conectado por USB, backend Alpaca/IEX existente reutilizado e estado market_closed tratado normalmente. Foram conferidos 200 candles por ativo na API/PostgreSQL, replay interno e navegação física SPY → AAPL → TSLA → SPY. O último OHLCV exibido coincide com o registro da série selecionada.
+
+Capturas em retrato, revisadas sem overflow visível:
+
+- [SPY](evidence/m15-real-xiaomi-spy-portrait.png).
+- [AAPL](evidence/m15-real-xiaomi-aapl-portrait.png).
+- [TSLA](evidence/m15-real-xiaomi-tsla-portrait.png).
+- [Retorno para SPY](evidence/m15-real-xiaomi-spy-return-portrait.png).
+
+O app normal ficou aberto em SPY. Streaming externo durante sessão regular e uma nova hora fechada ao vivo permanecem pendentes. Esta validação não inicia M2/M3.
+
+## Histórico da rodada anterior — demonstração simulada
 
 1. Backend corrigido em modo simulator, PostgreSQL na revisão 0006_m15_integrity e /health 200.
 2. APK normal instalado e aberto no Xiaomi 23073RPBFG, serial 1791a20e, Android 15.
@@ -20,7 +33,7 @@ Capturas revisadas:
 
 São **dados simulados no código corrigido**, não prova de Alpaca real.
 
-## Próxima demonstração de dados reais — ainda pendente
+## Roteiro de dados reais — etapas de histórico concluídas; streaming pendente
 
 1. Confirmar as credenciais localmente e habilitar explicitamente RUN_ALPACA_SMOKE_TEST=1.
 2. Executar o smoke limitado. Mercado regular fechado deve informar streaming not validated.

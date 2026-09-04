@@ -1,0 +1,122 @@
+{
+  "checked_at": "2026-09-04T00:12:42.883050+00:00",
+  "series": [
+    {
+      "symbol": "SPY",
+      "rest_count": 200,
+      "database_count": 200,
+      "signals": 200,
+      "risk_decisions": 200,
+      "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6",
+      "cursor": 200,
+      "last_candle": {
+        "candle_id": "cf1d5b2d-2933-51ea-91b7-241926548b47",
+        "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6",
+        "sequence": 200,
+        "symbol": "SPY",
+        "timeframe": "1h",
+        "provider": "alpaca",
+        "open_time": "2026-09-03T20:00:00Z",
+        "close_time": "2026-09-03T21:00:00Z",
+        "open": "773.1150000000",
+        "high": "773.1150000000",
+        "low": "772.3900000000",
+        "close": "772.3900000000",
+        "volume": 300,
+        "regime": null,
+        "is_closed": true
+      },
+      "rest_equals_postgres": true,
+      "quarantine_excluded": true,
+      "internal_ws_replay": "passed"
+    },
+    {
+      "symbol": "AAPL",
+      "rest_count": 200,
+      "database_count": 200,
+      "signals": 200,
+      "risk_decisions": 200,
+      "stream_id": "c1ec6034-ce95-5044-a099-96e7f195c5ac",
+      "cursor": 200,
+      "last_candle": {
+        "candle_id": "1cc9a7f8-a8c6-5771-ab0d-eac6621a4144",
+        "stream_id": "c1ec6034-ce95-5044-a099-96e7f195c5ac",
+        "sequence": 200,
+        "symbol": "AAPL",
+        "timeframe": "1h",
+        "provider": "alpaca",
+        "open_time": "2026-09-03T19:00:00Z",
+        "close_time": "2026-09-03T20:00:00Z",
+        "open": "327.1600000000",
+        "high": "328.7300000000",
+        "low": "327.1000000000",
+        "close": "328.2200000000",
+        "volume": 174776,
+        "regime": null,
+        "is_closed": true
+      },
+      "rest_equals_postgres": true,
+      "quarantine_excluded": true,
+      "internal_ws_replay": "passed"
+    },
+    {
+      "symbol": "TSLA",
+      "rest_count": 200,
+      "database_count": 200,
+      "signals": 200,
+      "risk_decisions": 200,
+      "stream_id": "cdf141d4-c891-57b4-a548-41e7183e2693",
+      "cursor": 200,
+      "last_candle": {
+        "candle_id": "82a58ad3-beed-55c1-aefa-046b7f80e9df",
+        "stream_id": "cdf141d4-c891-57b4-a548-41e7183e2693",
+        "sequence": 200,
+        "symbol": "TSLA",
+        "timeframe": "1h",
+        "provider": "alpaca",
+        "open_time": "2026-09-03T20:00:00Z",
+        "close_time": "2026-09-03T21:00:00Z",
+        "open": "377.4700000000",
+        "high": "377.4700000000",
+        "low": "377.4700000000",
+        "close": "377.4700000000",
+        "volume": 53,
+        "regime": null,
+        "is_closed": true
+      },
+      "rest_equals_postgres": true,
+      "quarantine_excluded": true,
+      "internal_ws_replay": "passed"
+    }
+  ],
+  "regular_session_streaming": "not_validated",
+  "new_live_hour": "not_validated",
+  "health": {
+    "schema_version": "1.1",
+    "service": "trading-bot-api",
+    "version": "0.1.0",
+    "mode": "DADOS REAIS / EXECUÇÃO SIMULADA",
+    "status": "ok",
+    "database": "up",
+    "checked_at": "2026-09-04T00:12:43.241192Z",
+    "correlation_id": "e66aaa40-6560-4ada-bd55-50f9dcd73fa8",
+    "market_data": {
+      "state": "market_closed",
+      "provider": "alpaca",
+      "feed": "iex",
+      "symbols": [
+        "SPY",
+        "AAPL",
+        "TSLA"
+      ],
+      "last_persisted_at": "2026-09-03T23:49:05.270015Z",
+      "error": null,
+      "timeframe": "1h",
+      "session": "regular",
+      "last_message_at": "2026-09-03T23:50:41.527316Z",
+      "last_bar_at": "2026-09-03T21:00:00Z",
+      "accelerated": false,
+      "interval_seconds": null
+    }
+  }
+}

@@ -28,7 +28,7 @@ Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar cand
 
 ## Implementação atual: M1.5 — Real Market Data
 
-**M1.5 — em validação.** As correções de timeframe, cursor, idempotência e seletor SPY/AAPL/TSLA possuem testes offline e PostgreSQL real. O fluxo com Alpaca real até o tablet ainda está pendente e não é comprovado pelos testes com fakes.
+**M1.5 — validado parcialmente.** Histórico Alpaca real SPY/AAPL/TSLA confirmado no PostgreSQL, REST, replay interno e Flutter no Xiaomi, com 200 candles por ativo e capturas físicas. Continuam pendentes streaming Alpaca durante sessão regular e uma nova hora fechada recebida ao vivo. Veja as evidências atuais em [STATUS](docs/STATUS.md).
 O escopo autorizado é dados de mercado e análise/decisão simulada. Trading API, ordens e executor permanecem proibidos. Veja resultados efetivamente executados em [STATUS](docs/STATUS.md).
 
 ### Pré-requisitos
@@ -70,7 +70,7 @@ O serial é o Xiaomi utilizado no aceite; substitua pelo retorno de `adb devices
 
 Pare qualquer backend anterior antes da migração. A revisão atual é `0006_m15_integrity`: registros Alpaca antigos de origem horária não comprovada são preservados em quarentena com seus eventos/sinais/decisões. Não são mostrados como dados horários válidos. Veja o [runbook de migração](docs/RUNBOOK.md).
 
-### Dados reais — etapa pendente
+### Dados reais — histórico validado; streaming ao vivo pendente
 
 Somente Alpaca **Market Data**. `ALPACA_API_KEY_ID` e `ALPACA_API_SECRET_KEY` ficam no `.env` local; nunca no chat ou Flutter. Configure `MARKET_DATA_PROVIDER=alpaca`, feed `iex`, símbolos `SPY,AAPL,TSLA` e timeframe `1h`. A sessão PowerShell pode sobrescrever o provider do arquivo.
 

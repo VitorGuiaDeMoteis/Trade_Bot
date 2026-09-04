@@ -1,16 +1,68 @@
 # Status — Trading Bot Dashboard v0.1
 
-## **M1.5 — Validação de Dados Reais concluída parcialmente.** As correções de timeframe, cursor, idempotência e seletor SPY/AAPL/TSLA foram validadas com PostgreSQL real, histórico real da Alpaca (SPY, AAPL, TSLA) via REST e WS interno persistido. O escopo autorizado é dados de mercado e análise/decisão simulada. Trading API, ordens e executor permanecem proibidos.
+## M1.5 — validação parcial: histórico Alpaca real no Xiaomi aprovado
+
+Histórico real SPY/AAPL/TSLA validado no PostgreSQL, REST, replay WebSocket interno e Flutter no Xiaomi. Ainda faltam streaming Alpaca durante sessão regular e uma nova hora fechada recebida ao vivo. O escopo permanece dados reais + análise/decisão simulada; nenhuma ordem ou Trading API.
 
 ### Validação Real (Mercado Fechado)
+
 * Alpaca REST real ✅
 * Histórico real SPY/AAPL/TSLA ✅
 * PostgreSQL real ✅
 * REST Trade_Bot ✅
 * WS interno/replay ✅
-* Flutter Xiaomi com histórico Alpaca real ⏳ pendente (dispositivo offline)
+* Idempotência ✅ — restart registrado na etapa anterior; consultas/replay e unicidade conferidos nesta rodada
+* Flutter Xiaomi com histórico Alpaca real ✅
 * Alpaca streaming ao vivo ⏳ pendente de sessão regular
 * nova hora fechada recebida ao vivo ⏳ pendente
+
+### Evidência atual — 2026-09-03, a partir de 21:11 BRT
+
+Base desta rodada: f49bbe25e76feb67a4f464eead577579afa16fad na branch codex/m15-data-integrity. Checkout inicialmente limpo e sincronizado com origin; pull desnecessário. O registro anterior do Gemini em d814578 documenta a obtenção do histórico Alpaca real e o teste de restart. Esta rodada validou a chegada desse histórico ao aplicativo físico; não repetiu o teste de restart nem a importação externa.
+
+| Etapa executada | Resultado observado |
+| --- | --- |
+| adb kill-server; adb start-server; adb devices -l; flutter devices | Xiaomi 23073RPBFG, 1791a20e, Android 15/API 35, arm64 disponível como device |
+| adb -s 1791a20e reverse tcp:8000 tcp:8000; reverse --list | UsbFfs tcp:8000 tcp:8000 confirmado |
+| docker compose up -d --wait | PostgreSQL saudável |
+| MARKET_DATA_PROVIDER=alpaca na sessão; uv run alembic upgrade head; current | 0006_m15_integrity (head) |
+| Backend existente em 127.0.0.1:8000, PID 89144 | Processo Alpaca válido reutilizado; nenhum backend paralelo iniciado |
+| GET /health | HTTP 200, status=ok, database=up, mode=DADOS REAIS / EXECUÇÃO SIMULADA, provider=alpaca, feed=iex, state=market_closed |
+| GET /api/v1/market/candles?symbol=SPY&timeframe=1h | 200 candles fechados SPY, apenas provider alpaca; cursor 200 |
+| Mesma consulta para AAPL e TSLA | 200 candles fechados por ativo; três stream_id distintos, nenhuma mistura |
+| Comparação REST/PostgreSQL | Todos os campos dos 600 candles retornados coincidem com as linhas ativas; UTC, OHLCV e fechamento conferidos |
+| Quarentena | Nenhum candle retornado pertence a legacy_market_archive |
+| WS interno /events por ativo, after=199 | Replay do candle 200 coincide integralmente com o último item REST nas três séries |
+| SQL após navegação | Por ativo: 200 candles, 200 identidades distintas, 200 eventos, 200 Signal, 200 RiskDecision; consultas/replay não duplicaram registros |
+| flutter run -d 1791a20e --no-resident --dart-define=API_BASE_URL=http://127.0.0.1:8000 em apps/mobile_app | APK normal compilado, instalado e aberto |
+| Toques físicos via ADB: SPY → AAPL → TSLA → SPY | Seletor, título, contagem e gráfico mudaram para a série correta; último OHLCV exibido coincide com REST |
+| Tela | DADOS REAIS, FONTE: ALPACA / IEX e Sessão regular fechada visíveis; rodapé informa análise/decisão simuladas e nenhuma ordem |
+| Capturas em retrato | Quatro imagens 1200×1920 revisadas; gráfico e textos legíveis, sem overflow visível |
+| Processo/log da aplicação | PID 25141 permaneceu ativo e em primeiro plano; sem FATAL EXCEPTION, erro Flutter ou RenderFlex overflow encontrado |
+| Restauração da rotação | free, user_rotation=0, accelerometer_rotation=1; sem mudança permanente de configuração |
+
+Valores do último candle exibido e conferido, para identificar concretamente cada série:
+
+| Ativo | Fechamento UTC | Open | High | Low | Close | Volume |
+| --- | --- | --- | --- | --- | --- | --- |
+| SPY | 2026-09-03 21:00 | 773.115 | 773.115 | 772.39 | 772.39 | 300 |
+| AAPL | 2026-09-03 20:00 | 327.16 | 328.73 | 327.10 | 328.22 | 174776 |
+| TSLA | 2026-09-03 21:00 | 377.47 | 377.47 | 377.46 | 377.47 | 534 |
+
+Evidências atuais:
+
+- [SPY em retrato](evidence/m15-real-xiaomi-spy-portrait.png).
+- [AAPL em retrato](evidence/m15-real-xiaomi-aapl-portrait.png).
+- [TSLA em retrato](evidence/m15-real-xiaomi-tsla-portrait.png).
+- [Retorno para SPY](evidence/m15-real-xiaomi-spy-return-portrait.png).
+- [Comparação de API, PostgreSQL e replay](evidence/m15-real-xiaomi-api-validation.json).
+- [Sequência de navegação e restauração da rotação](evidence/m15-real-xiaomi-ui-validation.json).
+
+A sessão regular estava fechada. Replay de registros já persistidos não comprova streaming externo nem nova hora ao vivo. Essas duas validações continuam pendentes. O aplicativo ficou aberto em SPY, usando o backend Alpaca existente.
+
+Nesta rodada somente documentação/evidências foram alteradas. O .env foi preservado; nenhum segredo foi exibido ou incorporado às evidências. Não foi necessário alterar código de produção ou testes; as suítes anteriores não foram reexecutadas como se fossem novos resultados. Build, execução física, REST/DB/replay e revisão visual foram efetivamente executados. M2/M3 não foram iniciados.
+
+Os registros abaixo descrevem rodadas anteriores e suas pendências **à época**. A validação do Xiaomi real descrita acima substitui a pendência anterior de dispositivo offline/histórico real no tablet.
 
 ## Histórico M0
 

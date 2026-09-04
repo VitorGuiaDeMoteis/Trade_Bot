@@ -1,0 +1,55 @@
+{
+  "checked_at": "2026-09-04T00:14:23.342853+00:00",
+  "device": "1791a20e",
+  "original_rotation": {
+    "mode": "free",
+    "user_rotation": "0"
+  },
+  "steps": [
+    {
+      "symbol": "SPY",
+      "selected": true,
+      "candles": 200,
+      "chart": "60 candles",
+      "last_ohlcv_matches_rest": true,
+      "state": "market_closed",
+      "screenshot": "docs/evidence/m15-real-xiaomi-spy-portrait.png",
+      "selected_chip_bounds": "[35,249][177,333]"
+    },
+    {
+      "symbol": "AAPL",
+      "selected": true,
+      "candles": 200,
+      "chart": "60 candles",
+      "last_ohlcv_matches_rest": true,
+      "state": "market_closed",
+      "screenshot": "docs/evidence/m15-real-xiaomi-aapl-portrait.png",
+      "selected_chip_bounds": "[161,249][321,333]"
+    },
+    {
+      "symbol": "TSLA",
+      "selected": true,
+      "candles": 200,
+      "chart": "60 candles",
+      "last_ohlcv_matches_rest": true,
+      "state": "market_closed",
+      "screenshot": "docs/evidence/m15-real-xiaomi-tsla-portrait.png",
+      "selected_chip_bounds": "[300,249][457,333]"
+    },
+    {
+      "symbol": "SPY",
+      "selected": true,
+      "candles": 200,
+      "chart": "60 candles",
+      "last_ohlcv_matches_rest": true,
+      "state": "market_closed",
+      "screenshot": "docs/evidence/m15-real-xiaomi-spy-return-portrait.png",
+      "selected_chip_bounds": "[35,249][177,333]"
+    }
+  ],
+  "restored_rotation": {
+    "mode": "free",
+    "user_rotation": "0",
+    "accelerometer_rotation": "1"
+  }
+}
