@@ -57,6 +57,15 @@ def test_postgres_migration_round_trip_and_health(monkeypatch):  # type: ignore
             "signals",
             "risk_decisions",
             "legacy_market_archive",
+            "paper_runs",
+            "paper_events",
+            "paper_marks",
+            "portfolio_snapshots",
+            "positions",
+            "system_controls",
+            "paper_orders",
+            "paper_fills",
+            "paper_outcomes",
         }
         with TestClient(create_app(settings)) as client:
             client.app.state.simulator.state = "connected"  # type: ignore

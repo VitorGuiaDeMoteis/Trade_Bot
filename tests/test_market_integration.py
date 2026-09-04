@@ -51,7 +51,12 @@ def market(monkeypatch):  # type: ignore
     engine = create_database_engine(settings)
     with engine.begin() as connection:
         connection.execute(
-            text("TRUNCATE risk_decisions, signals, system_events, candles, legacy_market_archive")
+            text(
+                "TRUNCATE risk_decisions, signals, system_events, candles, "
+                "legacy_market_archive, paper_runs, system_controls, paper_events, "
+                "paper_marks, portfolio_snapshots, positions, paper_orders, paper_fills, "
+                "paper_outcomes CASCADE"
+            )
         )
     generator = CandleGenerator(SimulationSpec())
     store = MarketStore(engine, generator.spec.stream_id)
@@ -61,8 +66,10 @@ def market(monkeypatch):  # type: ignore
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "TRUNCATE risk_decisions, signals, system_events, "
-                    "candles, legacy_market_archive"
+                    "TRUNCATE risk_decisions, signals, system_events, candles, "
+                    "legacy_market_archive, paper_runs, system_controls, paper_events, "
+                    "paper_marks, portfolio_snapshots, positions, paper_orders, paper_fills, "
+                    "paper_outcomes CASCADE"
                 )
             )
         engine.dispose()

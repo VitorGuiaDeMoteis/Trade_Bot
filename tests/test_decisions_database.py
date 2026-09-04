@@ -60,8 +60,8 @@ def test_decisions_series_order_limit_read_only_and_database_failure(market: Mar
     with engine.connect() as connection:
         before = connection.execute(select(risk_decisions)).all()
     with TestClient(create_app(settings)) as client:
-        client.app.state.markets = stores  # type: ignore[union-attr]
-        client.app.state.configuration = settings.model_copy(  # type: ignore[union-attr]
+        client.app.state.markets = stores  # type: ignore[attr-defined]
+        client.app.state.configuration = settings.model_copy(  # type: ignore[attr-defined]
             update={"market_symbols": "SPY,AAPL,TSLA", "market_data_provider": "alpaca"}
         )
         for symbol in stores:

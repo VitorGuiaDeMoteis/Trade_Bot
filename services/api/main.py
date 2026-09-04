@@ -17,6 +17,7 @@ from services.api.database import check_database, create_database_engine
 from services.api.decisions_routes import router as decisions_router
 from services.api.market_routes import router as market_router
 from services.api.market_store import MarketStore
+from services.api.paper_routes import router as paper_router
 from services.api.simulator_runtime import SimulatorRuntime
 from services.market_data.alpaca_provider import AlpacaMarketDataProvider
 from services.market_data.simulator import SimulatorMarketDataProvider
@@ -70,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Trading Bot Dashboard", version="0.1.0", lifespan=lifespan)
     app.include_router(market_router)
     app.include_router(decisions_router)
+    app.include_router(paper_router)
 
     @app.middleware("http")
     async def request_context(

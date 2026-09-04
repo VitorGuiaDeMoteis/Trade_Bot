@@ -89,8 +89,20 @@ def test_schema_readiness(table, revisions, expected):  # type: ignore
 def test_no_control_or_trading_routes(settings):  # type: ignore
     with TestClient(create_app(settings)) as client:
         paths = client.get("/openapi.json").json()["paths"]
-    assert set(paths) == {"/health", "/api/v1/market/candles", "/api/v1/decisions"}
-    assert all(set(methods) == {"get"} for methods in paths.values())
+    assert set(paths) == {
+        "/health",
+        "/api/v1/market/candles",
+        "/api/v1/decisions",
+        "/api/v1/paper/portfolio",
+        "/api/v1/paper/positions",
+        "/api/v1/paper/orders",
+        "/api/v1/paper/fills",
+        "/api/v1/paper/pause",
+    }
+    assert all(
+        set(methods) == {"get"} for path, methods in paths.items() if path != "/api/v1/paper/pause"
+    )
+    assert set(paths["/api/v1/paper/pause"]) == {"post"}
 
 
 def test_settings_reject_nonlocal_environment():  # type: ignore

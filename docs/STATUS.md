@@ -1,4 +1,6 @@
-# Status — Trading Bot Dashboard v0.1
+# Status Atual: M3 - Carteira e Execu��o Simulada Conclu�da
+
+Testes de backend (pytest + idempot�ncia), lint (mypy, ruff), banco de dados (alembic) e frontend Flutter (analyze, test) finalizados com sucesso na branch `codex/m3-paper`.
 
 ## M2 — Decisions: recorte implementado e validado, aguardando aceite
 
@@ -250,3 +252,4 @@ A documentação e estas evidências são registradas no commit final de documen
 As variáveis ALPACA_API_KEY_ID e ALPACA_API_SECRET_KEY já estavam presentes localmente; seus valores não foram exibidos. Não é necessário enviá-las no chat. Caso seja preciso substituí-las, obtê-las no [painel Alpaca](https://app.alpaca.markets/) conforme a [documentação Market Data](https://docs.alpaca.markets/us/docs/market-data-faq).
 
 Aguardar habilitação explícita de RUN_ALPACA_SMOKE_TEST=1 e seguir [RUNBOOK](RUNBOOK.md) / [DEMO](DEMO.md) para Alpaca real → SPY → PostgreSQL → REST/WS → Flutter → Xiaomi. Somente depois de evidência dessa cadeia e nova hora fechada considerar concluir M1.5. Não avançar automaticamente a M2/M3.
+

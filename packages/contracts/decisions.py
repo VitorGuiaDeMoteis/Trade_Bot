@@ -1,3 +1,4 @@
+
 """Read-only, versioned observation of persisted strategy and risk decisions."""
 
 from datetime import datetime
@@ -7,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from packages.contracts.market import CandleResponse, MarketDataStatus
+from packages.contracts.paper import PaperFill, PaperOrder
 from packages.domain.risk import DecisionType
 from packages.domain.strategy import SignalType
 
@@ -33,10 +35,20 @@ class RiskResponse(BaseModel):
     decided_at: datetime
 
 
+
+
+class PaperDecisionResponse(BaseModel):
+    status: str
+    run_id: UUID | None = None
+    order: PaperOrder | None = None
+    fill: PaperFill | None = None
+
+
 class DecisionItem(BaseModel):
     candle: CandleResponse
     signal: SignalResponse
     risk: RiskResponse
+    paper: PaperDecisionResponse | None = None
 
 
 class DecisionsSnapshot(BaseModel):
