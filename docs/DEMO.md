@@ -1,3 +1,20 @@
+# Demo M4 — núcleo por CLI
+
+1. Seguir [freeze/run](M4_CORE.md#executar-no-powershell) para congelar candles do
+   PostgreSQL local. Não retomar a carteira paper.
+2. Rodar duas vezes o mesmo manifest e comparar SHA-256 dos relatórios completos.
+3. Ler `metrics`, `equity_curve`, `trades`, `outcomes` e `positions` no JSON;
+   todos pertencem a BACKTEST. Dinheiro é string Decimal, não float.
+4. Confirmar as contas e os testes de ausência de look-ahead/isolamento PostgreSQL
+   descritos em [M4_CORE](M4_CORE.md#evidências-de-2026-09-04).
+
+Demonstração executada: 600 candles, 130 roundtrips encerrados, 261 fills e uma
+posição aberta; dois relatórios idênticos, carteira corrente ainda pausada e
+inalterada. [Métricas exatas e hashes](evidence/m4-metrics.json).
+Não há demonstração visual/tablet neste recorte autorizado.
+
+---
+
 # Demo M3 — pausa física validada
 
 Xiaomi 23073RPBFG, 1791a20e, Android 15: abrir Carteira Simulada, observar RUNNING,

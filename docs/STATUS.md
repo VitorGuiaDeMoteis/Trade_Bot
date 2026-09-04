@@ -1,3 +1,41 @@
+# M4 — núcleo implementado e validado (2026-09-04)
+
+Branch `codex/m4-backtesting`, base `fc4aee8d20198a8656c5f375ce9e0b16da423614`.
+Backtest offline compartilhando Strategy/Risk/PaperExecutor, dataset congelado,
+replay determinístico e exportação JSON com todas as métricas do núcleo M4.
+Sem Flutter, gráficos, Trading API, IA ou M5; sem merge. Aceite do núcleo entregue
+para revisão; replay visual/dashboard permanecem fora do recorte autorizado.
+
+**Gates finais:** `uv run ruff format --check .` (96 arquivos), `uv run ruff check .`,
+`uv run mypy` (55 arquivos), `uv run mypy scripts/backtest.py`: OK.
+`docker compose --profile test up -d --wait postgres postgres_test`: ambos Healthy.
+`$env:RUN_DB_TESTS='1'; uv run pytest -q`: **204 passed**, 155 unitários + 49 PostgreSQL.
+26 casos M4 novos. `uv run alembic check` no banco dedicado 5433: nenhuma alteração.
+Warning de depreciação Starlette/AnyIO permanece, sem falhas.
+
+Duas execuções CLI do mesmo manifest de 600 candles SPY/AAPL/TSLA produziram bytes
+idênticos. Retorno 0.8559355356%, drawdown 0.7875952672%, 130 trades, win rate
+29.2307692308%, lucro médio 10.0828772665 USD, perda média -3.2624657118 USD,
+profit factor 1.2765396068. Capital 10000 USD, fee 1 bps, slippage 5 bps.
+Tabelas da carteira paper idênticas antes/depois; controle permaneceu pausado.
+
+Bug corrigido: Candle com float falhava com AttributeError; agora rejeita
+explicitamente não Decimal com ValueError, coberto por regressão.
+Docker voltou a falhar em dockerInference, causando erros de conexão nas primeiras
+integrações. Sockets preservados com sufixo `.stale-20260904075820`, WSL exclusivo
+Docker terminado e Desktop reiniciado: recuperação sem reset/exclusão de volumes.
+Validações foram repetidas com sucesso. Recorrência do problema Docker continua
+sendo limitação ambiental. Nenhuma mudança global de SDK/Android; Xiaomi não foi
+revalidado porque este recorte exclui Flutter.
+
+[Comandos completos, invariantes, testes, resultados e limites](M4_CORE.md).
+[Métricas e hashes versionados](evidence/m4-metrics.json). Logs completos locais:
+`.artifacts/m4-all-tests.txt`, `.artifacts/m4-unit-final.txt`; manifest e dois
+relatórios em `.artifacts/m4-*.json`. Próximo passo depende da revisão do usuário;
+M5 não iniciado. Registros abaixo são históricos.
+
+---
+
 # M3 — blocker de pausa resolvido em 2026-09-04
 
 **M3 acceptance: APPROVED.** Base `ffd94fb33c408d7ea1f192c2e189b999f9a4b654`.

@@ -1,3 +1,23 @@
+# Decisões M4 — núcleo (2026-09-04)
+
+- Backtest como orquestrador offline dos domínios existentes; contabilidade continua
+  exclusivamente em PaperExecutor/PaperBook, sizing em risco. Sem estratégia nova.
+- PostgreSQL fornece snapshot READ ONLY/REPEATABLE READ; manifest e relatório JSON
+  separados da carteira corrente. Sem tabela/migração nova nem retomada do paper.
+- Ordenação temporal por OPEN/símbolo e fases OPEN → fills → CLOSE → sinais,
+  mantendo as regras M3. Overlap entre grupos é erro; nenhum fechamento futuro no sizing.
+- Reinício reexecuta o manifest inteiro. SHA-256, versões e UUID5 estabilizam saída;
+  artefato publicado atomicamente. Alterar regras exige incrementar a versão.
+- Operação = roundtrip encerrado. Win rate/médias/profit factor líquidos de fees;
+  slippage já embutido nos preços. Sem liquidação final artificial. Drawdown por
+  fechamento, capital inicial como pico inicial; métricas indefinidas usam null.
+- Relatório marcado BACKTEST; pausa da carteira corrente preservada. Replay visual
+  e dashboard excluídos por solicitação explícita; não declarar M4 visual concluído.
+
+[Definições, justificativas, fórmulas e evidências](M4_CORE.md).
+
+---
+
 # Decisão M3 — STOP sem segredo permanente (2026-09-04)
 
 Adotada permissão local monotônica: o aplicativo só pode reduzir autoridade por STOP.

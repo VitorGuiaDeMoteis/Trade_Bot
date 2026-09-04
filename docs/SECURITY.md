@@ -1,3 +1,21 @@
+# Segurança M4 — pesquisa isolada (2026-09-04)
+
+Backtest não tem endpoint de execução, conexão externa, credencial própria nem
+acesso de escrita à carteira. Freeze usa transação PostgreSQL READ ONLY; run lê
+somente JSON local, sem carregar Settings/.env. Todos os resultados são BACKTEST.
+O controle STOP e a pausa da carteira corrente permanecem com o contrato M3.
+Backtesting histórico isolado não chama resume/reset e não aumenta sua autoridade.
+
+Checksum, validação temporal/OHLCV/Decimal e reconciliação falham de forma explícita;
+nenhum resultado parcial é publicado. Hashes não substituem autenticidade frente
+a um atacante local com permissão de escrita. JSON não executa código. Não incluir
+credenciais nos arquivos ou versionar `.env`; manifests e relatórios completos
+ficam em `.artifacts` ignorado pelo Git. Nenhuma Trading API ou IA foi adicionada.
+
+[Limites e evidências](M4_CORE.md). Entradas posteriores nesta página são históricas.
+
+---
+
 # Segurança M3 — STOP local (2026-09-04)
 
 A regra atual do controle de pausa está em [M3_STOP](M3_STOP.md). STOP não usa mais

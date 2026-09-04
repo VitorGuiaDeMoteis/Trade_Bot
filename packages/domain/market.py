@@ -50,7 +50,7 @@ class Candle:
 
     def __post_init__(self) -> None:
         prices = (self.open, self.high, self.low, self.close)
-        if not all(p.is_finite() and p > 0 for p in prices):
+        if not all(isinstance(p, Decimal) and p.is_finite() and p > 0 for p in prices):
             raise ValueError("Preços devem ser decimais positivos e finitos.")
         if not self.low <= min(self.open, self.close) <= max(self.open, self.close) <= self.high:
             raise ValueError("OHLC inválido.")

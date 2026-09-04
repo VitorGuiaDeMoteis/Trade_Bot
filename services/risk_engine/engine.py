@@ -8,6 +8,8 @@ from packages.domain.strategy import Signal
 
 
 class RiskEngine:
+    VERSION = "m2-expiry-1h"
+
     def evaluate(
         self, signal: Signal, current_time: datetime, system_paused: bool = False
     ) -> RiskDecision:

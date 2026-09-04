@@ -1,3 +1,24 @@
+# Executar núcleo M4 — backtest offline
+
+[Comandos de freeze/run, testes e Alembic](M4_CORE.md#executar-no-powershell).
+`uv run python -m scripts.backtest --help` lista a CLI. Freeze consulta apenas
+candles locais já persistidos. Run usa somente o manifest JSON; não precisa de
+banco/API, credencial Alpaca nem retomada da carteira paper.
+
+Resultados completos em `.artifacts`; métricas da demonstração em
+[evidence/m4-metrics.json](evidence/m4-metrics.json). Para transportar um backtest,
+leve o manifest congelado junto da versão do código; repetir o freeze em outro
+histórico pode mudar o hash. Não editar conteúdo mantendo checksum anterior.
+
+Recuperação Docker observada em 2026-09-04: diretórios de sockets preservados como
+`C:\Users\vitor\AppData\Local\Docker\run.stale-20260904075820` e
+`C:\Users\vitor\AppData\Local\docker-secrets-engine.stale-20260904075820`.
+Desktop reiniciado após encerrar apenas sua distribuição WSL; bancos Healthy.
+Não usar factory reset nem apagar volumes para esse erro. Verificar processos e
+caminhos antes de nova intervenção; recuperação não elimina a causa recorrente.
+
+---
+
 # Controle de pausa M3 — contrato atual
 
 Siga [M3_STOP](M3_STOP.md#executar) para iniciar o backend com --no-proxy-headers,

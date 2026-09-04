@@ -26,12 +26,18 @@ Este pacote congela o escopo da v0.1 antes da implementação. O objetivo da pri
 
 Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar candles, saldo simulado, P&L, posições, sinais, decisões do risco e status do sistema em tempo real. O sistema pode ser reiniciado sem duplicar ordens e possui um botão funcional para bloquear novas operações.
 
-## Implementação atual: M2 — Decisions em desenvolvimento
+## Implementação atual: M4 — núcleo de backtesting
 
-O recorte M2 acrescenta consulta somente leitura de estratégia e risco: `GET /api/v1/decisions` e tela **Decisões** no Flutter, com motivos persistidos, contagens e detalhe OHLCV/UTC. Migração atual: `0007_m2_decisions`. HOLD significa SEM AÇÃO. Não existe executor ou ordem. Aceite do M2 ainda depende de revisão do usuário.
+M3 tem carteira e executor paper local, reconciliados, com STOP pelo app e retomada
+somente por CLI. O núcleo M4 acrescenta backtest offline reutilizando Strategy,
+Risk e PaperExecutor, dataset congelado, replay determinístico e relatório JSON.
+Migração atual: `0008_m3_paper`; nenhum acesso à Trading API.
 
-**M1.5 — validado parcialmente.** Histórico Alpaca real SPY/AAPL/TSLA confirmado no PostgreSQL, REST, replay interno e Flutter no Xiaomi, com 200 candles por ativo e capturas físicas. Continuam pendentes streaming Alpaca durante sessão regular e uma nova hora fechada recebida ao vivo. Veja as evidências atuais em [STATUS](docs/STATUS.md).
-O escopo autorizado é dados de mercado e análise/decisão simulada. Trading API, ordens e executor permanecem proibidos. Veja resultados efetivamente executados em [STATUS](docs/STATUS.md).
+[Executar e verificar M4](docs/M4_CORE.md) · [STATUS](docs/STATUS.md) ·
+[Métricas produzidas](docs/evidence/m4-metrics.json).
+Somente o núcleo M4 foi autorizado: Flutter, gráficos e replay visual permanecem
+fora desta entrega, assim como IA e M5. Alpaca existente é somente Market Data;
+freeze lê histórico já persistido e run não usa rede nem banco.
 
 ### Pré-requisitos
 

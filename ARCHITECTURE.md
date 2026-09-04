@@ -80,6 +80,15 @@ Responsabilidades:
 - atualizar saldo e posições;
 - publicar eventos de ordem e execução.
 
+### `backtesting` (núcleo M4)
+
+Orquestrador offline de Strategy/Risk/PaperExecutor, sem lógica financeira paralela.
+Congela candles do PostgreSQL em transação somente leitura, ordena grupos de OPEN
+cross-asset, executa sinais anteriores e só então revela CLOSEs à estratégia.
+Publica manifest e relatório JSON atômicos, com versões, hashes, métricas e modo
+BACKTEST. Não escreve na carteira corrente nem expõe comandos remotos. Replay
+visual não integra o recorte atual. [Contrato e invariantes](docs/M4_CORE.md).
+
 ### `database`
 
 PostgreSQL como fonte persistente de verdade.
