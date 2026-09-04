@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../decisions/controller.dart';
+import '../decisions/page.dart';
 
 import 'api.dart';
 import 'chart.dart';
@@ -8,9 +10,10 @@ import 'controller.dart';
 import 'models.dart';
 
 class MarketPage extends StatefulWidget {
-  const MarketPage({super.key, this.controller});
+  const MarketPage({super.key, this.controller, this.decisionsController});
 
   final MarketController? controller;
+  final DecisionsController? decisionsController;
 
   @override
   State<MarketPage> createState() => _MarketPageState();
@@ -89,6 +92,23 @@ class _MarketPageState extends State<MarketPage> {
                     Text(
                       'TRADING BOT',
                       style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => DecisionsPage(
+                              controller: widget.decisionsController,
+                            ),
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                        ),
+                        icon: const Icon(Icons.account_tree_outlined),
+                        label: const Text('Decisões'),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Wrap(

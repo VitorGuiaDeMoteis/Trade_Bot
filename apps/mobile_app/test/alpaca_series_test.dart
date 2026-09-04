@@ -223,7 +223,7 @@ void main() {
         expect(find.text('DADOS REAIS'), findsOneWidget);
         expect(find.text('SIMULADO'), findsNothing);
         final chip = find.widgetWithText(ChoiceChip, 'AAPL');
-        await tester.ensureVisible(chip);
+        await tester.scrollUntilVisible(chip, 120);
         await tester.pump();
         expect(tester.getSize(chip).height, greaterThanOrEqualTo(48));
         await tester.tap(chip);

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'decisions/controller.dart';
 
 import 'market/controller.dart';
 import 'market/page.dart';
 
 class TradingBotApp extends StatelessWidget {
-  const TradingBotApp({super.key, this.controller});
+  const TradingBotApp({super.key, this.controller, this.decisionsController});
 
   final MarketController? controller;
+  final DecisionsController? decisionsController;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +32,10 @@ class TradingBotApp extends StatelessWidget {
           ),
         ),
       ),
-      home: MarketPage(controller: controller),
+      home: MarketPage(
+        controller: controller,
+        decisionsController: decisionsController,
+      ),
     );
   }
 }
