@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     paper_initial_cash: Decimal = Field(default=Decimal("10000.00"), ge=0)
     paper_fee_bps: Decimal = Field(default=Decimal("1.0"), ge=0)
     paper_slippage_bps: Decimal = Field(default=Decimal("5.0"), ge=0)
-    paper_control_token: SecretStr | None = None
     simulator_seed: int = 42
     simulator_start: datetime = datetime(2026, 1, 1, tzinfo=UTC)
     simulator_interval_seconds: float = Field(default=2.0, ge=0.1, le=3600)

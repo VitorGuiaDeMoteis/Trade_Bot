@@ -1,3 +1,18 @@
+# Segurança M3 — STOP local (2026-09-04)
+
+A regra atual do controle de pausa está em [M3_STOP](M3_STOP.md). STOP não usa mais
+Bearer: aceita apenas POST vazio de peer loopback/Host local com marcador público,
+sem Origin, Referer, Sec-Fetch ou headers de proxy. Uvicorn em 127.0.0.1 com
+--no-proxy-headers, Xiaomi via adb reverse, sem proxy/LAN/publicação.
+
+Um processo local ou outro aplicativo com acesso ao túnel pode PARAR; esse risco
+residual de indisponibilidade é aceito porque não aumenta autoridade. Resume/reset
+continuam CLI. Nunca reutilizar essa permissão para executar ou retomar operações.
+Sem segredo no Flutter/APK/Git e sem Trading API. O relatório financeiro anterior
+é histórico quanto à autenticação Bearer de STOP; a proteção de execução permanece.
+
+---
+
 # Segurança — M2 / M1.5
 
 ## Escopo autorizado

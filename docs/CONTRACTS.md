@@ -1,3 +1,15 @@
+# M3 — contrato atual de STOP local
+
+POST /api/v1/paper/pause: body vazio, X-Paper-Control: stop (marcador público,
+não token), peer loopback e Host local. Origin/browser/proxy rejeitados. Resposta
+após persistência: 200 {"paused":true}. Nenhum comando false ou /resume.
+403 para origem/requisição indevida, 422 para body, 503 para banco/integridade.
+
+[Detalhes normativos e threat model](M3_STOP.md). Contratos de mercado/decisões
+abaixo mantêm seu escopo; a proibição histórica de controle M2 não se aplica ao STOP M3.
+
+---
+
 # Contratos M1.5 — versão 2.0
 
 ## M2 — GET /api/v1/decisions (envelope 1.0)

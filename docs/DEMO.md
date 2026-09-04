@@ -1,3 +1,14 @@
+# Demo M3 — pausa física validada
+
+Xiaomi 23073RPBFG, 1791a20e, Android 15: abrir Carteira Simulada, observar RUNNING,
+tocar PAUSAR SIMULAÇÃO e confirmar SIMULAÇÃO PAUSADA. Carteira permanece visível;
+aba Positions mantém TSLA 3 ações. CLI replay falha com paper_paused sem nova ordem.
+
+[Capturas, valores e roteiro executado](M3_STOP.md#testes-e-prova-física).
+O estado atual está pausado. Retomada só por ação explícita do operador na CLI.
+
+---
+
 # Demonstração — M2 Decisions / Strategy + Risk
 
 Recorte implementado, aguardando aceite do usuário. M3 não iniciado. Para executar: [RUNBOOK](RUNBOOK.md). Gates e limitações: [STATUS](STATUS.md).

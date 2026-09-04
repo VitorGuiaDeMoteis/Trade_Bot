@@ -50,7 +50,7 @@ uv sync --locked
 $env:MARKET_DATA_PROVIDER = 'simulator'
 docker compose up -d --wait
 uv run alembic upgrade head
-uv run uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --no-access-log --log-config infrastructure/docker/logging.json --ws websockets-sansio
+uv run uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --no-proxy-headers --no-access-log --log-config infrastructure/docker/logging.json --ws websockets-sansio
 ```
 
 Outro terminal na raiz:

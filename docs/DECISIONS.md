@@ -1,3 +1,15 @@
+# Decisão M3 — STOP sem segredo permanente (2026-09-04)
+
+Adotada permissão local monotônica: o aplicativo só pode reduzir autoridade por STOP.
+Descartados token permanente no APK e retomada remota. Peer/Host loopback, cabeçalho
+não secreto, corpo vazio e rejeição de navegador/proxy formam o limite local.
+Outro processo local pode causar pausa, mas não iniciar operações. CLI é o único
+caminho de retomada/reset. Nenhum mecanismo de credenciamento novo é necessário.
+
+[Justificativa completa, contrato e testes](M3_STOP.md).
+
+---
+
 # Decisões — M0 e M1
 
 Fonte oficial: README, PRODUCT, ARCHITECTURE, MILESTONES e IMPLEMENT. Nenhuma mudança de produto ou de stack.

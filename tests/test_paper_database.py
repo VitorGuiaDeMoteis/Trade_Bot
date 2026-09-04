@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from sqlalchemy import Engine, select
 from sqlalchemy.exc import IntegrityError
 from test_market_integration import market as market
@@ -40,7 +39,6 @@ pytestmark = [
     pytest.mark.skipif(os.getenv("RUN_DB_TESTS") != "1", reason="Dedicated PostgreSQL required"),
 ]
 Market = tuple[Settings, Engine, CandleGenerator, MarketStore]
-TOKEN = "test-paper-pause-only-" + "x" * 32
 
 
 def seed(
@@ -88,7 +86,6 @@ def seed(
             update={
                 "market_data_provider": "alpaca",
                 "market_symbols": ",".join(symbols),
-                "paper_control_token": SecretStr(TOKEN),
             }
         ),
     )
@@ -162,20 +159,16 @@ def test_failure_after_fill_rolls_back_whole_group(market: Market) -> None:
     assert state(store)["orders_count"] == 3
 
 
-def test_authenticated_pause_blocks_replay_preserves_positions(market: Market) -> None:
+def test_local_stop_blocks_replay_preserves_positions(market: Market) -> None:
     store = seed(market)
     store.replay(max_steps=2)
     before = state(store)
-    with TestClient(create_app(market[0])) as client:
+    with TestClient(
+        create_app(market[0]), base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50000)
+    ) as client:
         client.app.state.configuration = store.settings  # type: ignore[attr-defined]
-        assert client.post("/api/v1/paper/pause").status_code == 401
-        assert (
-            client.post(
-                "/api/v1/paper/pause", headers={"Authorization": "Bearer invalid"}
-            ).status_code
-            == 401
-        )
-        headers = {"Authorization": "Bearer " + TOKEN}
+        assert client.post("/api/v1/paper/pause").status_code == 403
+        headers = {"X-Paper-Control": "stop"}
         assert (
             client.post(
                 "/api/v1/paper/pause", headers={**headers, "Origin": "http://example.com"}
@@ -183,13 +176,14 @@ def test_authenticated_pause_blocks_replay_preserves_positions(market: Market) -
             == 403
         )
         assert client.post("/api/v1/paper/pause", headers=headers).json() == {"paused": True}
+        paused_rows = fingerprint(store.engine)
         assert client.post("/api/v1/paper/pause", headers=headers).status_code == 200
+        assert fingerprint(store.engine) == paused_rows
         with pytest.raises(PaperPaused):
             PaperStore(store.engine, store.settings).replay()
         after = client.get("/api/v1/paper/portfolio").json()
         assert after["paused"] and after["positions"] == before["positions"]
         assert after["cash"] == before["cash"] and after["orders_count"] == before["orders_count"]
-        assert TOKEN not in client.get("/api/v1/paper/portfolio").text
         for route in ("/buy", "/sell", "/order", "/reset", "/resume"):
             assert client.post("/api/v1/paper" + route).status_code == 404
     store.set_paused(False)
@@ -295,7 +289,7 @@ def test_paper_api_links_positions_orders_fills_and_empty(market: Market) -> Non
         empty = client.get("/api/v1/paper/portfolio").json()
         assert empty["status"] == "EMPTY" and empty["positions"] == []
         assert empty["currency"] == "USD" and empty["mode"] == "REPLAY"
-        assert client.post("/api/v1/paper/pause").status_code == 503
+        assert client.post("/api/v1/paper/pause").status_code == 403
         store = seed(market)
         store.replay()
         client.app.state.configuration = store.settings  # type: ignore[attr-defined]

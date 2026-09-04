@@ -1,8 +1,9 @@
-import secrets
+from ipaddress import ip_address
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 
 from packages.contracts.paper import (
     PaperFillsPage,
@@ -58,22 +59,36 @@ def get_fills(
     return PaperFillsPage(run_id=p.run_id, step=p.step, items=p.fills)
 
 
-@router.post("/pause")
-def pause(
-    request: Request, response: Response, authorization: Annotated[str | None, Header()] = None
-) -> dict[str, bool]:
-    """Only capability exposed to the app: stop. Resume/reset stay on local CLI."""
-    token = request.app.state.configuration.paper_control_token
-    if not token or len(token.get_secret_value()) < 32:
-        raise HTTPException(503, "paper_control_not_configured")
-    expected = "Bearer " + token.get_secret_value()
-    if not authorization or not secrets.compare_digest(authorization.encode(), expected.encode()):
-        raise HTTPException(401, "invalid_paper_control_token")
-    # Browser origins are never allowed to issue local commands.
-    if request.headers.get("origin"):
-        raise HTTPException(403, "browser_control_forbidden")
+def require_local_stop(request: Request) -> None:
+    """Non-secret STOP capability. Never reuse this policy for resume or execution."""
     try:
-        PaperStore(request.app.state.database, request.app.state.configuration).set_paused(True)
+        local_peer = request.client is not None and ip_address(request.client.host).is_loopback
+        local_host = request.url.hostname in {"127.0.0.1", "localhost", "::1"}
+    except ValueError:
+        local_peer, local_host = False, False
+    if not local_peer or not local_host:
+        raise HTTPException(403, "local_stop_only")
+    if any(
+        name in {"origin", "referer", "forwarded"}
+        or name.startswith(("sec-fetch-", "x-forwarded-"))
+        for name in request.headers
+    ):
+        raise HTTPException(403, "browser_or_proxy_control_forbidden")
+    # Not a password: intentional native request; browser JS would need CORS preflight.
+    if request.headers.get("x-paper-control") != "stop":
+        raise HTTPException(403, "explicit_stop_required")
+
+
+@router.post("/pause")
+async def pause(request: Request, response: Response) -> dict[str, bool]:
+    """Only local STOP. No body, secret, remote resume, reset, or order capability."""
+    require_local_stop(request)
+    async for chunk in request.stream():
+        if chunk:
+            raise HTTPException(422, "stop_body_must_be_empty")
+    try:
+        store = PaperStore(request.app.state.database, request.app.state.configuration)
+        await run_in_threadpool(store.set_paused, True)
     except SQLAlchemyError:
         raise HTTPException(503, "database_unavailable") from None
     except ValueError:

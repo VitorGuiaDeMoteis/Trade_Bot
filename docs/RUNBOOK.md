@@ -1,3 +1,16 @@
+# Controle de pausa M3 — contrato atual
+
+Siga [M3_STOP](M3_STOP.md#executar) para iniciar o backend com --no-proxy-headers,
+ligado a 127.0.0.1, e o app com API_BASE_URL por adb reverse. Não configure token
+para STOP. O app não oferece retomada; apenas `uv run python -m scripts.paper resume`
+na CLI permite retomar, seguido de replay explícito. Não executar automaticamente.
+
+Estado deixado em 2026-09-04: simulação pausada, run
+87cde257-5ae7-450b-bc80-c90dd35938ab, checkpoint 2, LONG TSLA 3 ações.
+Backup antes da demo: .artifacts/m3-stop-before.sql. Não apagar/resetar o banco.
+
+---
+
 # Execução e recuperação — M2 / M1.5
 
 Comandos PowerShell, a partir da raiz salvo indicação. Simulador não exige credencial externa. Alpaca exige chaves locais e autorização explícita do teste real. Nunca executar dois backends/produtores ao mesmo tempo.

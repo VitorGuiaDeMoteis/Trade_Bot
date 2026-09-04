@@ -1,3 +1,5 @@
+> Atualização de 2026-09-04: a política Bearer de STOP descrita neste registro histórico foi substituída pelo [STOP local sem segredo](M3_STOP.md), com testes e prova física. A auditoria financeira permanece válida.
+
 # Auditoria final M3 — 2026-09-04
 
 **M3 financial/integrity audit: APPROVED**

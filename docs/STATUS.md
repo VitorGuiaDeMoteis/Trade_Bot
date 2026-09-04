@@ -1,3 +1,27 @@
+# M3 — blocker de pausa resolvido em 2026-09-04
+
+**M3 acceptance: APPROVED.** Base `ffd94fb33c408d7ea1f192c2e189b999f9a4b654`.
+Flutter e backend agora compartilham STOP local sem segredo no APK. Peer/Host local,
+marcador não secreto, body vazio, rejeição de Origin/browser/proxy; resume/reset CLI.
+Botão PAUSAR SIMULAÇÃO; depois SIMULAÇÃO PAUSADA e instrução de CLI, sem retomada remota.
+
+Gates: Ruff format/check + mypy OK; pytest **178 passaram (132 unitários + 46 PostgreSQL)**;
+Flutter analyze limpo; Flutter test **71 passaram**; APK debug compilado e instalado.
+Busca sem Trading API externa ou controle antigo no código Flutter.
+
+Xiaomi 23073RPBFG / 1791a20e / Android 15 API35: RUNNING → toque em PAUSAR SIMULAÇÃO
+→ PAUSED. Cash USD 9084.3458912448, LONG TSLA 3 ações e 1 ordem/fill preservados.
+Tentativa CLI de replay bloqueada por paper_paused; STOP repetido idempotente;
+nenhuma alteração das tabelas paper nessas tentativas. App sem crash/overflow observado.
+Backend e tablet deixados disponíveis; simulação **pausada** no checkpoint 2/200,
+dataset congelado de 600 candles. Backup dev local antes da demonstração.
+
+[Contrato, threat model, comandos, resultados e capturas](M3_STOP.md).
+Avisos de terceiros Starlette/AnyIO e SDK XML não impediram testes/build.
+Não houve merge, avanço M4 ou alteração global de Android/SDK. Registros abaixo são históricos.
+
+---
+
 # Auditoria final M3 — 2026-09-04
 
 **M3 financial/integrity audit: APPROVED** — escopo financeiro, persistência e segurança.
