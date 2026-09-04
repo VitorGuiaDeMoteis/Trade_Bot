@@ -1,8 +1,12 @@
-# Segurança — M1.5
+# Segurança — M2 / M1.5
 
 ## Escopo autorizado
 
-Dados reais de mercado + análise/decisão simulada. A integração existente Candle → BaseStrategy → Signal → RiskEngine → RiskDecision permanece local. Nenhuma ordem, carteira, executor paper, Trading API, dinheiro real ou IA com autoridade de execução. Não avançar M2/M3.
+Dados reais de mercado + análise/decisão hipotética observável no M2. A integração existente Candle → BaseStrategy → Signal → RiskEngine → RiskDecision permanece local. Nenhuma ordem, carteira, executor paper, Trading API, dinheiro real ou IA com autoridade de execução. M3 não autorizado.
+
+Decisions é GET somente leitura, com limite 1..200, série configurada, consulta SQL parametrizada e resposta restrita ao contrato público. Não retorna Settings, chaves ou DSN. APPROVED é um registro histórico de risco; não autoriza operação. HOLD permanece SEM AÇÃO. Falha no banco retorna 503, sem detalhes de conexão. Arquivo de quarentena não participa da consulta.
+
+Migração 0007 preserva IDs, timestamps e decisões. Backfill de reason só infere a regra comprovada por versão + sinal + candle; casos desconhecidos têm explicação de legado indisponível. Backup prévio é local e ignorado pelo Git.
 
 Alpaca utiliza exclusivamente data.alpaca.markets e stream.data.alpaca.markets. O SDK alpaca-py não é necessário e foi removido. HTTP e WebSocket diretos têm timeouts e erros classificados. Calendário XNYS é local; não consulta clock/calendar da Trading API.
 

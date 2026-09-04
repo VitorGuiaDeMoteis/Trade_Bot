@@ -26,7 +26,9 @@ Este pacote congela o escopo da v0.1 antes da implementação. O objetivo da pri
 
 Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar candles, saldo simulado, P&L, posições, sinais, decisões do risco e status do sistema em tempo real. O sistema pode ser reiniciado sem duplicar ordens e possui um botão funcional para bloquear novas operações.
 
-## Implementação atual: M1.5 — Real Market Data
+## Implementação atual: M2 — Decisions em desenvolvimento
+
+O recorte M2 acrescenta consulta somente leitura de estratégia e risco: `GET /api/v1/decisions` e tela **Decisões** no Flutter, com motivos persistidos, contagens e detalhe OHLCV/UTC. Migração atual: `0007_m2_decisions`. HOLD significa SEM AÇÃO. Não existe executor ou ordem. Aceite do M2 ainda depende de revisão do usuário.
 
 **M1.5 — validado parcialmente.** Histórico Alpaca real SPY/AAPL/TSLA confirmado no PostgreSQL, REST, replay interno e Flutter no Xiaomi, com 200 candles por ativo e capturas físicas. Continuam pendentes streaming Alpaca durante sessão regular e uma nova hora fechada recebida ao vivo. Veja as evidências atuais em [STATUS](docs/STATUS.md).
 O escopo autorizado é dados de mercado e análise/decisão simulada. Trading API, ordens e executor permanecem proibidos. Veja resultados efetivamente executados em [STATUS](docs/STATUS.md).

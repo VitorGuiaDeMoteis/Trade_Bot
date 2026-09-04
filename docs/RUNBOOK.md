@@ -1,4 +1,4 @@
-# Execução e recuperação — M1.5
+# Execução e recuperação — M2 / M1.5
 
 Comandos PowerShell, a partir da raiz salvo indicação. Simulador não exige credencial externa. Alpaca exige chaves locais e autorização explícita do teste real. Nunca executar dois backends/produtores ao mesmo tempo.
 
@@ -14,7 +14,17 @@ Comandos PowerShell, a partir da raiz salvo indicação. Simulador não exige cr
     uv run alembic check
     uv run uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --no-access-log --log-config infrastructure/docker/logging.json --ws websockets-sansio
 
-Revisão esperada 0006_m15_integrity; tabelas alembic_version, candles, system_events, signals, risk_decisions e legacy_market_archive. Pare o backend anterior antes de migrar. Migração explícita antes do servidor, não por worker. PostgreSQL 17 com timezone UTC. Não renomear o projeto Compose trading-bot-m0: nome preservado para reutilizar o volume do M0.
+Revisão esperada 0007_m2_decisions; tabelas alembic_version, candles, system_events, signals, risk_decisions e legacy_market_archive. Pare o backend anterior antes de migrar. Migração explícita antes do servidor, não por worker. PostgreSQL 17 com timezone UTC. Não renomear o projeto Compose trading-bot-m0: nome preservado para reutilizar o volume do M0.
+
+## Consultar Decisions
+
+No ambiente já autorizado com histórico real, iniciar o backend com `$env:MARKET_DATA_PROVIDER = 'alpaca'` e as chaves locais existentes, sem copiá-las para o app ou comandos. Para usar apenas dados fictícios, manter simulator. Não rodar dois produtores.
+
+    curl.exe 'http://127.0.0.1:8000/api/v1/decisions?symbol=SPY&timeframe=1h&limit=50'
+
+No Flutter: Decisões → selecionar ativo → rolar → tocar no cartão → voltar. Atualizar consulta busca novamente as últimas 50; contagens se referem somente à janela exibida. Offline pode preservar a última consulta com aviso; trocar ativo limpa dados anteriores. Em simulator o ativo é TEST, não SPY/AAPL/TSLA.
+
+Antes de aplicar 0007 em outro banco, parar o backend e fazer pg_dump. A migração adiciona apenas reason e preserva o grafo; não dispara motores. O downgrade para 0006 remove esse campo e suas justificativas, portanto requer backup; não executá-lo como recuperação automática. Testes de downgrade ocorrem somente no banco descartável 5433.
 
 A migração 0006 preserva o grafo Alpaca legado em quarentena porque misturava horas/minutos. Não expõe esse conteúdo na API. Foi feito backup local em .artifacts/m15-before-quarantine.sql. Em outro ambiente, faça backup antes de migrar. Downgrade com novos candles Alpaca falha deliberadamente: exporte e planeje a reversão, sem apagar dados para contornar.
 

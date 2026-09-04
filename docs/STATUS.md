@@ -1,5 +1,73 @@
 # Status — Trading Bot Dashboard v0.1
 
+## M2 — Decisions: recorte implementado e validado, aguardando aceite
+
+Base exata: f6f8b748a264ddbaae17a7d1796eb8cdb2989862; branch codex/m2-decisions criada com working tree limpo. M1.5 permanece parcialmente validado conforme registro abaixo. M3 não iniciado; nenhuma execução.
+
+Auditoria: baseline v1-deterministic e RiskEngine já existiam; motivos de risco persistidos. Acrescentados reason no domínio/sinais, migração 0007_m2_decisions, GET /api/v1/decisions e tela Flutter acessível pelo botão Decisões no mercado. Janela de 50 registros, seleção por ativo, resumo BUY/SELL/HOLD e detalhe OHLCV/UTC/justificativas/IDs.
+
+Desenvolvimento e validação deste recorte concluídos; aceite formal do usuário pendente. O marco M2 não está marcado como aprovado. M3 não iniciado.
+
+Backup local pré-migração: .artifacts/m2-before-decisions.sql (ignorado pelo Git). Backend anterior PID 89144 encerrado após conferir comando/caminho. Migração dev aplicada até 0007; alembic check sem diferenças. Fingerprints antes/depois confirmaram preservação integral das 2.193 linhas de cada tabela ativa (candles/events/signals/risk), exceto o novo reason, e das 2.956 entradas de quarentena. Isso inclui histórico simulado e os 600 candles Alpaca. Nenhum reason precisou do fallback legado neste banco.
+
+### Comandos e resultados — 2026-09-03 BRT
+
+Gates completos repetidos pelo script `./scripts/check.ps1 -Database` após corrigir os problemas encontrados; saída final zero. Registro local integral em .artifacts/m2-quality-gates.txt. Não publicar logs brutos do Flutter/Android, pois podem conter mensagens de outros aplicativos.
+
+| Comando / verificação | Resultado |
+| --- | --- |
+| uv sync --locked | Lock preservado, dependências instaladas |
+| uv run ruff format .; uv run ruff format --check . | Formatação aplicada; 72 arquivos conformes no gate final |
+| uv run ruff check . | Sem erros |
+| uv run mypy | Sem erros em 41 arquivos de código |
+| uv run pytest -m 'not integration' | 104 passed; testes comuns bloqueiam HTTP/WS externos |
+| docker compose config --quiet | Configuração válida |
+| docker compose --profile test up -d --wait postgres postgres_test | Ambos saudáveis; dev 5432 e teste descartável 5433 |
+| $env:RUN_DB_TESTS='1'; uv run pytest -m integration | 21 passed; migrações, rollback, unicidade, API por série, backfill, ordenação e idempotência |
+| uv run alembic upgrade head; uv run alembic check | Dev em 0007_m2_decisions; nenhuma diferença de schema |
+| flutter pub get --enforce-lockfile | Lock preservado |
+| dart format lib test integration_test test_driver | Aplicado; check final sem alterações |
+| flutter analyze --fatal-infos --fatal-warnings | Sem issues |
+| flutter test | 60 passed; 18 testes novos M2, incluindo cinco viewports em 1x/2x, estados, seleção, detalhes, atraso de respostas, contraste e alvos de toque |
+| adb devices -l; flutter devices | Xiaomi 23073RPBFG / 1791a20e, Android 15 API 35 arm64 |
+| adb -s 1791a20e reverse tcp:8000 tcp:8000 | API local acessível ao aparelho |
+| flutter run -d 1791a20e --no-resident --dart-define=API_BASE_URL=http://127.0.0.1:8000 | assembleDebug/build APK e instalação normais; app iniciado, PID 3503 |
+| GET /health | HTTP 200, database=up, provider=alpaca, feed=iex, sessão regular fechada |
+| GET /api/v1/decisions?symbol=SPY/AAPL/TSLA&limit=200 | 200 por ativo; igualdade integral candle + Signal + RiskDecision com PostgreSQL (600 itens) |
+| GET Decisions com limit padrão 50 | Exatamente os primeiros 50 da consulta maior, ordenados por horário do candle |
+| OpenAPI e POST /api/v1/decisions | Apenas GET nas três rotas HTTP de negócio/saúde; POST recusado com 405; nenhuma rota de execução |
+| Checagem de resposta contra segredos locais | Nenhuma chave Alpaca presente no JSON; .env não alterado |
+
+As primeiras execuções Flutter apontaram um lint de chaves e falhas nos testes de navegação (temporizadores de fakes não encerrados, alvo fora da área visível antes de concluir o layout e seletor ainda não construído na lista). Corrigidos lint, limpeza dos controllers e rolagem/sincronização dos testes; suíte final inteira verde. Nenhum teste foi removido ou ignorado. Aviso não bloqueante remanescente: DeprecationWarning de Starlette/AnyIO; Flutter informa versões mais recentes incompatíveis com o lock atual, sem falhas.
+
+### Xiaomi e critérios de aceite demonstrados
+
+App normal com histórico real Alpaca/IEX, sem teste de integração simulador instalado por cima. Seleção SPY → AAPL → TSLA, dez horários distintos percorridos por ativo, abertura dos detalhes e comparação OHLCV com API. Exemplos reais mais recentes: SPY SELL, AAPL BUY, TSLA HOLD. Foram revisadas as capturas de timeline e detalhe: texto legível e sem overflow visível. Chips medidos em 84 px = 48 dp; botão de atualizar com 56 dp. Testes de acessibilidade também passaram.
+
+Retrato 1200x1920 e paisagem 1920x1200 testados no dispositivo. Orientação alterada temporariamente por `adb shell wm user-rotation lock 0/1` porque o aparelho estava fisicamente em paisagem; restaurados modo free e user_rotation=0 em finally. Nenhuma alteração permanente de SDK, Flutter, Android ou escala de texto. Texto 2x e celular foram validados por widgets, não por mudança global no tablet.
+
+`adb shell pidof dev.tradingbot.mobile_app` permaneceu 3503 durante a navegação. `logcat -d --pid=3503 -v brief` filtrado: nenhum FATAL EXCEPTION, E/flutter, RenderFlex overflow ou Unhandled Exception. App permaneceu executando; API única em 127.0.0.1:8000 (worker observado 96124), sem expor a rede local.
+
+| Critério | Evidência |
+| --- | --- |
+| BUY/SELL/HOLD determinísticos e explicáveis | Testes dos três candles, versão v1-deterministic e reason persistido; exemplos reais no Xiaomi |
+| No máximo um Signal por candle/versão e um RiskDecision por Signal | Constraints, rollback e duplicatas concorrentes testados; grafo preservado na migração |
+| Cada Signal do fluxo recebe RiskDecision | Gravação atômica no produtor configurado; correspondência completa dos 600 itens Alpaca |
+| Expiração e pausa bloqueiam no RiskEngine | Testes até 1h inclusive, mais de 1h rejeitado e pausa com precedência; não existe comando de pausa/execução neste recorte |
+| Timeline e detalhes auditáveis | Janela 50, contagens, ordem UTC, motivos históricos, IDs e fonte; HOLD explicitamente SEM AÇÃO |
+| Nenhuma execução | Contrato execution=NONE, testes de rotas GET e UI NENHUMA ORDEM ENVIADA |
+
+Evidências: [API/DB](evidence/m2-decisions-api-validation.json), [Xiaomi](evidence/m2-xiaomi-validation.json) e 14 screenshots `evidence/m2-xiaomi-*.png`; roteiro e links em [DEMO](DEMO.md). Código backend em 9a3a85c e Flutter/testes em 8e3fef3, ambos derivados da base pedida.
+
+### Limitações e pendências preservadas
+
+- Aceite formal deste recorte M2 pelo usuário; não avançar M3 nem fazer merge em main.
+- M1.5: streaming Alpaca durante sessão regular e recebimento automático de uma nova hora fechada ao vivo continuam pendentes.
+- As 600 avaliações reais existentes são APPROVED; REJECTED/pausa/expiração demonstrados com fakes e testes, sem fabricar histórico real.
+- Janela de 50 na UI (até 200 na API), atualização manual, sem paginação. São limites definidos para este recorte.
+- Feed histórico não armazenado no candle legado; detalhe identifica que IEX é a configuração atual.
+- APK debug e validação física Android; builds de distribuição/iOS e execução de ordens fora deste escopo.
+
 ## M1.5 — validação parcial: histórico Alpaca real no Xiaomi aprovado
 
 Histórico real SPY/AAPL/TSLA validado no PostgreSQL, REST, replay WebSocket interno e Flutter no Xiaomi. Ainda faltam streaming Alpaca durante sessão regular e uma nova hora fechada recebida ao vivo. O escopo permanece dados reais + análise/decisão simulada; nenhuma ordem ou Trading API.

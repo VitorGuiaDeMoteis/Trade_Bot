@@ -1,0 +1,175 @@
+{
+  "checked_at": "2026-09-04T00:45:00.773863+00:00",
+  "health": {
+    "schema_version": "1.1",
+    "service": "trading-bot-api",
+    "version": "0.1.0",
+    "mode": "DADOS REAIS / EXECUÇÃO SIMULADA",
+    "status": "ok",
+    "database": "up",
+    "checked_at": "2026-09-04T00:45:01.088376Z",
+    "correlation_id": "8717004e-193f-4725-9d7e-5c2699b0c630",
+    "market_data": {
+      "state": "market_closed",
+      "provider": "alpaca",
+      "feed": "iex",
+      "symbols": [
+        "SPY",
+        "AAPL",
+        "TSLA"
+      ],
+      "last_persisted_at": "2026-09-03T23:49:05.270015Z",
+      "error": null,
+      "timeframe": "1h",
+      "session": "regular",
+      "last_message_at": "2026-09-04T00:42:28.300112Z",
+      "last_bar_at": "2026-09-03T21:00:00Z",
+      "accelerated": false,
+      "interval_seconds": null
+    }
+  },
+  "symbols": {
+    "SPY": {
+      "count": 200,
+      "latest_50_counts": {
+        "SELL": 24,
+        "BUY": 24,
+        "HOLD": 2
+      },
+      "risk_counts": {
+        "APPROVED": 200
+      },
+      "latest": {
+        "candle": {
+          "candle_id": "cf1d5b2d-2933-51ea-91b7-241926548b47",
+          "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6",
+          "sequence": 200,
+          "symbol": "SPY",
+          "timeframe": "1h",
+          "provider": "alpaca",
+          "open_time": "2026-09-03T20:00:00Z",
+          "close_time": "2026-09-03T21:00:00Z",
+          "open": "773.1150000000",
+          "high": "773.1150000000",
+          "low": "772.3900000000",
+          "close": "772.3900000000",
+          "volume": 300,
+          "regime": null,
+          "is_closed": true
+        },
+        "signal": {
+          "signal_id": "fd14cdd2-e5e4-4031-adf8-f4479e86d04e",
+          "candle_id": "cf1d5b2d-2933-51ea-91b7-241926548b47",
+          "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6",
+          "strategy_version": "v1-deterministic",
+          "signal_type": "SELL",
+          "reason": "Fechamento abaixo da abertura.",
+          "generated_at": "2026-09-03T23:49:00.625718Z"
+        },
+        "risk": {
+          "decision_id": "05d15e82-c482-4a2d-b45a-c9dd8e7ff806",
+          "signal_id": "fd14cdd2-e5e4-4031-adf8-f4479e86d04e",
+          "decision": "APPROVED",
+          "reason": "Aprovado pelas regras de risco.",
+          "decided_at": "2026-09-03T23:49:00.625718Z"
+        }
+      },
+      "full_database_match": true
+    },
+    "AAPL": {
+      "count": 200,
+      "latest_50_counts": {
+        "BUY": 26,
+        "SELL": 23,
+        "HOLD": 1
+      },
+      "risk_counts": {
+        "APPROVED": 200
+      },
+      "latest": {
+        "candle": {
+          "candle_id": "1cc9a7f8-a8c6-5771-ab0d-eac6621a4144",
+          "stream_id": "c1ec6034-ce95-5044-a099-96e7f195c5ac",
+          "sequence": 200,
+          "symbol": "AAPL",
+          "timeframe": "1h",
+          "provider": "alpaca",
+          "open_time": "2026-09-03T19:00:00Z",
+          "close_time": "2026-09-03T20:00:00Z",
+          "open": "327.1600000000",
+          "high": "328.7300000000",
+          "low": "327.1000000000",
+          "close": "328.2200000000",
+          "volume": 174776,
+          "regime": null,
+          "is_closed": true
+        },
+        "signal": {
+          "signal_id": "6b6e05ce-f0d4-4318-99fb-69ef57e1db87",
+          "candle_id": "1cc9a7f8-a8c6-5771-ab0d-eac6621a4144",
+          "stream_id": "c1ec6034-ce95-5044-a099-96e7f195c5ac",
+          "strategy_version": "v1-deterministic",
+          "signal_type": "BUY",
+          "reason": "Fechamento acima da abertura.",
+          "generated_at": "2026-09-03T23:49:03.055352Z"
+        },
+        "risk": {
+          "decision_id": "4b76f07f-8037-42ce-a0f1-1a283a4088ce",
+          "signal_id": "6b6e05ce-f0d4-4318-99fb-69ef57e1db87",
+          "decision": "APPROVED",
+          "reason": "Aprovado pelas regras de risco.",
+          "decided_at": "2026-09-03T23:49:03.055352Z"
+        }
+      },
+      "full_database_match": true
+    },
+    "TSLA": {
+      "count": 200,
+      "latest_50_counts": {
+        "HOLD": 7,
+        "SELL": 20,
+        "BUY": 23
+      },
+      "risk_counts": {
+        "APPROVED": 200
+      },
+      "latest": {
+        "candle": {
+          "candle_id": "82a58ad3-beed-55c1-aefa-046b7f80e9df",
+          "stream_id": "cdf141d4-c891-57b4-a548-41e7183e2693",
+          "sequence": 200,
+          "symbol": "TSLA",
+          "timeframe": "1h",
+          "provider": "alpaca",
+          "open_time": "2026-09-03T20:00:00Z",
+          "close_time": "2026-09-03T21:00:00Z",
+          "open": "377.4700000000",
+          "high": "377.4700000000",
+          "low": "377.4700000000",
+          "close": "377.4700000000",
+          "volume": 53,
+          "regime": null,
+          "is_closed": true
+        },
+        "signal": {
+          "signal_id": "1a3daf94-9d5f-4129-95bb-eb8393e4377c",
+          "candle_id": "82a58ad3-beed-55c1-aefa-046b7f80e9df",
+          "stream_id": "cdf141d4-c891-57b4-a548-41e7183e2693",
+          "strategy_version": "v1-deterministic",
+          "signal_type": "HOLD",
+          "reason": "Abertura e fechamento equivalentes. Sem ação.",
+          "generated_at": "2026-09-03T23:49:05.270015Z"
+        },
+        "risk": {
+          "decision_id": "8d4754fd-84dd-40d9-af44-d79ea0af0389",
+          "signal_id": "1a3daf94-9d5f-4129-95bb-eb8393e4377c",
+          "decision": "APPROVED",
+          "reason": "Aprovado pelas regras de risco.",
+          "decided_at": "2026-09-03T23:49:05.270015Z"
+        }
+      },
+      "full_database_match": true
+    }
+  },
+  "db_graph_unchanged_after_migration": true
+}

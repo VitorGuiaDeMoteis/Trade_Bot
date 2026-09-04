@@ -42,6 +42,17 @@ O painter usa a API estável [CustomPainter](https://api.flutter.dev/flutter/ren
 
 Esse era o limite do M1. A base c08ddf8 já continha BaseStrategy/Signal/RiskEngine/RiskDecision; o pedido atual autoriza corrigir sua integração e idempotência, sem ampliar M2 e sem iniciar M3.
 
+## M2 — observabilidade autorizada em 2026-09-03
+
+| ID | Decisão | Motivo e limite |
+| --- | --- | --- |
+| D036 | Preservar v1-deterministic e RiskEngine existentes | close/open determina BUY/SELL/HOLD; pausa e validade de 1h permanecem. Não introduzir políticas, comandos ou executor. |
+| D037 | Reason obrigatório no domínio/DB, backfill comprovado | Explicações não pertencem ao Flutter. Só inferir motivo histórico quando versão, sinal e OHLC concordam; não reprocessar decisões. |
+| D038 | GET Decisions 1.0, janela limitada e ordem pelo candle | Últimas 50 na UI; API até 200. Sem paginação ou atualização automática neste recorte. Consulta não chama motores. |
+| D039 | Detalhe em rota Flutter rolável | Funciona com fontes grandes e paisagem, preserva a timeline ao voltar. Separar horários do candle, geração e avaliação. |
+| D040 | HOLD SEM AÇÃO; risco histórico não autoriza ordens | Compatibilidade com RiskDecision para HOLD; exibir NONE/nenhuma execução. |
+| D041 | Feed atual explicitamente distinguido de proveniência histórica | Candle legado armazena provider, não feed. Não inventar um atributo histórico a partir da configuração atual. |
+
 ## M1.5 — correções autorizadas em 2026-09-03
 
 As decisões abaixo substituem, somente no escopo autorizado, as restrições históricas incompatíveis com Alpaca Market Data. Não alteram Flutter/FastAPI nem autorizam Trading API, executor ou ordens.

@@ -1,4 +1,37 @@
-# Demonstração — M1.5 em validação
+# Demonstração — M2 Decisions / Strategy + Risk
+
+Recorte implementado, aguardando aceite do usuário. M3 não iniciado. Para executar: [RUNBOOK](RUNBOOK.md). Gates e limitações: [STATUS](STATUS.md).
+
+## Roteiro M2
+
+1. Iniciar PostgreSQL, aplicar `alembic upgrade head` (0007_m2_decisions) e iniciar um único backend. Neste ambiente, usar a configuração Alpaca já autorizada e o histórico persistido; não inserir credenciais no app.
+2. Confirmar `/health` HTTP 200 e consultar `/api/v1/decisions?symbol=SPY&timeframe=1h&limit=50`.
+3. Abrir o app normal no Xiaomi via USB/adb reverse. Na tela de mercado, tocar **Decisões**.
+4. Selecionar SPY, AAPL e TSLA. Cada seleção apresenta sua janela de 50 decisões, sem misturar séries. Rolar os cartões e tocar em um deles.
+5. Conferir OHLCV, UTC de abertura/fechamento, versão da estratégia, reason do sinal, reason/instante do risco e identificadores. Voltar preserva a posição da timeline.
+6. Em HOLD, confirmar **SEM AÇÃO**. APPROVED é resultado histórico; não existe ordem. Atualizar consulta apenas repete GET.
+
+## Evidências M2
+
+| Ativo | Timeline | Rolagem | Detalhe |
+| --- | --- | --- | --- |
+| SPY | [Retrato](evidence/m2-xiaomi-spy-portrait.png) | [Mais decisões](evidence/m2-xiaomi-spy-timeline-scroll.png) | [SELL / OHLCV](evidence/m2-xiaomi-spy-detail.png) |
+| AAPL | [Retrato](evidence/m2-xiaomi-aapl-portrait.png) | [Mais decisões](evidence/m2-xiaomi-aapl-timeline-scroll.png) | [BUY / OHLCV](evidence/m2-xiaomi-aapl-detail.png) |
+| TSLA | [Retrato](evidence/m2-xiaomi-tsla-portrait.png) | [Mais decisões](evidence/m2-xiaomi-tsla-timeline-scroll.png) | [HOLD / OHLCV](evidence/m2-xiaomi-tsla-detail.png) |
+
+Paisagem: [visão geral TSLA](evidence/m2-xiaomi-tsla-landscape.png) e [timeline rolada](evidence/m2-xiaomi-tsla-landscape-scroll.png).
+
+Verificação estruturada: [API e correspondência com PostgreSQL](evidence/m2-decisions-api-validation.json), [interação física Xiaomi](evidence/m2-xiaomi-validation.json). As contagens abaixo se referem à janela observada nesta validação, não a rentabilidade:
+
+| Ativo | BUY | SELL | HOLD | Decisões disponíveis na API/DB |
+| --- | --- | --- | --- | --- |
+| SPY | 24 | 24 | 2 | 200 |
+| AAPL | 26 | 23 | 1 | 200 |
+| TSLA | 23 | 20 | 7 | 200 |
+
+As 600 avaliações reais persistidas são APPROVED. Rejeição por pausa/expiração foi testada com dados fictícios, sem adulterar histórico real para a demonstração. A UI informa que o feed exibido corresponde à configuração atual; o candle legado armazena provider, sem coluna de feed histórico.
+
+## Histórico M1.5 (preservado)
 
 Resultados anteriores pertencem a [DEMO-M1](DEMO-M1.md). O estado atual e os comandos executados estão em [STATUS](STATUS.md); instalação e recuperação em [RUNBOOK](RUNBOOK.md).
 

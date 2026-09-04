@@ -1,0 +1,101 @@
+{
+  "device": "1791a20e",
+  "model": "Xiaomi 23073RPBFG",
+  "checked_at": "2026-09-04T00:47:14.703604+00:00",
+  "steps": [
+    {
+      "symbol": "SPY",
+      "orientation": "portrait",
+      "latest_signal": "SELL",
+      "unique_candle_times_scrolled": [
+        "2026-09-02 20:00:00 UTC",
+        "2026-09-03 12:00:00 UTC",
+        "2026-09-03 13:00:00 UTC",
+        "2026-09-03 14:00:00 UTC",
+        "2026-09-03 15:00:00 UTC",
+        "2026-09-03 16:00:00 UTC",
+        "2026-09-03 17:00:00 UTC",
+        "2026-09-03 18:00:00 UTC",
+        "2026-09-03 19:00:00 UTC",
+        "2026-09-03 20:00:00 UTC"
+      ],
+      "ohlcv_matches_api": true,
+      "selection_touch_height_px": 84,
+      "screenshots": [
+        "docs/evidence/m2-xiaomi-spy-portrait.png",
+        "docs/evidence/m2-xiaomi-spy-timeline-scroll.png",
+        "docs/evidence/m2-xiaomi-spy-detail.png",
+        "docs/evidence/m2-xiaomi-spy-detail-audit.png"
+      ]
+    },
+    {
+      "symbol": "AAPL",
+      "orientation": "portrait",
+      "latest_signal": "BUY",
+      "unique_candle_times_scrolled": [
+        "2026-09-02 18:00:00 UTC",
+        "2026-09-02 19:00:00 UTC",
+        "2026-09-03 12:00:00 UTC",
+        "2026-09-03 13:00:00 UTC",
+        "2026-09-03 14:00:00 UTC",
+        "2026-09-03 15:00:00 UTC",
+        "2026-09-03 16:00:00 UTC",
+        "2026-09-03 17:00:00 UTC",
+        "2026-09-03 18:00:00 UTC",
+        "2026-09-03 19:00:00 UTC"
+      ],
+      "ohlcv_matches_api": true,
+      "selection_touch_height_px": 84,
+      "screenshots": [
+        "docs/evidence/m2-xiaomi-aapl-portrait.png",
+        "docs/evidence/m2-xiaomi-aapl-timeline-scroll.png",
+        "docs/evidence/m2-xiaomi-aapl-detail.png",
+        "docs/evidence/m2-xiaomi-aapl-detail-audit.png"
+      ]
+    },
+    {
+      "symbol": "TSLA",
+      "orientation": "portrait",
+      "latest_signal": "HOLD",
+      "unique_candle_times_scrolled": [
+        "2026-09-02 20:00:00 UTC",
+        "2026-09-03 12:00:00 UTC",
+        "2026-09-03 13:00:00 UTC",
+        "2026-09-03 14:00:00 UTC",
+        "2026-09-03 15:00:00 UTC",
+        "2026-09-03 16:00:00 UTC",
+        "2026-09-03 17:00:00 UTC",
+        "2026-09-03 18:00:00 UTC",
+        "2026-09-03 19:00:00 UTC",
+        "2026-09-03 20:00:00 UTC"
+      ],
+      "ohlcv_matches_api": true,
+      "selection_touch_height_px": 84,
+      "screenshots": [
+        "docs/evidence/m2-xiaomi-tsla-portrait.png",
+        "docs/evidence/m2-xiaomi-tsla-timeline-scroll.png",
+        "docs/evidence/m2-xiaomi-tsla-detail.png",
+        "docs/evidence/m2-xiaomi-tsla-detail-audit.png"
+      ]
+    },
+    {
+      "orientation": "landscape",
+      "symbol": "TSLA",
+      "screenshots": [
+        "docs/evidence/m2-xiaomi-tsla-landscape.png",
+        "docs/evidence/m2-xiaomi-tsla-landscape-scroll.png"
+      ]
+    }
+  ],
+  "original_rotation": {
+    "mode": "free",
+    "value": "0"
+  },
+  "final_pid": "3503",
+  "app_log_errors": 0,
+  "startup_and_pid_stable": true,
+  "restored_rotation": {
+    "mode": "free",
+    "value": "0"
+  }
+}
