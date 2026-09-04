@@ -22,9 +22,12 @@ from services.api.models import (
     paper_fills,
     paper_orders,
     paper_outcomes,
+    paper_runs,
     risk_decisions,
     signals,
+    system_controls,
 )
+from services.api.paper_integrity import reconcile, validate_control
 
 router = APIRouter(prefix="/api/v1/decisions", tags=["decisions"])
 
@@ -50,7 +53,12 @@ def decisions(
             candles.join(signals)
             .join(risk_decisions)
             .outerjoin(
-                paper_outcomes, paper_outcomes.c.risk_decision_id == risk_decisions.c.decision_id
+                paper_outcomes,
+                (paper_outcomes.c.risk_decision_id == risk_decisions.c.decision_id)
+                & (
+                    paper_outcomes.c.run_id
+                    == select(system_controls.c.active_run_id).scalar_subquery()
+                ),
             )
             .outerjoin(paper_orders, paper_orders.c.order_id == paper_outcomes.c.order_id)
             .outerjoin(paper_fills, paper_fills.c.order_id == paper_orders.c.order_id)
@@ -65,10 +73,24 @@ def decisions(
         .limit(limit)
     )
     try:
-        with store.engine.connect() as connection:
-            from services.api.models import system_controls
-
-            active_run_id = connection.scalar(select(system_controls.c.active_run_id))
+        with (
+            store.engine.connect().execution_options(
+                isolation_level="REPEATABLE READ"
+            ) as connection,
+            connection.begin(),
+        ):
+            control = connection.execute(select(system_controls)).mappings().first()
+            validate_control(connection, control)
+            active_run_id = control["active_run_id"] if control else None
+            if active_run_id:
+                run = (
+                    connection.execute(
+                        select(paper_runs).where(paper_runs.c.run_id == active_run_id)
+                    )
+                    .mappings()
+                    .one()
+                )
+                reconcile(connection, run)
             items = []
             for row in connection.execute(query).mappings():
                 if row[paper_outcomes.c.status] is not None:
@@ -103,6 +125,8 @@ def decisions(
                 )
     except SQLAlchemyError:
         raise HTTPException(503, detail="database_unavailable") from None
+    except ValueError:
+        raise HTTPException(503, detail="paper_reconciliation_failed") from None
     response.headers["Cache-Control"] = "no-store"
     return DecisionsSnapshot(
         symbol=selected,

@@ -23,9 +23,13 @@ class PaperConfig:
     def __post_init__(self) -> None:
         if not ZERO < money(self.initial_cash) <= Decimal("1000000000"):
             raise ValueError("invalid_initial_cash")
+        if self.initial_cash != money(self.initial_cash):
+            raise ValueError("paper_initial_cash_storage_precision")
         for value in (self.fee_bps, self.slippage_bps):
             if not ZERO <= money(value) <= Decimal("100"):
                 raise ValueError("invalid_paper_bps")
+            if value != value.quantize(Decimal("0.000001")):
+                raise ValueError("paper_bps_storage_precision")
 
 
 @dataclass

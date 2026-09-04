@@ -5,7 +5,6 @@ import json
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
-from itertools import groupby
 from typing import Any, cast
 from uuid import UUID, uuid4, uuid5
 
@@ -14,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from packages.contracts.decisions import DecisionItem, RiskResponse, SignalResponse
 from packages.contracts.market import CandleResponse
-from packages.domain.paper import ZERO, PaperBook, PaperConfig, PaperPosition, PaperResult, money
+from packages.domain.paper import ZERO, PaperBook, PaperConfig, PaperPosition, PaperResult
 from packages.domain.risk import RiskDecision
 from services.api.config import Settings
 from services.api.models import (
@@ -31,6 +30,7 @@ from services.api.models import (
     signals,
     system_controls,
 )
+from services.api.paper_integrity import frozen_groups, reconcile, validate_control
 from services.paper_executor.engine import PaperExecutor
 from services.risk_engine.paper_sizing import entry_quantity
 
@@ -53,7 +53,9 @@ class PaperStore:
             .values(control_id=1, paused=False, updated_at=datetime.now(UTC))
             .on_conflict_do_nothing()
         )
-        return c.execute(select(system_controls).with_for_update()).mappings().one()
+        control = c.execute(select(system_controls).with_for_update()).mappings().one()
+        validate_control(c, control)
+        return control
 
     def event(
         self,
@@ -109,6 +111,7 @@ class PaperStore:
                     != self.config
                 ):
                     raise ValueError("paper_config_changed_requires_explicit_reset")
+                self.reconcile(c, run)
                 return cast(UUID, run["run_id"])
             rows = c.execute(
                 select(candles, signals, risk_decisions)
@@ -191,13 +194,15 @@ class PaperStore:
             raw = (
                 c.execute(select(paper_runs).where(paper_runs.c.run_id == run_id)).mappings().one()
             )
-            dataset = [DecisionItem.model_validate(d) for d in raw["dataset"]]
-        groups = [list(items) for _, items in groupby(dataset, key=lambda d: d.candle.open_time)]
+            groups = frozen_groups(raw)
+            expected_hash = raw["dataset_hash"]
         previous: dict[str, DecisionItem] = {}
         for step, group in enumerate(groups, start=1):
             if max_steps is not None and step > max_steps:
                 break
-            self._group(run_id, step, group, previous, step == len(groups), after_fill)
+            self._group(
+                run_id, step, group, previous, step == len(groups), after_fill, expected_hash
+            )
             previous.update({item.candle.symbol: item for item in group})
         return run_id
 
@@ -209,6 +214,7 @@ class PaperStore:
         previous: dict[str, DecisionItem],
         final: bool,
         after_fill: Callable[[], None] | None,
+        expected_hash: str,
     ) -> None:
         with self.engine.begin() as c:
             control = self._control(c)  # pause/reset and execution share this lock
@@ -219,6 +225,8 @@ class PaperStore:
                 .mappings()
                 .one()
             )
+            if run["dataset_hash"] != expected_hash:
+                raise ValueError("paper_dataset_changed_during_replay")
             if run["step"] >= step:
                 return
             if control["paused"]:
@@ -380,91 +388,4 @@ class PaperStore:
             self.event(c, run_id, "portfolio.updated", closed, snapshot, uuid5(run_id, str(step)))
 
     def reconcile(self, c: Connection, run: RowMapping) -> PaperBook:
-        """Rebuild balances/positions from fills, independently of saved balances."""
-        saved = self.load_book(c, run)
-        ledger = PaperBook(run["initial_cash"], run["initial_cash"], marks=saved.marks)
-        rows = c.execute(
-            select(paper_orders, paper_fills)
-            .select_from(paper_orders.outerjoin(paper_fills))
-            .where(paper_orders.c.run_id == run["run_id"])
-            .order_by(paper_orders.c.requested_at, paper_orders.c.symbol, paper_orders.c.order_id)
-        ).mappings()
-        for r in rows:
-            if r[paper_orders.c.status] == "REJECTED":
-                if r[paper_fills.c.fill_id] is not None:
-                    raise ValueError("paper_rejected_order_has_fill")
-                continue
-            if (
-                r[paper_fills.c.fill_id] is None
-                or r[paper_orders.c.quantity] != r[paper_fills.c.quantity]
-            ):
-                raise ValueError("paper_order_fill_mismatch")
-            qty, price, fee = (
-                r[paper_fills.c.quantity],
-                r[paper_fills.c.price],
-                r[paper_fills.c.fee],
-            )
-            symbol = r[paper_orders.c.symbol]
-            pos = ledger.positions.setdefault(symbol, PaperPosition(symbol))
-            notional = money(price * qty)
-            direction = 1 if r[paper_orders.c.side] == "BUY" else -1
-            reference = r[paper_fills.c.reference_price]
-            if price != money(reference * (1 + direction * run["slippage_bps"] / 10000)) or r[
-                paper_fills.c.slippage
-            ] != money(abs(price - reference) * qty):
-                raise ValueError("paper_fill_price_mismatch")
-            if r[paper_orders.c.side] == "BUY":
-                if pos.quantity:
-                    raise ValueError("paper_pyramiding_detected")
-                pos.quantity, pos.average_price = qty, price
-                ledger.cash = money(ledger.cash - notional - fee)
-                pnl = ZERO
-            else:
-                if pos.quantity != qty:
-                    raise ValueError("paper_short_or_partial_close")
-                pnl = money((price - pos.average_price) * qty)
-                pos.realized_pnl = money(pos.realized_pnl + pnl)
-                ledger.realized_pnl = money(ledger.realized_pnl + pnl)
-                ledger.cash = money(ledger.cash + notional - fee)
-                pos.quantity, pos.average_price = 0, ZERO
-            if pnl != r[paper_fills.c.realized_pnl] or fee != money(
-                notional * run["fee_bps"] / 10000
-            ):
-                raise ValueError("paper_fill_accounting_mismatch")
-            ledger.fees = money(ledger.fees + fee)
-        ledger.reconcile()
-        if (ledger.cash, ledger.fees, ledger.realized_pnl, ledger.positions) != (
-            saved.cash,
-            saved.fees,
-            saved.realized_pnl,
-            saved.positions,
-        ):
-            raise ValueError("paper_ledger_mismatch")
-        saved.reconcile()
-        last = (
-            c.execute(
-                select(portfolio_snapshots).where(
-                    portfolio_snapshots.c.run_id == run["run_id"],
-                    portfolio_snapshots.c.step == run["step"],
-                )
-            )
-            .mappings()
-            .first()
-        )
-        if run["step"] and (
-            last is None
-            or any(
-                last[name] != getattr(saved, name)
-                for name in (
-                    "cash",
-                    "market_value",
-                    "equity",
-                    "fees",
-                    "realized_pnl",
-                    "unrealized_pnl",
-                    "total_pnl",
-                )
-            )
-        ):
-            raise ValueError("paper_snapshot_mismatch")
-        return saved
+        return reconcile(c, run)

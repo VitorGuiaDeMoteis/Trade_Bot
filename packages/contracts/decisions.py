@@ -1,4 +1,3 @@
-
 """Read-only, versioned observation of persisted strategy and risk decisions."""
 
 from datetime import datetime
@@ -33,8 +32,6 @@ class RiskResponse(BaseModel):
     decision: DecisionType
     reason: str
     decided_at: datetime
-
-
 
 
 class PaperDecisionResponse(BaseModel):

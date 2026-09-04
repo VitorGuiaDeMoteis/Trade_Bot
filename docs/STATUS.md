@@ -1,6 +1,33 @@
-# Status Atual: M3 - Carteira e Execu��o Simulada Conclu�da
+# Auditoria final M3 — 2026-09-04
 
-Testes de backend (pytest + idempot�ncia), lint (mypy, ruff), banco de dados (alembic) e frontend Flutter (analyze, test) finalizados com sucesso na branch `codex/m3-paper`.
+**M3 financial/integrity audit: APPROVED** — escopo financeiro, persistência e segurança.
+
+Pull explícito de `origin/codex/m3-paper` confirmou a base
+`21a467526cf9bc67114bb392a32caef7b3e9f953`. Foram corrigidas falhas reproduzidas de
+hash/dataset, retomada concluída, checkpoint, vínculo de ordem, marcas, snapshots
+históricos, controle ativo, precisão e sobreposição temporal cross-asset. Consulta
+Decisions passou a restringir resultados ao run ativo e falhar com 503 na corrupção.
+
+Gates: Ruff format/check OK (86 arquivos); mypy OK (50 arquivos);
+`RUN_DB_TESTS=1 uv run pytest -q`: **162 passed** (116 unitários + 46 PostgreSQL),
+com um aviso de depreciação Starlette/AnyIO. **16 casos novos**.
+Docker postgres_test Healthy; Alembic check sem alterações em
+`0008_m3_paper`; busca por Trading API externa sem ocorrências em código.
+
+A pausa concorrente, rollback após escritas financeiras e isolamento de leitores
+foram verificados em PostgreSQL dedicado localhost:5433. Consulta somente leitura
+em trading_bot_dev:5432 encontrou zero runs paper; nenhuma carteira histórica local
+foi inventada ou criada nesta auditoria. Flutter visual e tablet não foram alterados
+ou revalidados. Não houve merge nem avanço para M4.
+
+[Relatório, invariantes, bugs, comandos e limitações](M3_FINANCIAL_AUDIT.md).
+Os registros abaixo descrevem etapas anteriores e não ampliam este aceite focado.
+
+---
+
+# Status Atual: M3 - Carteira e Execução Simulada Concluída
+
+Testes de backend (pytest + idempotência), lint (mypy, ruff), banco de dados (alembic) e frontend Flutter (analyze, test) finalizados com sucesso na branch `codex/m3-paper`.
 
 ## M2 — Decisions: recorte implementado e validado, aguardando aceite
 

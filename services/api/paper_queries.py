@@ -18,11 +18,13 @@ from services.api.models import (
     paper_runs,
     system_controls,
 )
+from services.api.paper_integrity import validate_control
 from services.api.paper_store import PaperStore
 
 
 def portfolio(c: Connection, store: PaperStore, limit: int = 50) -> PaperPortfolio:
     control = c.execute(select(system_controls)).mappings().first()
+    validate_control(c, control)
     result = PaperPortfolio(
         provider=store.settings.market_data_provider,
         paused=bool(control and control["paused"]),

@@ -100,3 +100,16 @@ def test_invalid_config(cash: str) -> None:
 def test_binary_float_rejected() -> None:
     with pytest.raises(ValueError):
         money(0.1)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("initial_cash", "10000.00000000004"),
+        ("fee_bps", "1.1234567"),
+        ("slippage_bps", "5.1234567"),
+    ],
+)
+def test_paper_config_cannot_be_silently_rounded_by_postgres(field: str, value: str) -> None:
+    with pytest.raises(ValueError, match="precision"):
+        PaperConfig(**{field: D(value)})

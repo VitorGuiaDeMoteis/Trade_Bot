@@ -76,5 +76,7 @@ def pause(
         PaperStore(request.app.state.database, request.app.state.configuration).set_paused(True)
     except SQLAlchemyError:
         raise HTTPException(503, "database_unavailable") from None
+    except ValueError:
+        raise HTTPException(503, "paper_reconciliation_failed") from None
     response.headers["Cache-Control"] = "no-store"
     return {"paused": True}
