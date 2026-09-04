@@ -1,10 +1,17 @@
-# M5 — modelo real pendente por isolamento, 2026-09-04
+# M5 — Modelo Real Semantic
 
-M5 Core Observer ✅ · M5 API ✅ · M5 Flutter ✅ · M5 Xiaomi Fake ✅
+M5 Core Observer ✅
+M5 API ✅
+M5 Flutter ✅
+M5 Xiaomi Fake ✅
+M5 Real OCI Engine ✅
+M5 Real Inference ✅
 
-M5 Real Model ⏳ · M5 Xiaomi Real ⏳ · M5 Acceptance ⏳
+M5 Xiaomi Real ⏳
+M5 Acceptance ⏳
 
-M1.5 streaming aberto ⏳ · M6 não iniciado.
+M1.5 streaming aberto ⏳
+M6 não iniciado
 
 Base/pull confirmados: `094b588105ea6b34138dcf10c7df54b70efd2a57`.
 Ollama instalado; `ollama list` falhou ao iniciar servidor. Encontrado somente
@@ -316,3 +323,17 @@ JSON completos continuam fora do Git. Apenas evidências sem credenciais version
 
 Não existem bloqueios pendentes do M4. M1.5 streaming em sessão aberta segue
 pendente; M5 não foi iniciado e depende de nova autorização.
+
+M5 Core Observer ?
+M5 API ?
+M5 Flutter ?
+M5 Xiaomi Fake ?
+M5 Real OCI Engine ?
+M5 Real Inference ?
+
+M5 Real Semantic ?
+M5 Xiaomi Real ?
+M5 Acceptance ?
+
+M1.5 streaming aberto ?
+M6 n�o iniciado

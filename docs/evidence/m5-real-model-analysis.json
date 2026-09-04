@@ -1,0 +1,9 @@
+{
+  "status": "DEGRADED",
+  "fallback": "HOLD",
+  "error_code": "TIMEOUT",
+  "latency_ms": 891250,
+  "validated_output": null,
+  "image_digest": "sha256:fce191f8ce6cff9935c5530b805c9b926a3701808cb3a8fd59f08ad4297e4207",
+  "prompt_version": "observer-v2"
+}

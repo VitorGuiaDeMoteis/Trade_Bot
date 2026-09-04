@@ -1,0 +1,19 @@
+{
+  "isolation_guarantees": {
+    "network": "none",
+    "host_mounts": "none",
+    "published_ports": "none",
+    "uid_gid": "65534:65534",
+    "capabilities": "cap-drop ALL",
+    "security_opt": "no-new-privileges",
+    "memory": "7g",
+    "cpu": "6",
+    "pids_limit": 128,
+    "tmpfs": "/tmp:rw,noexec,nosuid,size=64m"
+  },
+  "image_identity": {
+    "model": "deepseek-r1:8b",
+    "weights_hash": "e6a7edc1a4d7d9b2de136a221a57336b76316cfe53a252aeba814496c5ae439d",
+    "image_digest": "TBD"
+  }
+}
