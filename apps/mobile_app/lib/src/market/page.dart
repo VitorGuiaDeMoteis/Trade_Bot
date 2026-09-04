@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../decisions/controller.dart';
 import '../decisions/page.dart';
+import '../backtest/page.dart';
 
 import 'api.dart';
 import 'chart.dart';
@@ -107,19 +108,36 @@ class _MarketPageState extends State<MarketPage> {
                     ),
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => DecisionsPage(
-                              controller: widget.decisionsController,
+                      child: Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => DecisionsPage(
+                                  controller: widget.decisionsController,
+                                ),
+                              ),
                             ),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                            ),
+                            icon: const Icon(Icons.account_tree_outlined),
+                            label: const Text('Decisões'),
                           ),
-                        ),
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                        ),
-                        icon: const Icon(Icons.account_tree_outlined),
-                        label: const Text('Decisões'),
+                          TextButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const BacktestPage(),
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                            ),
+                            icon: const Icon(Icons.history),
+                            label: const Text('Backtest'),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 12),

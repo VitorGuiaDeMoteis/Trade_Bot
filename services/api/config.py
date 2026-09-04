@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     alpaca_data_feed: Literal["iex", "sip"] = "iex"
     market_symbols: str = "SPY,AAPL,TSLA"
     market_timeframe: str = "1h"
+    backtest_artifacts_dir: str = ".artifacts"
 
     @field_validator("market_symbols")
     @classmethod

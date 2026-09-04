@@ -12,6 +12,7 @@ from packages.contracts.health import HealthResponse
 from packages.contracts.provider import MarketDataProvider
 from packages.domain.market import SimulationSpec
 from packages.domain.market_bar import series_id
+from services.api.backtest_routes import router as backtest_router
 from services.api.config import Settings, get_settings
 from services.api.database import check_database, create_database_engine
 from services.api.decisions_routes import router as decisions_router
@@ -72,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(market_router)
     app.include_router(decisions_router)
     app.include_router(paper_router)
+    app.include_router(backtest_router)
 
     @app.middleware("http")
     async def request_context(
