@@ -150,3 +150,9 @@ São **dados simulados no código corrigido**, não prova de Alpaca real.
 7. Reiniciar backend e recuperar conexão sem duplicar candle/evento/Signal/RiskDecision.
 
 A tela deve identificar DADOS REAIS e fonte/feed; análise/decisão permanecem simuladas. Nenhuma ordem existe. Não concluir M1.5 por histórico sozinho, ACK do socket ou teste com fake.
+# Modelo real M5 ainda não demonstrável (2026-09-04)
+
+Existe deepseek-r1:8b local, mas inferência real não foi executada por conflito
+entre runtime nativo e isolamento OCI aprovado. Não apresentar screenshots FAKE
+como prova REAL. [Diagnóstico e próximo caminho seguro](M5_REAL_PREFLIGHT.md).
+M5 Real Model/M5 Acceptance pendentes; M6 não iniciado. Demo FAKE preservada abaixo.

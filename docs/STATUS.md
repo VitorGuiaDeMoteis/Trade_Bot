@@ -1,3 +1,32 @@
+# M5 — modelo real pendente por isolamento, 2026-09-04
+
+M5 Core Observer ✅ · M5 API ✅ · M5 Flutter ✅ · M5 Xiaomi Fake ✅
+
+M5 Real Model ⏳ · M5 Xiaomi Real ⏳ · M5 Acceptance ⏳
+
+M1.5 streaming aberto ⏳ · M6 não iniciado.
+
+Base/pull confirmados: `094b588105ea6b34138dcf10c7df54b70efd2a57`.
+Ollama instalado; `ollama list` falhou ao iniciar servidor. Encontrado somente
+deepseek-r1:8b local, 5,23 GB, cinco blobs com hashes verificados. Nenhum download.
+Ollama nativo via loopback não conserva o isolamento do processo OCI aprovado.
+Aplicada a condição da seção 3 do pedido: documentar conflito, propor OCI e retornar
+PENDING, sem adapter que enfraqueça a fronteira. [Diagnóstico e proposta](M5_REAL_PREFLIGHT.md).
+
+Gates refeitos: Ruff format/check OK; Mypy 68 arquivos OK; PostgreSQL test healthy;
+212 testes sem PostgreSQL + 70 PostgreSQL = **282 passaram**, 35,18 s;
+Alembic check OK. Flutter analyze OK, **83 testes passaram**, APK debug compilado
+com `API_BASE_URL=http://127.0.0.1:8000`. Aviso Starlette/AnyIO preexistente.
+Xiaomi detectado e reverse existente confirmado. Não houve inferência, timeout real,
+instalação ou validação física nova de análise REAL. Esses critérios seguem pendentes.
+Somente documentação/evidência de diagnóstico alteradas. Sem merge e sem M6.
+Comparação READ ONLY antes/depois: nove tabelas Paper, 2.193 signals, 2.193 decisões
+de risco e oito análises Observer idênticos; relatórios M4 também idênticos.
+Cash 9084.3458912448, LONG TSLA 3, 1 ordem/1 fill, paused=true.
+[Evidência do diagnóstico, sem inferência real](evidence/m5-real-preflight.json).
+
+---
+
 # M5 — aceite físico FAKE, 2026-09-04
 
 M5 Core Observer ✅

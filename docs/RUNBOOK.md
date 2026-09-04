@@ -289,3 +289,10 @@ Backend: Ctrl+C. Banco: docker compose stop postgres; retomar com docker compose
 INSTALL_FAILED_USER_RESTRICTED / Install canceled by user: instalador Android recusou. Confirmar instalação no aparelho ao repetir flutter run. Não desativar proteções para contornar.
 
 Docker 4.68.0 teve sockets NTFS inacessíveis no M0. A recuperação preservou diretórios de sockets como .stale, listados em [SECURITY](SECURITY.md) e [STATUS-M0](STATUS-M0.md). Não apagar diretórios preservados, imagens ou volumes. Não usar factory reset como primeira tentativa. Se voltar, inspecionar logs e considerar reinício/atualização com o usuário; [incidente Docker correspondente](https://github.com/docker/desktop-feedback/issues/460).
+# Diagnóstico do modelo real M5 (2026-09-04)
+
+Integração real pendente por isolamento; não há comando de análise real aprovado.
+`ollama list` falhou ao iniciar o servidor nativo. Pesos locais deepseek-r1:8b
+foram verificados sem download; corrigir o startup sozinho não resolve a fronteira
+OCI exigida. Não executar `ollama pull` como recuperação automática.
+[Proposta OCI e gates atuais](M5_REAL_PREFLIGHT.md). O fluxo FAKE abaixo permanece válido.

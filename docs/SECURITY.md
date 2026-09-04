@@ -109,3 +109,9 @@ Docker 4.68.0 voltou a falhar com sockets inacessíveis. Recuperação preservou
 - C:/Users/vitor/AppData/Local/docker-secrets-engine.stale-20260903193627
 
 Esses caminhos não devem ser apagados automaticamente. Não há distribuição de produção, execução financeira ou garantia de qualidade do feed real sem as validações pendentes do STATUS.
+# Integração real M5: bloqueio preservado (2026-09-04)
+
+Loopback restringe o destino HTTP, mas não isola filesystem/rede do runtime nativo.
+Não foi introduzido adapter que substitua a fronteira OCI por confiança no processo
+Ollama do usuário. Modelo real PENDING conforme condição explícita do pedido.
+[Evidência e proposta compatível](M5_REAL_PREFLIGHT.md). Threat model aprovado mantido.

@@ -161,3 +161,11 @@ Fontes oficiais consultadas:
 - [exchange_calendars](https://github.com/gerrymanoim/exchange_calendars): calendário XNYS local.
 
 Limitação explícita: margem de 60 s reduz correções tardias, mas não promete imutabilidade futura do provedor. Conflitos recebidos interrompem a ingestão. Feed/permissões, latência e nova hora real no tablet ainda exigem smoke e demonstração autorizados.
+# Modelo real M5: preservar fronteira OCI (2026-09-04)
+
+Aplicada a alternativa explícita da seção 3 do pedido de integração real:
+o Ollama nativo instalado não tem o isolamento de processo garantido pelo M5.
+Não implementar adapter HTTP host e declarar equivalência apenas por usar loopback.
+Reutilizar o deepseek-r1:8b local em futura imagem OCI revisada, com identidade
+imutável, recursos limitados e protocolo stdin/stdout; implementação pendente.
+[Inventário, conflito e proposta](M5_REAL_PREFLIGHT.md). Sem mudança de autoridade.

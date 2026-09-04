@@ -1,0 +1,171 @@
+{
+  "base_sha": "094b588105ea6b34138dcf10c7df54b70efd2a57",
+  "date": "2026-09-04",
+  "status": "PENDING",
+  "reason": "NATIVE_RUNTIME_DOES_NOT_PRESERVE_APPROVED_OCI_PROCESS_BOUNDARY",
+  "real_analysis_executed": false,
+  "real_provider_implemented": false,
+  "real_timeout_executed": false,
+  "model_downloaded": false,
+  "model_inventory": [
+    {
+      "name": "deepseek-r1:8b",
+      "source": "local_manifest_and_blobs",
+      "weights_bytes": 5225373760,
+      "weights_sha256": "e6a7edc1a4d7d9b2de136a221a57336b76316cfe53a252aeba814496c5ae439d",
+      "manifest_sha256": "6995872bfe4c521a67b32da386cd21d5c6e819b6e0d62f79f64ec83be99f5763",
+      "all_five_blobs_verified": true,
+      "runtime_execution_verified": false
+    }
+  ],
+  "runtime": {
+    "name": "Ollama Windows",
+    "launcher_reported_version": "0.32.14",
+    "list_result": "SERVER_START_TIMEOUT",
+    "listener_11434": false
+  },
+  "before": {
+    "paper_runs": {
+      "rows": 1,
+      "sha256": "caf69efc2a7cdec7ce8a79c2bfa148164877c883286b11c2a949fbf0a4b71529"
+    },
+    "paper_events": {
+      "rows": 7,
+      "sha256": "eada98389d32ec4ee81ed28e1168bfe04c8d1a50d1002eabe76be9d2a50e333c"
+    },
+    "paper_marks": {
+      "rows": 1,
+      "sha256": "d45aa5f0c1f57c3cc271f22f3de34965af04a12dd3404fc06576c890f74ef0ac"
+    },
+    "portfolio_snapshots": {
+      "rows": 2,
+      "sha256": "6501afa40f948ef06dd9d6211f4c5264c22db46a9d49181789518fee927e90d9"
+    },
+    "positions": {
+      "rows": 1,
+      "sha256": "7926397e7e730ba8ec2c2920e9c3a9036567a5cdd1e3f07bb5153c3c81b2574b"
+    },
+    "system_controls": {
+      "rows": 1,
+      "sha256": "fea072b9512a63fb790ec8debd8c492d30d2405af858ef347bcbb7860d888ac8"
+    },
+    "paper_orders": {
+      "rows": 1,
+      "sha256": "e7f45a4bb1255187e04e03740813215a30cb8facb17909e49c9811fd50801b56"
+    },
+    "paper_fills": {
+      "rows": 1,
+      "sha256": "aee71c3fefaaa5ce60382eb1912213b26598597617c7f2080e5f6db0f24ad53b"
+    },
+    "paper_outcomes": {
+      "rows": 1,
+      "sha256": "0043739f0517242346e536f2d14d83047abacb2b87a947cc232e10cd08d91376"
+    },
+    "signals": {
+      "rows": 2193,
+      "sha256": "22bd214dd9a04809bc062869b9f3d60ac4659579767d3c403daaf9b7c1feab7c"
+    },
+    "risk_decisions": {
+      "rows": 2193,
+      "sha256": "ec98f66049a84928a2a5bc407cf7aec150897e5d320adae2b6da668561c6d299"
+    },
+    "observer_analysis_runs": {
+      "rows": 8,
+      "sha256": "ef63c91d7516c1c1af21617d0b4fce02210edb1b79cdaec5bbb1f505ea3ef697"
+    },
+    "backtest_reports": {
+      "m4-report.json": "7db1fd1125c4af2bd9e9820f844eed1d74425c43548f366464a8dab24d6d31c3",
+      "corrupted.json": "2214162bb4a91c4164edfbf917853fc3c914532d1ae2a5ab3f73281e54a25920",
+      "report.json": "7db1fd1125c4af2bd9e9820f844eed1d74425c43548f366464a8dab24d6d31c3"
+    }
+  },
+  "after": {
+    "paper_runs": {
+      "rows": 1,
+      "sha256": "caf69efc2a7cdec7ce8a79c2bfa148164877c883286b11c2a949fbf0a4b71529"
+    },
+    "paper_events": {
+      "rows": 7,
+      "sha256": "eada98389d32ec4ee81ed28e1168bfe04c8d1a50d1002eabe76be9d2a50e333c"
+    },
+    "paper_marks": {
+      "rows": 1,
+      "sha256": "d45aa5f0c1f57c3cc271f22f3de34965af04a12dd3404fc06576c890f74ef0ac"
+    },
+    "portfolio_snapshots": {
+      "rows": 2,
+      "sha256": "6501afa40f948ef06dd9d6211f4c5264c22db46a9d49181789518fee927e90d9"
+    },
+    "positions": {
+      "rows": 1,
+      "sha256": "7926397e7e730ba8ec2c2920e9c3a9036567a5cdd1e3f07bb5153c3c81b2574b"
+    },
+    "system_controls": {
+      "rows": 1,
+      "sha256": "fea072b9512a63fb790ec8debd8c492d30d2405af858ef347bcbb7860d888ac8"
+    },
+    "paper_orders": {
+      "rows": 1,
+      "sha256": "e7f45a4bb1255187e04e03740813215a30cb8facb17909e49c9811fd50801b56"
+    },
+    "paper_fills": {
+      "rows": 1,
+      "sha256": "aee71c3fefaaa5ce60382eb1912213b26598597617c7f2080e5f6db0f24ad53b"
+    },
+    "paper_outcomes": {
+      "rows": 1,
+      "sha256": "0043739f0517242346e536f2d14d83047abacb2b87a947cc232e10cd08d91376"
+    },
+    "signals": {
+      "rows": 2193,
+      "sha256": "22bd214dd9a04809bc062869b9f3d60ac4659579767d3c403daaf9b7c1feab7c"
+    },
+    "risk_decisions": {
+      "rows": 2193,
+      "sha256": "ec98f66049a84928a2a5bc407cf7aec150897e5d320adae2b6da668561c6d299"
+    },
+    "observer_analysis_runs": {
+      "rows": 8,
+      "sha256": "ef63c91d7516c1c1af21617d0b4fce02210edb1b79cdaec5bbb1f505ea3ef697"
+    },
+    "backtest_reports": {
+      "m4-report.json": "7db1fd1125c4af2bd9e9820f844eed1d74425c43548f366464a8dab24d6d31c3",
+      "corrupted.json": "2214162bb4a91c4164edfbf917853fc3c914532d1ae2a5ab3f73281e54a25920",
+      "report.json": "7db1fd1125c4af2bd9e9820f844eed1d74425c43548f366464a8dab24d6d31c3"
+    }
+  },
+  "all_unchanged": true,
+  "comparison_scope": "diagnostic_only_no_real_inference",
+  "gates": {
+    "backend_unit": 212,
+    "postgresql": 70,
+    "python_total": 282,
+    "ruff_format": "PASS",
+    "ruff_check": "PASS",
+    "mypy": "PASS",
+    "alembic_check": "PASS",
+    "flutter_analyze": "PASS",
+    "flutter_tests": 83,
+    "apk_build": "PASS"
+  },
+  "xiaomi": {
+    "device": "1791a20e",
+    "adb_detected": true,
+    "reverse": "tcp:8000 tcp:8000",
+    "real_analysis_validated": false,
+    "new_real_screenshots": []
+  },
+  "m6_started": false,
+  "paper": {
+    "cash": "9084.3458912448",
+    "paused": true,
+    "positions": [
+      {
+        "symbol": "TSLA",
+        "quantity": 3
+      }
+    ],
+    "orders_count": 1,
+    "fills_count": 1
+  }
+}
