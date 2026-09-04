@@ -1,3 +1,6 @@
+> Registro do núcleo M4. A UI/API e o aceite físico posteriores estão em
+> [M4_ACCEPTANCE](M4_ACCEPTANCE.md) e [STATUS](STATUS.md).
+
 # M4 — núcleo de backtesting
 
 Implementado em `codex/m4-backtesting`, a partir de
@@ -152,7 +155,7 @@ uv run alembic check
   PaperStore; congelamento READ ONLY/REPEATABLE READ; mudança posterior no banco
   não muda o manifest; dois processos offline novos geram os mesmos bytes.
 - Histórico local: 600 candles, 200 por SPY/AAPL/TSLA, de 2026-07-30 15:00 UTC a
-  2026-09-03 21:00 UTC. 200 grupos temporais. Relatório resumido versionado em
+  2026-09-03 21:00 UTC. 230 grupos temporais (contagem conferida no aceite físico). Relatório resumido versionado em
   [evidence/m4-metrics.json](evidence/m4-metrics.json).
 - Capital inicial USD 10000, fee 1 bps, slippage 5 bps: equity final
   **10085.5935535635**, retorno **0.8559355356%**, drawdown **79.2770600893 USD /

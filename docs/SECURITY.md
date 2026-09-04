@@ -1,3 +1,15 @@
+# M4 — API somente leitura e transporte local
+
+Backend em 127.0.0.1:8000 com --no-proxy-headers, Xiaomi por adb reverse.
+API lê apenas relatórios da pasta configurada, recusa links/caminhos externos e
+contratos/checksums inválidos. Export entrega o JSON já validado em memória, sem
+reabrir o arquivo. Sem métodos de execução, segredos no app ou Trading API.
+Hashes não autenticam contra um atacante com escrita local; controle da pasta e
+processos do usuário continua no threat model local existente.
+[Provas e limites](M4_ACCEPTANCE.md). Registros abaixo são históricos.
+
+---
+
 # Segurança M4 — pesquisa isolada (2026-09-04)
 
 Backtest não tem endpoint de execução, conexão externa, credencial própria nem

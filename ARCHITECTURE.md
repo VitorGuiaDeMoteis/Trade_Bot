@@ -15,7 +15,7 @@ Responsabilidades:
 - consultar snapshots por REST;
 - receber eventos por WebSocket;
 - exibir estado, gráficos e histórico;
-- enviar comandos de pausa e retomada;
+- enviar apenas STOP local; retomada/reset permanecem CLI;
 - nunca conter segredo de corretora;
 - nunca calcular a fonte oficial do saldo ou do risco.
 
@@ -87,7 +87,8 @@ Congela candles do PostgreSQL em transação somente leitura, ordena grupos de O
 cross-asset, executa sinais anteriores e só então revela CLOSEs à estratégia.
 Publica manifest e relatório JSON atômicos, com versões, hashes, métricas e modo
 BACKTEST. Não escreve na carteira corrente nem expõe comandos remotos. Replay
-visual não integra o recorte atual. [Contrato e invariantes](docs/M4_CORE.md).
+visual consome os frames do relatório pela API somente leitura, sem recalcular
+finanças. [Contrato e invariantes](docs/M4_CORE.md); [aceite físico](docs/M4_ACCEPTANCE.md).
 
 ### `database`
 

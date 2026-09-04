@@ -1,3 +1,11 @@
+# M4 — demonstração física concluída
+
+[Fluxo executado, screenshots e comandos](M4_ACCEPTANCE.md). Summary, curva,
+Trades, Replay e export JSON foram validados no Xiaomi em retrato/paisagem.
+Carteira paper preservada e pausada. Registros abaixo descrevem recortes anteriores.
+
+---
+
 # Demo M4 — núcleo por CLI
 
 1. Seguir [freeze/run](M4_CORE.md#executar-no-powershell) para congelar candles do

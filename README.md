@@ -26,18 +26,17 @@ Este pacote congela o escopo da v0.1 antes da implementação. O objetivo da pri
 
 Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar candles, saldo simulado, P&L, posições, sinais, decisões do risco e status do sistema em tempo real. O sistema pode ser reiniciado sem duplicar ordens e possui um botão funcional para bloquear novas operações.
 
-## Implementação atual: M4 — núcleo de backtesting
+## Implementação atual: M4 — aceito após validação física
 
-M3 tem carteira e executor paper local, reconciliados, com STOP pelo app e retomada
-somente por CLI. O núcleo M4 acrescenta backtest offline reutilizando Strategy,
-Risk e PaperExecutor, dataset congelado, replay determinístico e relatório JSON.
-Migração atual: `0008_m3_paper`; nenhum acesso à Trading API.
+M3 possui carteira paper reconciliada, STOP local pelo app e retomada somente CLI.
+M4 possui núcleo determinístico, API somente leitura de relatórios, Summary,
+curva interativa, Trades, replay visual e exportação JSON validados no Xiaomi
+em retrato/paisagem. Migração atual: `0008_m3_paper`.
 
-[Executar e verificar M4](docs/M4_CORE.md) · [STATUS](docs/STATUS.md) ·
-[Métricas produzidas](docs/evidence/m4-metrics.json).
-Somente o núcleo M4 foi autorizado: Flutter, gráficos e replay visual permanecem
-fora desta entrega, assim como IA e M5. Alpaca existente é somente Market Data;
-freeze lê histórico já persistido e run não usa rede nem banco.
+[STATUS e gates](docs/STATUS.md) · [Executar M4](docs/M4_ACCEPTANCE.md) ·
+[Núcleo e métricas](docs/M4_CORE.md). O relatório é a fonte financeira oficial;
+Flutter apenas o apresenta. M1.5 streaming em sessão aberta permanece pendente.
+M5 não iniciado. Alpaca é somente Market Data; não há Trading API ou dinheiro real.
 
 ### Pré-requisitos
 
@@ -76,7 +75,7 @@ O serial é o Xiaomi utilizado no aceite; substitua pelo retorno de `adb devices
 
 `/health` retorna 200 com banco/migração prontos e provider conectado ou sessão regular fechada. Banco indisponível, schema pendente ou produtor parado/degradado retornam 503. A primeira leitura pode observar `starting`; aguarde o primeiro candle.
 
-Pare qualquer backend anterior antes da migração. A revisão atual é `0006_m15_integrity`: registros Alpaca antigos de origem horária não comprovada são preservados em quarentena com seus eventos/sinais/decisões. Não são mostrados como dados horários válidos. Veja o [runbook de migração](docs/RUNBOOK.md).
+Pare qualquer backend anterior antes da migração. A revisão atual é `0008_m3_paper`; a migração M1.5 `0006_m15_integrity` preservou os dados: registros Alpaca antigos de origem horária não comprovada são preservados em quarentena com seus eventos/sinais/decisões. Não são mostrados como dados horários válidos. Veja o [runbook de migração](docs/RUNBOOK.md).
 
 ### Dados reais — histórico validado; streaming ao vivo pendente
 
@@ -107,10 +106,10 @@ services/market_simulator/          Gerador puro determinístico
 services/market_data/               Adapters simulator/Alpaca Market Data
 services/strategy_engine/           BaseStrategy existente, análise simulada
 services/risk_engine/               RiskEngine existente, decisão simulada
-services/paper_executor/            Fronteira reservada, sem executor
+services/paper_executor/            Executor financeiro paper compartilhado pelo backtest
 packages/domain/                   Candle, invariantes e relógio virtual
 packages/contracts/                Saúde 1.1, snapshot/eventos 2.0
-infrastructure/docker/migrations/   Cadeia até 0006_m15_integrity
+infrastructure/docker/migrations/   Cadeia até 0008_m3_paper
 infrastructure/docker/logging.json  Logs JSON
 scripts/                           Qualidade, SDK por sessão e captura
 tests/                            Testes Python, fronteiras e PostgreSQL
@@ -120,4 +119,4 @@ docker-compose.yml                PostgreSQL dev e banco isolado de testes
 pyproject.toml / uv.lock           Python 3.12 e dependências fixadas
 ```
 
-Veja [STATUS](docs/STATUS.md), [DECISIONS](docs/DECISIONS.md), [SECURITY](docs/SECURITY.md), [DEMO](docs/DEMO.md) e os [contratos atuais](docs/CONTRACTS.md). M0 e M1 possuem registros históricos separados. A visão completa v0.1 acima descreve etapas futuras: ordens, carteira, IA e M2/M3 não estão autorizados nesta correção.
+Veja [STATUS](docs/STATUS.md), [DECISIONS](docs/DECISIONS.md), [SECURITY](docs/SECURITY.md), [DEMO](docs/DEMO.md) e os [contratos atuais](docs/CONTRACTS.md). M0 e M1 possuem registros históricos separados. M3/M4 estão validados. IA e M5 dependem de autorização futura.

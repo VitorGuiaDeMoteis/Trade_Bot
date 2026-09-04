@@ -1,3 +1,10 @@
+# M4 — execução e aceite completos
+
+Siga [M4_ACCEPTANCE](M4_ACCEPTANCE.md) para API, APK e Xiaomi por USB/loopback.
+M4 validado em ambas as orientações; os registros de núcleo abaixo são históricos.
+
+---
+
 # Executar núcleo M4 — backtest offline
 
 [Comandos de freeze/run, testes e Alembic](M4_CORE.md#executar-no-powershell).

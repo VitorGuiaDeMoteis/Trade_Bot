@@ -1,0 +1,190 @@
+{
+  "config": {
+    "fee_bps": "1.0000000000",
+    "initial_cash": "10000.0000000000",
+    "slippage_bps": "5.0000000000"
+  },
+  "dataset_hash": "2e8b0b16ac2e8d74bf362697d7e1d0e5eb133386363edf8e6d4d25ee373b7d15",
+  "engine_version": "m4-core-v1",
+  "equity_curve": [
+    {
+      "cash": "10000.0000000000",
+      "drawdown": "0.0000000000",
+      "drawdown_pct": "0.0000000000",
+      "equity": "10000.0000000000",
+      "fees": "0",
+      "market_value": "0.0000000000",
+      "realized_pnl": "0",
+      "step": 1,
+      "timestamp": "2026-01-02T11:00:00+00:00",
+      "total_pnl": "0.0000000000",
+      "unrealized_pnl": "0.0000000000"
+    },
+    {
+      "cash": "9099.4599550000",
+      "drawdown": "9.5400450000",
+      "drawdown_pct": "0.0954004500",
+      "equity": "9990.4599550000",
+      "fees": "0.0900450000",
+      "market_value": "891.0000000000",
+      "realized_pnl": "0",
+      "step": 2,
+      "timestamp": "2026-01-02T12:00:00+00:00",
+      "total_pnl": "-9.5400450000",
+      "unrealized_pnl": "-9.4500000000"
+    },
+    {
+      "cash": "10088.8660045000",
+      "drawdown": "0.0000000000",
+      "drawdown_pct": "0.0000000000",
+      "equity": "10088.8660045000",
+      "fees": "0.1889955000",
+      "market_value": "0.0000000000",
+      "realized_pnl": "89.0550000000",
+      "step": 3,
+      "timestamp": "2026-01-02T13:00:00+00:00",
+      "total_pnl": "88.8660045000",
+      "unrealized_pnl": "0.0000000000"
+    }
+  ],
+  "manifest_hash": "45d07b911bc64219ed78295af93931201c4ccdffdff73f78cf6c8531a6288e52",
+  "metrics": {
+    "average_loss": null,
+    "average_profit": "88.8660045000",
+    "breakeven_trades": 0,
+    "closed_pnl_net": "88.8660045000",
+    "closed_trades": 1,
+    "fees": "0.1889955000",
+    "fills": 2,
+    "final_equity": "10088.8660045000",
+    "initial_cash": "10000.0000000000",
+    "losing_trades": 0,
+    "max_drawdown": "9.5400450000",
+    "max_drawdown_pct": "0.0954004500",
+    "open_entry_fees": "0.0000000000",
+    "open_positions": 0,
+    "orders": 2,
+    "profit_factor": null,
+    "profit_factor_status": "no_losses",
+    "realized_pnl_gross": "89.0550000000",
+    "return_pct": "0.8886600450",
+    "slippage": "0.9450000000",
+    "total_pnl_net": "88.8660045000",
+    "unrealized_pnl_gross": "0.0000000000",
+    "win_rate_pct": "100.0000000000",
+    "winning_trades": 1
+  },
+  "mode": "BACKTEST",
+  "outcomes": [
+    {
+      "executed_at": "2026-01-02T11:00:00+00:00",
+      "execution_candle_id": "c67e5bc2-6152-5da2-a651-051932962c14",
+      "fee": "0.0900450000",
+      "fill_id": "7346cc68-4809-5033-a125-baa7108a51a9",
+      "order_id": "1481f8c0-6645-5313-ba51-e6ec81bb22e1",
+      "price": "100.0500000000",
+      "quantity": 9,
+      "realized_pnl": "0",
+      "reason": "simulated_fill",
+      "reference_price": "100.0000000000",
+      "risk": {
+        "decided_at": "2026-01-02T11:00:00+00:00",
+        "decision": "APPROVED",
+        "decision_id": "22799267-d8cd-5d18-aac9-1309bd1eef44",
+        "reason": "Aprovado pelas regras de risco.",
+        "signal_id": "7094e067-6879-5d82-b947-9b54c193bac0"
+      },
+      "signal": {
+        "candle_id": "45f33199-739e-5b2d-b722-cb11bb0d2940",
+        "generated_at": "2026-01-02T11:00:00+00:00",
+        "reason": "Fechamento acima da abertura.",
+        "signal_id": "7094e067-6879-5d82-b947-9b54c193bac0",
+        "signal_type": "BUY",
+        "strategy_version": "v1-deterministic",
+        "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6"
+      },
+      "slippage": "0.4500000000",
+      "status": "FILLED",
+      "symbol": "SPY"
+    },
+    {
+      "executed_at": "2026-01-02T12:00:00+00:00",
+      "execution_candle_id": "9fd25e66-914d-521a-a09d-a5737254eb61",
+      "fee": "0.0989505000",
+      "fill_id": "750622f8-c5ad-5dd7-81c7-4d6a2db817f9",
+      "order_id": "e8a158bd-5a01-50b5-82b5-d91769bf32f1",
+      "price": "109.9450000000",
+      "quantity": 9,
+      "realized_pnl": "89.0550000000",
+      "reason": "simulated_fill",
+      "reference_price": "110.0000000000",
+      "risk": {
+        "decided_at": "2026-01-02T12:00:00+00:00",
+        "decision": "APPROVED",
+        "decision_id": "fc25d4da-c806-5512-ad3a-75e7ab056be2",
+        "reason": "Aprovado pelas regras de risco.",
+        "signal_id": "074cb72c-3830-5bd1-bc1a-d84ab629d03c"
+      },
+      "signal": {
+        "candle_id": "c67e5bc2-6152-5da2-a651-051932962c14",
+        "generated_at": "2026-01-02T12:00:00+00:00",
+        "reason": "Fechamento abaixo da abertura.",
+        "signal_id": "074cb72c-3830-5bd1-bc1a-d84ab629d03c",
+        "signal_type": "SELL",
+        "strategy_version": "v1-deterministic",
+        "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6"
+      },
+      "slippage": "0.4950000000",
+      "status": "FILLED",
+      "symbol": "SPY"
+    }
+  ],
+  "positions": [],
+  "result_hash": "27e9c52d07d091b99803750d73bdbd80c3368ec0310e1656aa339887bd24176a",
+  "risk_version": "m2-expiry-1h",
+  "run_id": "0ab6919d-2449-5987-9afa-d2c85abac3e1",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "candle_id": "45f33199-739e-5b2d-b722-cb11bb0d2940",
+      "generated_at": "2026-01-02T11:00:00+00:00",
+      "reason": "Fechamento acima da abertura.",
+      "signal_id": "7094e067-6879-5d82-b947-9b54c193bac0",
+      "signal_type": "BUY",
+      "strategy_version": "v1-deterministic",
+      "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6"
+    },
+    {
+      "candle_id": "c67e5bc2-6152-5da2-a651-051932962c14",
+      "generated_at": "2026-01-02T12:00:00+00:00",
+      "reason": "Fechamento abaixo da abertura.",
+      "signal_id": "074cb72c-3830-5bd1-bc1a-d84ab629d03c",
+      "signal_type": "SELL",
+      "strategy_version": "v1-deterministic",
+      "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6"
+    },
+    {
+      "candle_id": "9fd25e66-914d-521a-a09d-a5737254eb61",
+      "generated_at": "2026-01-02T13:00:00+00:00",
+      "reason": "Abertura e fechamento equivalentes. Sem a\u00e7\u00e3o.",
+      "signal_id": "afc7b2ec-d121-5db9-a728-ae127f81f938",
+      "signal_type": "HOLD",
+      "strategy_version": "v1-deterministic",
+      "stream_id": "e18319e2-6044-5123-949e-3cacf891f5e6"
+    }
+  ],
+  "strategy_version": "v1-deterministic",
+  "trades": [
+    {
+      "closed_at": "2026-01-02T12:00:00+00:00",
+      "entry_fill_id": "7346cc68-4809-5033-a125-baa7108a51a9",
+      "exit_fill_id": "750622f8-c5ad-5dd7-81c7-4d6a2db817f9",
+      "fees": "0.1889955000",
+      "gross_pnl": "89.0550000000",
+      "net_pnl": "88.8660045000",
+      "opened_at": "2026-01-02T11:00:00+00:00",
+      "quantity": 9,
+      "symbol": "SPY"
+    }
+  ]
+}

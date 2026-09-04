@@ -1,3 +1,13 @@
+# Aceite M4 — decisões da validação final
+
+Correções restritas às bordas API/Flutter: contratos e arquivos fail closed,
+export do snapshot em memória, replay OPEN→CLOSE e SafeArea Android. Finanças
+continuam exclusivamente no relatório produzido pelo núcleo existente.
+Acesso físico por loopback/adb reverse, sem backend na LAN.
+[Resultados e regressões](STATUS.md); M5 permanece não iniciado.
+
+---
+
 # Decisões M4 — núcleo (2026-09-04)
 
 - Backtest como orquestrador offline dos domínios existentes; contabilidade continua

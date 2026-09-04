@@ -1,0 +1,43 @@
+{
+  "base_sha": "de7b84a2578e04f0f41cabb1165dcd58d7b5fbd4",
+  "device": "Xiaomi 23073RPBFG / 1791a20e / Android 15 API35",
+  "portrait": "1200x1920",
+  "landscape": "1920x1200",
+  "rotation_restored": "free; user_rotation=0",
+  "transport": "adb reverse tcp:8000 tcp:8000; backend 127.0.0.1:8000",
+  "report_hash": "72bd0c1cb7ecaa12c5abb5f928cb9d803aeaea4bd7dfe24ddfa35dbe747db0d3",
+  "frames": 230,
+  "export_portrait_equals_report": true,
+  "export_landscape_equals_report": true,
+  "paper_tables_unchanged_hash": "4683dd6e623225ec619e316dbd845d005ec5787dc9e6682447e2cd525dcec614",
+  "paper_paused": true,
+  "paper_cash": "9084.3458912448",
+  "paper_orders": 1,
+  "paper_position": {
+    "symbol": "TSLA",
+    "quantity": 3
+  },
+  "api_list_detail_export": 200,
+  "api_unknown_outside_traversal": 404,
+  "api_execution_methods": 405,
+  "logcat_lines": 266,
+  "logcat_flutter_errors": 0,
+  "python_non_postgresql": 172,
+  "python_postgresql": 49,
+  "python_total": 221,
+  "flutter_tests": 75,
+  "apk_sha256": "b49bfc8d4d43fa034043f5708fd2a1fbc76deb1aad8428845fe4860e679b3104",
+  "screenshots": {
+    "m4-xiaomi-equity-landscape.png": "9a9d115ffedb10c4062795d0d6e9408fed3f0a4c4dc7cf6ce6a88ffd16b8e45e",
+    "m4-xiaomi-equity.png": "558e572655f09e408a7f767c8d2090a3493af71da08aa1fdcb73d8f9356f8569",
+    "m4-xiaomi-export-landscape.png": "e306cf9e1ff4339c02f962d6f144a48ffa061f36ec94e04a94a1a3f84ecc7759",
+    "m4-xiaomi-export.png": "2a639146a2c0048c96525ee6f814972c33b48e5a94825310693274314a07b548",
+    "m4-xiaomi-landscape.png": "bc532422f5af6f289e6c563aea0dabd571ea32deac80bc90dc29122b6309b88a",
+    "m4-xiaomi-paper-separation.png": "cb25e7acfafd55785cb3f049890d62c8fa1212842aaa4aa4bfcf7cc003a621fd",
+    "m4-xiaomi-replay-landscape.png": "b194eb2eaa351b605723b432476618e4087c188c2f7d1a1a3b746ae4d9c26f92",
+    "m4-xiaomi-replay.png": "4f8d59f507eac598d98a2a27365cd199a31cc233f7477b1e54a310cbb3c743c4",
+    "m4-xiaomi-summary.png": "060997270ada64cc12f5a2d10fdd59c6af4ca4c0ea1623f18a58a5d989ab696f",
+    "m4-xiaomi-trades-landscape.png": "c7d803e1f0b42cb7663dfcf0222668295980ec2aa9c44ffa42c102f8eccb5777",
+    "m4-xiaomi-trades.png": "8ed65a6f339076f87fb00e90a4f02c91d81707df86e0c754c11f0b6c8773d6ae"
+  }
+}
