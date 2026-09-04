@@ -204,6 +204,8 @@ class _DecisionsPageState extends State<DecisionsPage> {
                               Text(item.reason),
                               const SizedBox(height: 12),
                               _Risk(item: item),
+              const SizedBox(height: 12),
+              _Paper(item: item),
                               const SizedBox(height: 12),
                               const Text('Ver candle e detalhes →'),
                             ],
@@ -219,6 +221,27 @@ class _DecisionsPageState extends State<DecisionsPage> {
         },
       ),
     ),
+  );
+}
+
+
+class _Paper extends StatelessWidget {
+  const _Paper({required this.item});
+  final Decision item;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Paper Execution  ${item.paperStatus ?? "WAITING"}',
+        style: TextStyle(
+          color: item.paperStatus == 'FILLED'
+              ? const Color(0xFF81C995)
+              : (item.paperStatus == 'WAITING' ? Colors.orange : const Color(0xFFFF9B9B)),
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ],
   );
 }
 
@@ -290,6 +313,8 @@ class DecisionDetail extends StatelessWidget {
               Text('Sinal gerado: ${decisionUtc(item.generatedAt)}'),
               const SizedBox(height: 20),
               _Risk(item: item),
+              const SizedBox(height: 12),
+              _Paper(item: item),
               Text('Avaliado: ${decisionUtc(item.decidedAt)}'),
               const Text(
                 'Resultado histórico, sem reavaliação durante a consulta.',

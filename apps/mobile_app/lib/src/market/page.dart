@@ -1,3 +1,5 @@
+import '../paper/controller.dart';
+import '../paper/page.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -42,6 +44,14 @@ class _MarketPageState extends State<MarketPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.orange, tooltip: 'Carteira Simulada',
+        child: const Icon(Icons.account_balance_wallet, color: Colors.white),
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => PaperPage(controller: PaperController())));
+        },
+      ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: controller,

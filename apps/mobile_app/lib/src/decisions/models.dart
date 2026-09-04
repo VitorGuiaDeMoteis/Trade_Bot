@@ -11,7 +11,8 @@ class Decision {
       riskId = json['risk']['decision_id'] as String,
       risk = json['risk']['decision'] as String,
       riskReason = json['risk']['reason'] as String,
-      decidedAt = DateTime.parse(json['risk']['decided_at'] as String) {
+      decidedAt = DateTime.parse(json['risk']['decided_at'] as String),
+      paperStatus = json['paper'] != null ? json['paper']['status'] as String? : null {
     if (!['BUY', 'SELL', 'HOLD'].contains(type) ||
         !['APPROVED', 'REJECTED'].contains(risk) ||
         reason.trim().isEmpty ||
@@ -27,6 +28,7 @@ class Decision {
   final Candle candle;
   final String signalId, type, version, reason, riskId, risk, riskReason;
   final DateTime generatedAt, decidedAt;
+  final String? paperStatus;
 }
 
 class DecisionsSnapshot {
@@ -38,7 +40,7 @@ class DecisionsSnapshot {
           .toList(),
       marketData = MarketDataInfo.fromJson(json['market_data'] as Json) {
     if (json['schema_version'] != '1.0' ||
-        json['execution'] != 'NONE' ||
+        json['execution'] != 'NONE' && json['execution'] != 'LOCAL_PAPER' ||
         json['timeframe'] != '1h' ||
         !symbols.contains(symbol) ||
         items.any((item) => item.candle.symbol != symbol) ||

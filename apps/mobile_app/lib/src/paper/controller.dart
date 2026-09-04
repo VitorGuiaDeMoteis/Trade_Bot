@@ -30,4 +30,27 @@ class PaperController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> togglePause(bool pause) async {
+    isLoading = true;
+    error = null;
+    notifyListeners();
+    try {
+      final res = await http.post(
+        Uri.parse('$apiUrl/api/v1/paper/pause'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'paused': pause, 'token': 'local-admin'}),
+      );
+      if (res.statusCode == 200) {
+        await loadPortfolio();
+      } else {
+        error = 'Failed to toggle pause: ${res.statusCode}';
+      }
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
 }
