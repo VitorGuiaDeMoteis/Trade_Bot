@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/src/app.dart';
+import 'package:mobile_app/src/shell/app_shell.dart';
 import 'package:mobile_app/src/market/api.dart';
 import 'package:mobile_app/src/market/controller.dart';
 import 'package:mobile_app/src/market/models.dart';
@@ -27,17 +28,22 @@ void main() {
           addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
           final api = FakeApi();
           final controller = MarketController(api: api);
-          await tester.pumpWidget(TradingBotApp(controller: controller));
+          await tester.pumpWidget(TradingBotApp(controller: controller, initialDestination: AppDestination.market, useMockLivePaper: true));
           await tester.pump();
           expect(find.text('SIMULADO'), findsOneWidget);
           expect(find.text('Conectado'), findsOneWidget);
+          final marketScroll = find.descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          ).first;
           await tester.scrollUntilVisible(
             find.byKey(const Key('candle-count')),
             120,
+            scrollable: marketScroll,
           );
           expect(find.text('3 candles carregados para TEST'), findsOneWidget);
           final previous = find.byKey(const Key('previous-candle'));
-          await tester.scrollUntilVisible(previous, 150);
+          await tester.scrollUntilVisible(previous, 150, scrollable: marketScroll);
           await tester.pump();
           expect(tester.getSize(previous).height, greaterThanOrEqualTo(48));
           expect(tester.getSize(previous).width, greaterThanOrEqualTo(48));
@@ -71,7 +77,7 @@ void main() {
     final semantics = tester.ensureSemantics();
     final controller = MarketController(api: FakeApi());
     try {
-      await tester.pumpWidget(TradingBotApp(controller: controller));
+      await tester.pumpWidget(TradingBotApp(controller: controller, initialDestination: AppDestination.market, useMockLivePaper: true));
       await tester.pump();
       await expectLater(tester, meetsGuideline(textContrastGuideline));
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -86,7 +92,7 @@ void main() {
     final pending = Completer<Snapshot>();
     final api = FakeApi()..responses.add(() => pending.future);
     final controller = MarketController(api: api);
-    await tester.pumpWidget(TradingBotApp(controller: controller));
+    await tester.pumpWidget(TradingBotApp(controller: controller, initialDestination: AppDestination.market, useMockLivePaper: true));
     expect(find.text('Carregando'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     pending.complete(Snapshot.fromJson(snapshotJson([])));
@@ -186,7 +192,7 @@ void main() {
       final api = FakeApi()
         ..responses.add(() async => throw ApiFailure(entry.$1));
       final controller = MarketController(api: api);
-      await tester.pumpWidget(TradingBotApp(controller: controller));
+      await tester.pumpWidget(TradingBotApp(controller: controller, initialDestination: AppDestination.market, useMockLivePaper: true));
       await tester.pump();
       expect(find.text(entry.$2), findsOneWidget);
       final button = find.byKey(const Key('retry-button'));
@@ -206,7 +212,7 @@ void main() {
   ) async {
     final api = FakeApi();
     final controller = MarketController(api: api);
-    await tester.pumpWidget(TradingBotApp(controller: controller));
+    await tester.pumpWidget(TradingBotApp(controller: controller, initialDestination: AppDestination.market, useMockLivePaper: true));
     await tester.pump();
     api.sockets.last.add(statusJson(state: 'stopped'));
     await tester.pump();

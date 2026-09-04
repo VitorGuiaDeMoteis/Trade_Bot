@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/src/app.dart';
+import 'package:mobile_app/src/shell/app_shell.dart';
 import 'package:mobile_app/src/market/api.dart';
 import 'package:mobile_app/src/market/controller.dart';
 import 'package:mobile_app/src/market/models.dart';
@@ -134,7 +135,7 @@ void main() {
   ) async {
     final api = SeriesApi();
     final controller = MarketController(api: api);
-    await tester.pumpWidget(TradingBotApp(controller: controller));
+    await tester.pumpWidget(TradingBotApp(controller: controller, initialDestination: AppDestination.market, useMockLivePaper: true));
     await tester.pump();
     api.sockets.last.add(realStatus('SPY', state: 'market_closed'));
     await tester.pump();
@@ -218,12 +219,18 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         final controller = MarketController(api: SeriesApi());
-        await tester.pumpWidget(TradingBotApp(controller: controller));
+        await tester.pumpWidget(TradingBotApp(controller: controller, initialDestination: AppDestination.market, useMockLivePaper: true));
         await tester.pump();
         expect(find.text('DADOS REAIS'), findsOneWidget);
         expect(find.text('SIMULADO'), findsNothing);
         final chip = find.widgetWithText(ChoiceChip, 'AAPL');
-        await tester.scrollUntilVisible(chip, 120);
+        final marketScroll = find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        await tester.scrollUntilVisible(chip, 120, scrollable: marketScroll);
         await tester.pump();
         expect(tester.getSize(chip).height, greaterThanOrEqualTo(48));
         await tester.tap(chip);

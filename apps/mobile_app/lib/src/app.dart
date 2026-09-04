@@ -1,14 +1,27 @@
 import 'package:flutter/material.dart';
-import 'decisions/controller.dart';
 
+import 'decisions/controller.dart';
+import 'live_paper/controller.dart';
 import 'market/controller.dart';
-import 'market/page.dart';
+import 'shell/app_shell.dart';
 
 class TradingBotApp extends StatelessWidget {
-  const TradingBotApp({super.key, this.controller, this.decisionsController});
+  const TradingBotApp({
+    super.key,
+    this.controller,
+    this.decisionsController,
+    this.livePaperController,
+    this.useMockLivePaper = false,
+    this.mockPreview = false,
+    this.initialDestination = AppDestination.summary,
+  });
 
   final MarketController? controller;
   final DecisionsController? decisionsController;
+  final LivePaperController? livePaperController;
+  final bool useMockLivePaper;
+  final bool mockPreview;
+  final AppDestination initialDestination;
 
   @override
   Widget build(BuildContext context) {
@@ -19,11 +32,11 @@ class TradingBotApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8FABFF),
+          seedColor: const Color(0xFF7AA2FF),
           brightness: Brightness.dark,
-          surface: const Color(0xFF151C2A),
+          surface: const Color(0xFF121820),
         ),
-        scaffoldBackgroundColor: const Color(0xFF0B101A),
+        scaffoldBackgroundColor: const Color(0xFF0A0E14),
         visualDensity: VisualDensity.standard,
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
@@ -32,9 +45,13 @@ class TradingBotApp extends StatelessWidget {
           ),
         ),
       ),
-      home: MarketPage(
-        controller: controller,
+      home: AppShell(
+        marketController: controller,
         decisionsController: decisionsController,
+        livePaperController: livePaperController,
+        useMockLivePaper: useMockLivePaper,
+        mockPreview: mockPreview,
+        initialDestination: initialDestination,
       ),
     );
   }
