@@ -477,6 +477,8 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
             _auditRow('Model Provider', detail.provider),
             _auditRow('Model', detail.model),
             _auditRow('Model Version', detail.modelVersion),
+            if (detail.imageDigest != null)
+              _auditRow('OCI Image Digest', detail.imageDigest!),
             _auditRow('Prompt Version', detail.promptVersion),
             _auditRow('Schema Version', detail.schemaVersion),
             _auditRow('Input Hash', _shorten(detail.inputHash)),

@@ -189,3 +189,8 @@ Gates: `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy`,
 `$env:RUN_DB_TESTS='1'; uv run pytest -q`, `uv run alembic check`.
 Banco de teste dedicado 127.0.0.1:5433; nunca rodar fixtures no banco de uso.
 [Resultados finais](STATUS.md) e [evidência de isolamento](evidence/m5-isolation.json).
+# Extensão OCI real do M5
+
+[Contrato, recursos e execução do deepseek local](M5_REAL_MODEL.md). A migração
+0010 acrescenta image_digest à auditoria; o perfil REAL não altera limites FAKE.
+O estado do aceite consta no STATUS. As seções seguintes preservam o histórico.

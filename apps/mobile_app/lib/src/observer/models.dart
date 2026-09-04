@@ -113,6 +113,7 @@ class ObserverAnalysisDetail {
   final String provider;
   final String model;
   final String modelVersion;
+  final String? imageDigest;
   final String promptVersion;
   final String schemaVersion;
   final String? inputHash;
@@ -135,6 +136,7 @@ class ObserverAnalysisDetail {
     required this.provider,
     required this.model,
     required this.modelVersion,
+    this.imageDigest,
     required this.promptVersion,
     required this.schemaVersion,
     this.inputHash,
@@ -186,6 +188,7 @@ class ObserverAnalysisDetail {
       provider: json['provider'],
       model: json['model'],
       modelVersion: json['model_version'],
+      imageDigest: json['image_digest'],
       promptVersion: json['prompt_version'],
       schemaVersion: json['schema_version'],
       inputHash: json['input_hash'],

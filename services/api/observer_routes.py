@@ -10,6 +10,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from packages.contracts.observer import canonical, checksum, parse_output
+from packages.contracts.observer_real import REAL_MODEL, WEIGHTS_HASH
 from services.api.models import observer_analysis_runs
 
 router = APIRouter(prefix="/api/v1/observer", tags=["observer"])
@@ -50,6 +51,7 @@ class ObserverAnalysisDetail(BaseModel):
     provider: str
     model: str
     model_version: str
+    image_digest: str | None = None
     prompt_version: str
     schema_version: str
     input_hash: str | None
@@ -70,6 +72,12 @@ def _validated(row: Mapping[str, Any]) -> dict[str, Any]:
             identity[:2] == ("docker", "local-observer")
             and re.fullmatch(r"sha256:[a-f0-9]{64}", identity[2]) is not None
         )
+        if identity == ("oci-local", REAL_MODEL, "sha256:" + WEIGHTS_HASH):
+            known = (
+                re.fullmatch(r"sha256:[a-f0-9]{64}", value.get("image_digest") or "") is not None
+            )
+        elif value.get("image_digest") is not None:
+            raise ValueError("image_digest")
         if (
             not known
             or value["prompt_version"] != "observer-v1"
@@ -210,6 +218,7 @@ def get_analysis_detail(request: Request, analysis_id: UUID) -> ObserverAnalysis
         provider=row["provider"],
         model=row["model"],
         model_version=row["model_version"],
+        image_digest=row["image_digest"],
         prompt_version=row["prompt_version"],
         schema_version=row["schema_version"],
         input_hash=row["input_hash"],

@@ -242,9 +242,10 @@ void main() {
       api.detail = ObserverAnalysisDetail(
         analysisId: '3800434b-af16-4c8a-9763-caa489bf29dd',
         createdAt: DateTime.utc(2026, 9, 4),
-        provider: 'docker',
-        model: 'local-observer',
+        provider: 'oci-local',
+        model: 'deepseek-r1:8b',
         modelVersion: 'sha256:${'a' * 64}',
+        imageDigest: 'sha256:${'b' * 64}',
         promptVersion: 'observer-v1',
         schemaVersion: '1.0',
         latencyMs: 0,
@@ -279,6 +280,8 @@ void main() {
       );
       expect(tester.takeException(), isNull);
       await tester.scrollUntilVisible(find.text('AUDITORIA'), 250);
+      await tester.scrollUntilVisible(find.text('OCI Image Digest'), 250);
+      expect(find.text('sha256:${'b' * 64}'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('DISABLED'), 250);
       expect(tester.takeException(), isNull);
     });

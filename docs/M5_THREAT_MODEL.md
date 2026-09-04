@@ -1,9 +1,16 @@
 # Threat model — núcleo M5
 
+Extensão REAL autorizada: [perfil OCI deepseek](M5_REAL_MODEL.md). Preserva rede none,
+ausência de mounts/ports, UID65534, cap-drop e ambiente reduzido. Apenas o perfil
+REAL possui 7 GiB/6 CPUs/128 PIDs/tmpfs64MiB/contexto16384/1024 tokens/até900s.
+Perfil FAKE abaixo permanece intacto. Imagem e pesos são identidades distintas,
+verificadas por artefato confiável; modelo não declara identidade nem recebe tools.
+O aceite atual, medições e eventuais limitações estão no STATUS.
+
 Escopo original do núcleo preservado abaixo. A extensão HTTP/Flutter FAKE tem
 aceite e fronteiras em [M5_FAKE_ACCEPTANCE](M5_FAKE_ACCEPTANCE.md#api-e-segurança-funcional):
 somente GET de auditoria, com schema/hash/metadados revalidados e sem ModelProvider.
-Não acrescenta autoridade financeira ou exposição LAN. Modelo real não integrado.
+Não acrescenta autoridade financeira ou exposição LAN. O restante é o escopo histórico FAKE.
 
 ## 1. Overview
 

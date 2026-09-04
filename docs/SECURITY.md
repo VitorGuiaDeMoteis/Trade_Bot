@@ -115,3 +115,11 @@ Loopback restringe o destino HTTP, mas não isola filesystem/rede do runtime nat
 Não foi introduzido adapter que substitua a fronteira OCI por confiança no processo
 Ollama do usuário. Modelo real PENDING conforme condição explícita do pedido.
 [Evidência e proposta compatível](M5_REAL_PREFLIGHT.md). Threat model aprovado mantido.
+# Extensão REAL OCI autorizada
+
+[Perfil e verificações](M5_REAL_MODEL.md). Modelo local em namespace sem rede,
+rootfs read-only, sem mounts/ports, UID65534 e capabilities zeradas. Endpoint
+127.0.0.1:11434 existe somente dentro do contêiner; host não expõe serviço LLM.
+Imagem/pesos verificados pelo host e pelo wrapper. Sem tools, proxy, redirects,
+pull ou consumidor financeiro. Saída/reasoning não validada é descartada.
+Os limites REAL são explícitos e separados dos limites FAKE. Histórico abaixo.

@@ -169,3 +169,13 @@ Não implementar adapter HTTP host e declarar equivalência apenas por usar loop
 Reutilizar o deepseek-r1:8b local em futura imagem OCI revisada, com identidade
 imutável, recursos limitados e protocolo stdin/stdout; implementação pendente.
 [Inventário, conflito e proposta](M5_REAL_PREFLIGHT.md). Sem mudança de autoridade.
+# Perfil REAL M5 autorizado: OCI offline
+
+Reutilizar exclusivamente os pesos locais deepseek-r1:8b. Uma base oficial Ollama
+por digest; Python do wrapper reutilizado da imagem FAKE instalada. Contexto mínimo
+e hashes antes/depois, sem montar armazenamento do usuário na inferência.
+Perfil REAL separado; FAKE mantém seus limites. model_version identifica os pesos;
+image_digest identifica runtime/wrapper. Ambas entram no binding REAL da auditoria.
+Timeout HTTP interno usa exit124 e é convertido em TIMEOUT apenas no perfil REAL;
+o código anterior perdia essa distinção como MODEL_ERROR, mantendo HOLD.
+[Decisões, recursos e limites](M5_REAL_MODEL.md). Nenhuma autoridade financeira.

@@ -11,6 +11,7 @@ class Identity:
     provider: str
     model: str
     model_version: str
+    image_digest: str | None = None
 
 
 class ModelProvider(Protocol):

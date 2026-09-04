@@ -8,8 +8,10 @@ from time import monotonic
 from typing import Any
 
 from packages.contracts.observer import AIObserverSnapshot, checksum, parse_output
+from packages.contracts.observer_real import REAL_TIMEOUT
 from services.observer.prompt import PROMPT, PROMPT_VERSION
 from services.observer.provider import ModelProvider
+from services.observer.real import RealIsolatedProvider
 
 
 async def evaluate(
@@ -51,7 +53,7 @@ async def evaluate(
         for s in snapshot.symbols
     ):
         error = "STALE_DATA"
-    elif not 0 < timeout <= 30:
+    elif not 0 < timeout <= (REAL_TIMEOUT if isinstance(provider, RealIsolatedProvider) else 30):
         error = "INVALID_TIMEOUT"
     else:
         try:

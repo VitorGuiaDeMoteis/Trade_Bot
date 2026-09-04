@@ -33,6 +33,12 @@ def analyze(
             "prompt_hash": checksum(PROMPT),
             "enabled": enabled,
             "timeout": repr(timeout),
+            **({"real_gpu": True} if getattr(provider, "gpu", False) else {}),
+            **(
+                {"image_digest": provider.identity.image_digest}
+                if provider.identity.image_digest
+                else {}
+            ),
         }
     )
     with engine.begin() as c:

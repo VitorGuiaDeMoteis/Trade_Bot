@@ -266,6 +266,7 @@ observer_analysis_runs = Table(
     Column("provider", String(32), nullable=False),
     Column("model", String(64), nullable=False),
     Column("model_version", String(80), nullable=False),
+    Column("image_digest", String(71), nullable=True),
     Column("prompt_version", String(32), nullable=False),
     Column("prompt_hash", String(64), nullable=False),
     Column("schema_version", String(8), nullable=False),

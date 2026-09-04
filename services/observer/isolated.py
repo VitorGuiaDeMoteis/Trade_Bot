@@ -59,6 +59,7 @@ class IsolatedProvider:
                 env["DOCKER_HOST"] = "npipe:////./pipe/dockerDesktopLinuxEngine"
             else:
                 env["DOCKER_HOST"] = "unix:///var/run/docker.sock"
+            await self.verify_image(env, directory)
             process = await asyncio.create_subprocess_exec(
                 *self.arguments(name),
                 stdin=asyncio.subprocess.PIPE,
@@ -92,8 +93,7 @@ class IsolatedProvider:
                     group.create_task(read(process.stderr, 4096, False))
                     group.create_task(send())
                     group.create_task(process.wait())
-                if process.returncode != 0:
-                    raise RuntimeError("observer_process_failed")
+                self.check_returncode(process.returncode)
                 return output.result()
             finally:
                 if process.returncode is None:
@@ -116,3 +116,10 @@ class IsolatedProvider:
                     cleanup.kill()
                     await cleanup.wait()
                     raise RuntimeError("observer_cleanup_failed") from None
+
+    async def verify_image(self, env: dict[str, str], directory: str) -> None:
+        """Fake profile has no additional image metadata contract."""
+
+    def check_returncode(self, code: int | None) -> None:
+        if code != 0:
+            raise RuntimeError("observer_process_failed")

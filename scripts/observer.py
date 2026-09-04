@@ -17,6 +17,7 @@ from services.api.observer_store import analyze
 from services.backtesting.artifacts import write_artifact
 from services.observer.isolated import IsolatedProvider
 from services.observer.provider import FakeProvider, ModelProvider
+from services.observer.real import RealIsolatedProvider
 
 
 def main() -> None:
@@ -40,6 +41,10 @@ def main() -> None:
     run.add_argument("--enabled", action="store_true")
     run.add_argument("--timeout", type=float, default=2)
     run.add_argument("--image", help="Optional prebuilt, reviewed OCI image sha256 digest")
+    run.add_argument("--real-image", help="Reviewed offline deepseek OCI image sha256 digest")
+    run.add_argument(
+        "--real-gpu", action="store_true", help="Reviewed GPU image on existing device 0"
+    )
     args = parser.parse_args()
     engine = create_observer_database()
     try:
@@ -67,6 +72,15 @@ def main() -> None:
             )
         else:
             provider: ModelProvider = FakeProvider()
+            if args.real_gpu and not args.real_image:
+                raise ValueError("observer_gpu_requires_real_image")
+            if args.image and args.real_image:
+                raise ValueError("observer_choose_one_profile")
+            if args.real_image:
+                docker = shutil.which("docker")
+                provider = RealIsolatedProvider(
+                    Path(docker).resolve() if docker else None, args.real_image, gpu=args.real_gpu
+                )
             if args.image:
                 docker = shutil.which("docker")
                 provider = IsolatedProvider(Path(docker).resolve() if docker else None, args.image)

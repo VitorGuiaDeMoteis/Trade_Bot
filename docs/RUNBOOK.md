@@ -296,3 +296,12 @@ Integração real pendente por isolamento; não há comando de análise real apr
 foram verificados sem download; corrigir o startup sozinho não resolve a fronteira
 OCI exigida. Não executar `ollama pull` como recuperação automática.
 [Proposta OCI e gates atuais](M5_REAL_PREFLIGHT.md). O fluxo FAKE abaixo permanece válido.
+# Execução OCI real autorizada do M5
+
+[Build offline com pesos existentes, CLI e limites](M5_REAL_MODEL.md#executar).
+Usar --real-image com digest imutável, --enabled e timeout explícito até900s.
+Parar API anterior antes de migrar para 0010_m5_real_image. A API continua somente
+leitura em 127.0.0.1:8000; Xiaomi por adb reverse. Não iniciar streaming durante
+a prova de preservação. Timeout é HOLD de auditoria, não comando de estratégia.
+Não aumentar os limites FAKE nem baixar modelos para tentar corrigir uma falha.
+O diagnóstico do runtime nativo abaixo permanece histórico; ele não foi utilizado.
