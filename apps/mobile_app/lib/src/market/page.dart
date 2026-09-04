@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import '../decisions/controller.dart';
 import '../decisions/page.dart';
 import '../backtest/page.dart';
+import '../observer/api.dart';
+import '../observer/controller.dart';
+import '../observer/page.dart';
 
 import 'api.dart';
 import 'chart.dart';
@@ -136,6 +139,22 @@ class _MarketPageState extends State<MarketPage> {
                             ),
                             icon: const Icon(Icons.history),
                             label: const Text('Backtest'),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => ObserverPage(
+                                  controller: ObserverController(
+                                    api: HttpObserverApi(const String.fromEnvironment('API_BASE_URL')),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                            ),
+                            icon: const Icon(Icons.psychology),
+                            label: const Text('AI Observer'),
                           ),
                         ],
                       ),

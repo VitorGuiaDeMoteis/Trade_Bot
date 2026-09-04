@@ -2,8 +2,10 @@
 
 M4 ✅
 M5 Core Observer ✅
-M5 Flutter ⏳
-M5 Xiaomi ⏳
+M5 API ✅
+M5 Flutter ✅
+M5 Fake Validation ✅
+M5 Real Model ⏳
 M6 NÃO iniciado
 
 **M5 core acceptance: APPROVED.** Somente o núcleo autorizado; não declarar M5

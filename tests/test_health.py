@@ -101,6 +101,9 @@ def test_no_control_or_trading_routes(settings):  # type: ignore
             "/api/v1/backtests",
             "/api/v1/backtests/{result_hash}",
             "/api/v1/backtests/{result_hash}/export",
+            "/api/v1/observer/status",
+            "/api/v1/observer/analyses",
+            "/api/v1/observer/analyses/{analysis_id}",
         }
     assert all(
         set(methods) == {"get"} for path, methods in paths.items() if path != "/api/v1/paper/pause"

@@ -18,6 +18,7 @@ from services.api.database import check_database, create_database_engine
 from services.api.decisions_routes import router as decisions_router
 from services.api.market_routes import router as market_router
 from services.api.market_store import MarketStore
+from services.api.observer_routes import router as observer_router
 from services.api.paper_routes import router as paper_router
 from services.api.simulator_runtime import SimulatorRuntime
 from services.market_data.alpaca_provider import AlpacaMarketDataProvider
@@ -74,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(decisions_router)
     app.include_router(paper_router)
     app.include_router(backtest_router)
+    app.include_router(observer_router)
 
     @app.middleware("http")
     async def request_context(
