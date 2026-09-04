@@ -7,7 +7,7 @@ from services.risk_engine.engine import RiskEngine
 from services.strategy_engine.engine import BaseStrategy
 
 
-def test_strategy_generates_correct_signals():
+def test_strategy_generates_correct_signals():  # type: ignore
     engine = BaseStrategy()
     current_time = datetime.now(UTC)
 
@@ -52,7 +52,7 @@ def test_strategy_generates_correct_signals():
     assert signal2.signal_type == "SELL"
 
 
-def test_risk_engine_decisions():
+def test_risk_engine_decisions():  # type: ignore
     strategy = BaseStrategy()
     risk = RiskEngine()
     current_time = datetime.now(UTC)

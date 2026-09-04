@@ -8,19 +8,19 @@ from services.api.config import get_settings
 
 
 @pytest.fixture(autouse=True)
-def isolate_provider(monkeypatch):
+def isolate_provider(monkeypatch):  # type: ignore
     monkeypatch.setenv("MARKET_DATA_PROVIDER", "simulator")
     monkeypatch.setenv("ALPACA_API_KEY_ID", "")
     monkeypatch.setenv("ALPACA_API_SECRET_KEY", "")
     monkeypatch.setenv("RUN_ALPACA_SMOKE_TEST", "0")
     original_send = httpx.AsyncClient.send
 
-    async def offline_send(client, *args, **kwargs):
+    async def offline_send(client, *args, **kwargs):  # type: ignore
         if not isinstance(client._transport, httpx.MockTransport):
             pytest.fail("External HTTP forbidden in automated tests; inject MockTransport")
         return await original_send(client, *args, **kwargs)
 
-    def offline_connect(*args, **kwargs):
+    def offline_connect(*args, **kwargs):  # type: ignore
         pytest.fail("External WebSocket forbidden in automated tests; inject a fake")
 
     monkeypatch.setattr(httpx.AsyncClient, "send", offline_send)

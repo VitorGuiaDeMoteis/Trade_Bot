@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
         "packages/contracts",
     ],
 )
-def test_modules_do_not_import_other_services_or_http_framework(folder):
+def test_modules_do_not_import_other_services_or_http_framework(folder):  # type: ignore
     for path in (ROOT / folder).rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             modules = []

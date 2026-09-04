@@ -8,7 +8,7 @@ from packages.domain.market import SimulationSpec
 from services.market_simulator.generator import REGIMES, CandleGenerator
 
 
-def sequence(spec, count=120):
+def sequence(spec, count=120):  # type: ignore
     generator = CandleGenerator(spec)
     values = []
     last = Decimal("100.0000")
@@ -19,14 +19,14 @@ def sequence(spec, count=120):
     return values
 
 
-def test_same_seed_and_controlled_clock_are_reproducible():
+def test_same_seed_and_controlled_clock_are_reproducible():  # type: ignore
     spec = SimulationSpec(42, datetime(2020, 1, 1, tzinfo=UTC))
-    assert sequence(spec) == sequence(spec)
-    assert sequence(spec)[0].close_time == datetime(2020, 1, 1, 1, tzinfo=UTC)
+    assert sequence(spec) == sequence(spec)  # type: ignore
+    assert sequence(spec)[0].close_time == datetime(2020, 1, 1, 1, tzinfo=UTC)  # type: ignore
 
 
-def test_different_seeds_and_clocks_have_different_streams():
-    left, right = sequence(SimulationSpec(1)), sequence(SimulationSpec(2))
+def test_different_seeds_and_clocks_have_different_streams():  # type: ignore
+    left, right = sequence(SimulationSpec(1)), sequence(SimulationSpec(2))  # type: ignore
     assert [c.close for c in left] != [c.close for c in right]
     assert left[0].stream_id != right[0].stream_id
     assert (
@@ -35,8 +35,8 @@ def test_different_seeds_and_clocks_have_different_streams():
 
 
 @pytest.mark.parametrize("seed", [0, 1, 42, -100, 999999])
-def test_ohlcv_regimes_unique_sorted_timestamps(seed):
-    values = sequence(SimulationSpec(seed), 500)
+def test_ohlcv_regimes_unique_sorted_timestamps(seed):  # type: ignore
+    values = sequence(SimulationSpec(seed), 500)  # type: ignore
     assert {c.regime for c in values} == set(REGIMES)
     assert len({c.candle_id for c in values}) == len(values)
     assert len({c.open_time for c in values}) == len(values)
@@ -54,8 +54,8 @@ def test_ohlcv_regimes_unique_sorted_timestamps(seed):
             assert candle.open_time == values[index - 1].close_time
 
 
-def test_domain_rejects_invalid_candle_and_clock():
-    candle = sequence(SimulationSpec(), 1)[0]
+def test_domain_rejects_invalid_candle_and_clock():  # type: ignore
+    candle = sequence(SimulationSpec(), 1)[0]  # type: ignore
     for changes in [
         {"low": candle.high + 1},
         {"volume": -1},

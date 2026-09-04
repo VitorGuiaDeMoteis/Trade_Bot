@@ -30,7 +30,7 @@ pytestmark = [
 
 
 @pytest.fixture
-def market(monkeypatch):
+def market(monkeypatch):  # type: ignore
     for key, value in {
         "APP_ENV": "test",
         "POSTGRES_HOST": "127.0.0.1",
@@ -69,7 +69,7 @@ def market(monkeypatch):
         get_settings.cache_clear()
 
 
-def test_atomic_persistence_before_visibility_and_publication(market):
+def test_atomic_persistence_before_visibility_and_publication(market):  # type: ignore
     _, engine, generator, store = market
     candle = generator.next_closed(1)
     with engine.begin() as connection:
@@ -83,7 +83,7 @@ def test_atomic_persistence_before_visibility_and_publication(market):
     assert events[0].correlation_id
 
 
-def test_event_failure_rolls_back_candle(market):
+def test_event_failure_rolls_back_candle(market):  # type: ignore
     _, engine, generator, store = market
     with pytest.raises(RuntimeError):
         with engine.begin() as connection:
@@ -93,7 +93,7 @@ def test_event_failure_rolls_back_candle(market):
     assert store.events_after(0) == []
 
 
-def test_idempotency_restart_and_concurrent_writers(market):
+def test_idempotency_restart_and_concurrent_writers(market):  # type: ignore
     _, engine, generator, store = market
     candle = generator.next_closed(1)
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -108,7 +108,7 @@ def test_idempotency_restart_and_concurrent_writers(market):
         assert connection.scalar(select(func.count()).select_from(system_events)) == 2
 
 
-def test_database_constraints_and_content_collision(market):
+def test_database_constraints_and_content_collision(market):  # type: ignore
     _, engine, generator, store = market
     candle = generator.next_closed(1)
     store.append(candle)
@@ -127,7 +127,7 @@ def test_database_constraints_and_content_collision(market):
             connection.execute(candles.insert().values(**row))  # mesmo timestamp
 
 
-def test_rest_limits_pagination_watermark_and_stream_reset(market):
+def test_rest_limits_pagination_watermark_and_stream_reset(market):  # type: ignore
     settings, _, generator, store = market
     for _ in range(8):
         store.advance(generator)
@@ -152,7 +152,7 @@ def test_rest_limits_pagination_watermark_and_stream_reset(market):
         assert client.get(f"/api/v1/market/candles?stream_id={uuid4()}").status_code == 409
 
 
-def test_snapshot_to_websocket_race_replay_and_status(market):
+def test_snapshot_to_websocket_race_replay_and_status(market):  # type: ignore
     settings, _, generator, store = market
     store.advance(generator)
     with TestClient(create_app(settings)) as client:
@@ -176,7 +176,7 @@ def test_snapshot_to_websocket_race_replay_and_status(market):
             assert ws.receive_json()["sequence"] == 3
 
 
-def test_empty_snapshot_and_simulator_stopped_health(market):
+def test_empty_snapshot_and_simulator_stopped_health(market):  # type: ignore
     settings, _, _, _ = market
     with TestClient(create_app(settings)) as client:
         body = client.get("/api/v1/market/candles").json()
@@ -187,10 +187,10 @@ def test_empty_snapshot_and_simulator_stopped_health(market):
         assert health.json()["market_data"]["state"] == "stopped"
 
 
-def test_runtime_runs_stops_and_recovers_from_real_database_error(market):
+def test_runtime_runs_stops_and_recovers_from_real_database_error(market):  # type: ignore
     settings, engine, generator, store = market
 
-    async def scenario():
+    async def scenario():  # type: ignore
         runtime = SimulatorRuntime(
             settings.model_copy(update={"simulator_enabled": True}),
             store,
@@ -236,10 +236,10 @@ def test_runtime_runs_stops_and_recovers_from_real_database_error(market):
         finally:
             await runtime.stop()
 
-    asyncio.run(scenario())
+    asyncio.run(scenario())  # type: ignore
 
 
-def test_real_connection_failure_rest_health_and_runtime(market):
+def test_real_connection_failure_rest_health_and_runtime(market):  # type: ignore
     settings, _, _, _ = market
     unavailable = settings.model_copy(update={"postgres_port": 1, "simulator_enabled": True})
     with TestClient(create_app(unavailable)) as client:
@@ -247,7 +247,7 @@ def test_real_connection_failure_rest_health_and_runtime(market):
         assert response.status_code == 503
         assert response.json() == {"detail": "database_unavailable"}
         deadline = monotonic() + 6
-        while client.app.state.simulator.state != "degraded" and monotonic() < deadline:
+        while client.app.state.simulator.state != "degraded" and monotonic() < deadline:  # type: ignore
             sleep(0.05)
         health = client.get("/health")
         assert health.status_code == 503

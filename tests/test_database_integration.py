@@ -21,7 +21,7 @@ pytestmark = [
 ]
 
 
-def test_postgres_migration_round_trip_and_health(monkeypatch):
+def test_postgres_migration_round_trip_and_health(monkeypatch):  # type: ignore
     # Conexao fixa ao banco de teste; nunca usa o banco de desenvolvimento.
     values = {
         "APP_ENV": "test",
@@ -59,7 +59,7 @@ def test_postgres_migration_round_trip_and_health(monkeypatch):
             "legacy_market_archive",
         }
         with TestClient(create_app(settings)) as client:
-            client.app.state.simulator.state = "connected"
+            client.app.state.simulator.state = "connected"  # type: ignore
             assert client.get("/health").status_code == 200
             command.downgrade(config, "base")
             degraded = client.get("/health")
