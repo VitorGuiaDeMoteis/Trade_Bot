@@ -1,4 +1,99 @@
-# Aceite final M4 — 2026-09-04
+# M5 — aceite do núcleo Observer, 2026-09-04
+
+M4 ✅
+M5 Core Observer ✅
+M5 Flutter ⏳
+M5 Xiaomi ⏳
+M6 NÃO iniciado
+
+**M5 core acceptance: APPROVED.** Somente o núcleo autorizado; não declarar M5
+inteiro concluído. Base `bc942b046d7f9f3961f4fe0352492d8849897613` confirmada após
+`git pull --ff-only origin codex/m4-backtesting`. Branch criada `codex/m5-observer`.
+Nenhum merge. [Contratos, operação e limites](M5_CORE.md), [threat model](M5_THREAT_MODEL.md).
+
+## Gates finais do M5
+
+| Comando/validação | Resultado |
+| --- | --- |
+| `uv run ruff format --check .` | OK, 118 arquivos |
+| `uv run ruff check .` | OK |
+| `uv run mypy` | OK, 67 arquivos |
+| `uv run mypy scripts/observer.py` | OK, CLI adicional |
+| `docker compose --profile test up -d --wait postgres_test` | Healthy, PostgreSQL dedicado 127.0.0.1:5433 |
+| `$env:RUN_DB_TESTS='1'; uv run pytest -q` | **277 passaram**, nenhum skip/failure |
+| Não-PostgreSQL | **212 passaram** |
+| PostgreSQL | **65 passaram**, contagem confirmada com `pytest --collect-only -q -m integration` |
+| Testes adicionados M5 | **56**: 40 sem PG +16 com PG; 221 anteriores preservados |
+| `uv run alembic check` | OK em dev5432 e test5433, revisão0009_m5_observer |
+| Migração/reversão | Upgrade/downgrade no banco descartável; upgrade local após backup |
+| OCI real | Fake OK; timeout/HOLD persistido; sem contêiner residual |
+| `/health` após migração | HTTP200, database=up; API em 127.0.0.1 |
+| Flutter/Xiaomi | Não executados: fora deste recorte, M4 físico já aceito |
+
+Execução final Python: 29,59s. Único aviso: depreciação Starlette/AnyIO preexistente.
+Nenhum teste desabilitado, cobertura reduzida ou tecnologia substituída. Logs
+completos locais `.artifacts/m5-pytest-final.txt`, JUnit `.artifacts/m5-python-final.xml`.
+
+## Evidências de segurança e integridade
+
+- Projeção explícita e JSON Schemas versionados; input até64KiB, stdout16KiB,
+  stderr4KiB descartado. UTC/as_of, closed candles, ordenação cross-asset e hash.
+- Testes de JSON inválido/truncado, texto fora do JSON, extras, enum/confidence,
+  ordens, Unicode, excesso de dados, stale/degraded/disabled e processo ausente.
+- Segredos plantados em configuração, campos extras, ambiente e exceções não
+  chegam ao DTO/provider/auditoria. Configuração específica DB não carrega Alpaca.
+- Guards AST para imports/calls proibidos. Strategy, RiskEngine, PaperExecutor,
+  Backtest Engine, domínio financeiro e Flutter sem alterações em relação à base.
+- PostgreSQL compara todas as tabelas paper e também sinais/risco antes/depois
+  de análise OK, falhas e disabled; nenhuma mudança. Concorrência/restart não
+  duplicam análise, conflito de UUID é explícito, rollback não deixa linha parcial.
+- Modelo OCI real: UID65534, rootfs read-only, somente loopback interno, sem acesso
+  ao PostgreSQL, repositório ou socket Docker, capabilities zero, seccomp ativo.
+  [Evidência](evidence/m5-isolation.json). Não há credenciais, vendor/SDK ou Trading API.
+
+## Banco local e demonstração
+
+Backup `.artifacts/m5-before.sql`, 3.435.026 bytes, ignorado pelo Git. A migração
+adicionou somente auditoria independente, sem FK/trigger financeiro.
+Snapshot histórico real: 96candles/21.468bytes, input hash
+`587e58838720e85214de05203504dd6ec929592ec82023b20415f212feb9b2b8`.
+Não retrodatamos os sinais/risco: posteriores ao as_of escolhido foram omitidos.
+
+Fake OK, retry em novo processo sem duplicação, disabled/HOLD, OCI OK, timeout
+OCI/HOLD e imagem inexistente/HOLD produziram cinco análises persistidas.
+[Metadados de auditoria](evidence/m5-audit.json) e [passos da demo](DEMO.md).
+
+Todas as linhas das nove tabelas paper ficaram idênticas antes/depois. Fingerprint
+M5 `8536831e37779b86f74bf23a88a31a9f0f88cb557fa8eeba4085b42ba10f4c4a` usa lista
+ordenada de JSONs de linhas (serialização diferente da evidência M4 abaixo).
+Cash **9084.3458912448**, LONG **TSLA3**, **1order/1fill**, **paused=true**.
+Nenhum resume/reset ou nova ordem. Snapshot e backup completos não foram publicados.
+
+## Correções e limitações
+
+Durante a implementação, corrigidos: seleção de último risco independente do
+último sinal; runtime não instalado entrando no fallback persistido; NaN/infinito
+no timeout sendo tratados como INVALID_TIMEOUT antes da inferência. JSONB ausente
+usa SQL NULL para as constraints de status. Ajustadas fixtures para timestamps
+históricos explícitos e normalização do ambiente Windows em uppercase.
+Nenhum bug exigiu alteração no domínio financeiro aceito.
+
+Somente fake determinístico implementado; o transporte OCI prepara o boundary de
+modelo real, mas não configura Codex SDK, OpenAI ou Ollama. Docker/kernel/imagem
+e operador são confiáveis. Falha do DB impede persistência; CLI falha explicitamente.
+Crash pré-commit pode repetir inferência, mas não duplica uma análise persistida.
+Espera por lock expira em3s; retry usa mesmo UUID. Limpeza de contêiner acrescenta
+até3s ao deadline e depende do daemon. Não existe endpoint ou consumidor financeiro M5.
+
+API reiniciada apenas para `/health` e encerrada após a prova. Observado no runtime
+existente: `SIMULATOR_ENABLED=false` não desliga Alpaca quando esse provider está
+selecionado; não iniciar API para a CLI offline. Isso foi documentado sem alterar
+o runtime. Backend permanece restrito a loopback quando iniciado. M1.5 streaming
+Alpaca em sessão aberta continua pendente; nenhum aceite desse teste foi realizado.
+
+---
+
+# Registro histórico: aceite final M4 — 2026-09-04
 
 M3 ✅
 

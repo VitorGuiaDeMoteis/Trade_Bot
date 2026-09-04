@@ -254,3 +254,37 @@ PAPER_TABLES = [
     paper_fills,
     paper_outcomes,
 ]
+
+
+# Observer audit has no foreign keys or write path into financial tables.
+observer_analysis_runs = Table(
+    "observer_analysis_runs",
+    metadata,
+    Column("analysis_id", Uuid, primary_key=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("as_of_utc", DateTime(timezone=True), nullable=True),
+    Column("provider", String(32), nullable=False),
+    Column("model", String(64), nullable=False),
+    Column("model_version", String(80), nullable=False),
+    Column("prompt_version", String(32), nullable=False),
+    Column("prompt_hash", String(64), nullable=False),
+    Column("schema_version", String(8), nullable=False),
+    Column("request_hash", String(64), nullable=False),
+    Column("input_hash", String(64), nullable=True),
+    Column("output_hash", String(64), nullable=True),
+    Column("status", String(16), nullable=False),
+    Column("fallback", String(8), nullable=True),
+    Column("error_code", String(32), nullable=True),
+    Column("latency_ms", BigInteger, nullable=False),
+    Column("sanitized_input", JSONB(none_as_null=True), nullable=True),
+    Column("validated_output", JSONB(none_as_null=True), nullable=True),
+    CheckConstraint("latency_ms >= 0", name="ck_observer_latency"),
+    CheckConstraint(
+        "(status = 'OK' AND fallback IS NULL AND error_code IS NULL "
+        "AND output_hash IS NOT NULL AND validated_output IS NOT NULL "
+        "AND sanitized_input IS NOT NULL AND input_hash IS NOT NULL AND as_of_utc IS NOT NULL) OR "
+        "(status = 'DEGRADED' AND fallback = 'HOLD' AND error_code IS NOT NULL "
+        "AND output_hash IS NULL AND validated_output IS NULL)",
+        name="ck_observer_status",
+    ),
+)

@@ -26,17 +26,21 @@ Este pacote congela o escopo da v0.1 antes da implementação. O objetivo da pri
 
 Em um celular ou tablet, o usuário consegue abrir o dashboard e acompanhar candles, saldo simulado, P&L, posições, sinais, decisões do risco e status do sistema em tempo real. O sistema pode ser reiniciado sem duplicar ordens e possui um botão funcional para bloquear novas operações.
 
-## Implementação atual: M4 — aceito após validação física
+## Implementação atual: M4 aceito e núcleo seguro M5
 
 M3 possui carteira paper reconciliada, STOP local pelo app e retomada somente CLI.
 M4 possui núcleo determinístico, API somente leitura de relatórios, Summary,
 curva interativa, Trades, replay visual e exportação JSON validados no Xiaomi
-em retrato/paisagem. Migração atual: `0008_m3_paper`.
+em retrato/paisagem. Migração atual: `0009_m5_observer`.
 
 [STATUS e gates](docs/STATUS.md) · [Executar M4](docs/M4_ACCEPTANCE.md) ·
 [Núcleo e métricas](docs/M4_CORE.md). O relatório é a fonte financeira oficial;
 Flutter apenas o apresenta. M1.5 streaming em sessão aberta permanece pendente.
-M5 não iniciado. Alpaca é somente Market Data; não há Trading API ou dinheiro real.
+M5 Core Observer: contrato saneado, provider fake/isolado e auditoria PostgreSQL
+por CLI, sem autoridade financeira. [Executar M5 e limites](docs/M5_CORE.md) ·
+[Threat model](docs/M5_THREAT_MODEL.md). Modelo real não integrado;
+M5 Flutter/Xiaomi pendentes, M6 não iniciado. Alpaca é somente Market Data;
+não há Trading API ou dinheiro real.
 
 ### Pré-requisitos
 

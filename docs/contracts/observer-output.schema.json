@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "Regime": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "enum": [
+            "TRENDING",
+            "RANGING",
+            "VOLATILE",
+            "UNCERTAIN"
+          ],
+          "title": "Label",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "maxLength": 240,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "label",
+        "confidence",
+        "evidence"
+      ],
+      "title": "Regime",
+      "type": "object"
+    },
+    "RiskFlag": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "DATA_STALE",
+            "DATA_QUALITY",
+            "VOLATILITY",
+            "CONCENTRATION",
+            "LOW_LIQUIDITY"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "LOW",
+            "MEDIUM",
+            "HIGH"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 240,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "RiskFlag",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "regime": {
+      "$ref": "#/$defs/Regime"
+    },
+    "risk_flags": {
+      "items": {
+        "$ref": "#/$defs/RiskFlag"
+      },
+      "maxItems": 8,
+      "title": "Risk Flags",
+      "type": "array"
+    },
+    "observations": {
+      "items": {
+        "maxLength": 240,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "title": "Observations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "regime",
+    "risk_flags",
+    "observations"
+  ],
+  "title": "AIObserverOutput",
+  "type": "object"
+}

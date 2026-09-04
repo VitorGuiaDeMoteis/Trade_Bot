@@ -1,0 +1,372 @@
+{
+  "$defs": {
+    "ObserverBacktest": {
+      "additionalProperties": false,
+      "properties": {
+        "result_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Result Hash",
+          "type": "string"
+        },
+        "return_pct": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Return Pct",
+          "type": "string"
+        },
+        "max_drawdown_pct": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Max Drawdown Pct",
+          "type": "string"
+        },
+        "closed_trades": {
+          "minimum": 0,
+          "title": "Closed Trades",
+          "type": "integer"
+        },
+        "profit_factor": {
+          "anyOf": [
+            {
+              "maxLength": 30,
+              "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Profit Factor"
+        }
+      },
+      "required": [
+        "result_hash",
+        "return_pct",
+        "max_drawdown_pct",
+        "closed_trades",
+        "profit_factor"
+      ],
+      "title": "ObserverBacktest",
+      "type": "object"
+    },
+    "ObserverCandle": {
+      "additionalProperties": false,
+      "properties": {
+        "symbol": {
+          "pattern": "^[A-Z][A-Z0-9.-]{0,15}$",
+          "title": "Symbol",
+          "type": "string"
+        },
+        "open_time": {
+          "format": "date-time",
+          "title": "Open Time",
+          "type": "string"
+        },
+        "close_time": {
+          "format": "date-time",
+          "title": "Close Time",
+          "type": "string"
+        },
+        "open": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Open",
+          "type": "string"
+        },
+        "high": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "High",
+          "type": "string"
+        },
+        "low": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Low",
+          "type": "string"
+        },
+        "close": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Close",
+          "type": "string"
+        },
+        "volume": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Volume",
+          "type": "integer"
+        },
+        "is_closed": {
+          "const": true,
+          "default": true,
+          "title": "Is Closed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "symbol",
+        "open_time",
+        "close_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ],
+      "title": "ObserverCandle",
+      "type": "object"
+    },
+    "ObserverPaper": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of_utc": {
+          "format": "date-time",
+          "title": "As Of Utc",
+          "type": "string"
+        },
+        "paused": {
+          "title": "Paused",
+          "type": "boolean"
+        },
+        "cash": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Cash",
+          "type": "string"
+        },
+        "equity": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Equity",
+          "type": "string"
+        },
+        "total_pnl": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Total Pnl",
+          "type": "string"
+        },
+        "positions": {
+          "items": {
+            "$ref": "#/$defs/ObserverPosition"
+          },
+          "maxItems": 4,
+          "title": "Positions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "as_of_utc",
+        "paused",
+        "cash",
+        "equity",
+        "total_pnl",
+        "positions"
+      ],
+      "title": "ObserverPaper",
+      "type": "object"
+    },
+    "ObserverPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "symbol": {
+          "pattern": "^[A-Z][A-Z0-9.-]{0,15}$",
+          "title": "Symbol",
+          "type": "string"
+        },
+        "quantity": {
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "average_price": {
+          "maxLength": 30,
+          "pattern": "^-?[0-9]{1,18}(\\.[0-9]{1,10})?$",
+          "title": "Average Price",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "quantity",
+        "average_price"
+      ],
+      "title": "ObserverPosition",
+      "type": "object"
+    },
+    "ObserverRisk": {
+      "additionalProperties": false,
+      "properties": {
+        "symbol": {
+          "pattern": "^[A-Z][A-Z0-9.-]{0,15}$",
+          "title": "Symbol",
+          "type": "string"
+        },
+        "decided_at": {
+          "format": "date-time",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "APPROVED",
+            "REJECTED"
+          ],
+          "title": "Decision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "decided_at",
+        "decision"
+      ],
+      "title": "ObserverRisk",
+      "type": "object"
+    },
+    "ObserverSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "symbol": {
+          "pattern": "^[A-Z][A-Z0-9.-]{0,15}$",
+          "title": "Symbol",
+          "type": "string"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        },
+        "strategy_version": {
+          "const": "v1-deterministic",
+          "title": "Strategy Version",
+          "type": "string"
+        },
+        "signal_type": {
+          "enum": [
+            "BUY",
+            "SELL",
+            "HOLD"
+          ],
+          "title": "Signal Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "generated_at",
+        "strategy_version",
+        "signal_type"
+      ],
+      "title": "ObserverSignal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "as_of_utc": {
+      "format": "date-time",
+      "title": "As Of Utc",
+      "type": "string"
+    },
+    "provider": {
+      "enum": [
+        "alpaca",
+        "simulator"
+      ],
+      "title": "Provider",
+      "type": "string"
+    },
+    "session_state": {
+      "enum": [
+        "connected",
+        "market_closed",
+        "delayed",
+        "degraded",
+        "offline"
+      ],
+      "title": "Session State",
+      "type": "string"
+    },
+    "symbols": {
+      "items": {
+        "pattern": "^[A-Z][A-Z0-9.-]{0,15}$",
+        "type": "string"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Symbols",
+      "type": "array"
+    },
+    "timeframe": {
+      "const": "1h",
+      "default": "1h",
+      "title": "Timeframe",
+      "type": "string"
+    },
+    "candles": {
+      "items": {
+        "$ref": "#/$defs/ObserverCandle"
+      },
+      "maxItems": 128,
+      "title": "Candles",
+      "type": "array"
+    },
+    "signals": {
+      "items": {
+        "$ref": "#/$defs/ObserverSignal"
+      },
+      "maxItems": 4,
+      "title": "Signals",
+      "type": "array"
+    },
+    "risk_decisions": {
+      "items": {
+        "$ref": "#/$defs/ObserverRisk"
+      },
+      "maxItems": 4,
+      "title": "Risk Decisions",
+      "type": "array"
+    },
+    "paper": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObserverPaper"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "accepted_backtest": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObserverBacktest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "as_of_utc",
+    "provider",
+    "session_state",
+    "symbols",
+    "candles",
+    "signals",
+    "risk_decisions",
+    "paper",
+    "accepted_backtest"
+  ],
+  "title": "AIObserverSnapshot",
+  "type": "object"
+}

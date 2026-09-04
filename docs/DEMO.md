@@ -1,3 +1,30 @@
+# M5 — demonstração do núcleo em 2026-09-04
+
+CLI executada contra PostgreSQL local após backup/migração0009. Snapshot histórico
+as_of `2026-09-03T21:00:00Z`: **96 candles, 21.468 bytes**, três símbolos e resumo
+do backtest M4 aceito. Input hash:
+`587e58838720e85214de05203504dd6ec929592ec82023b20415f212feb9b2b8`.
+Sinais/risco vazios nessa data, pois os registros foram gerados depois de as_of;
+o coletor não inventou conhecimento histórico. Paper leva seu próprio horário.
+
+1. Fake habilitado: OK/UNCERTAIN, versão observer-v1 registrada.
+2. Mesmo UUID/arquivo/parâmetros em outro processo: mesmo registro, sem duplicação.
+3. Sem --enabled: DEGRADED/HOLD, DISABLED.
+4. Fake OCI real, timeout10s: OK; modelo executou com UID65534 e rede none.
+5. OCI real, timeout0.05s: DEGRADED/HOLD, TIMEOUT; nenhum contêiner residual.
+6. Imagem inexistente sem pull: DEGRADED/HOLD, MODEL_ERROR.
+
+Cinco registros persistidos (o item2 reutiliza o primeiro). [Metadados](evidence/m5-audit.json),
+[prova de isolamento](evidence/m5-isolation.json). Contêiner: apenas interface lo,
+PostgreSQL inacessível, sem socket Docker/repositório, rootfs não gravável,
+capabilities zero, NoNewPrivs1 e seccomp2. Dados completos/backup permanecem locais.
+
+Paper integralmente idêntico antes/depois: cash9084.3458912448, LONG TSLA3,
+1order/1fill e paused=true. Modelos fake não fazem análise de mercado real.
+Nenhuma execução Flutter/tablet neste recorte. [Repetir CLI](M5_CORE.md#executar-no-powershell).
+
+---
+
 # M4 — demonstração física concluída
 
 [Fluxo executado, screenshots e comandos](M4_ACCEPTANCE.md). Summary, curva,

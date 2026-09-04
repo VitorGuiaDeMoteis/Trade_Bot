@@ -52,6 +52,7 @@ def test_postgres_migration_round_trip_and_health(monkeypatch):  # type: ignore
             assert connection.scalar(text("SHOW timezone")) == "UTC"
         assert set(inspect(engine).get_table_names()) == {
             "alembic_version",
+            "observer_analysis_runs",
             "candles",
             "system_events",
             "signals",

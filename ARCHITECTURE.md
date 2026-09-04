@@ -6,6 +6,12 @@ Construir uma fatia vertical local e simulada que percorra todo o fluxo: geraç�
 
 ## Componentes
 
+Recorte implementado M5: o Observer recebe DTO saneado através de adapters
+confiáveis de leitura e grava somente sua auditoria. Core não recebe Settings,
+engine SQL, executor ou controles. Fake local e transporte OCI sem rede/volumes;
+nenhum modelo vendor integrado. [Contratos e fluxo](docs/M5_CORE.md),
+[fronteiras e premissas](docs/M5_THREAT_MODEL.md). Interface Flutter M5 pendente.
+
 ### `mobile_app`
 
 Aplicativo Flutter responsivo.

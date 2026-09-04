@@ -1,0 +1,62 @@
+{
+  "analyses": {
+    "fake-866915c7-a5e4-4581-be36-aa7eaa47a7d6": {
+      "status": "OK",
+      "error_code": null,
+      "fallback": null,
+      "model": "deterministic-observer",
+      "model_version": "1",
+      "prompt_version": "observer-v1",
+      "input_hash": "587e58838720e85214de05203504dd6ec929592ec82023b20415f212feb9b2b8",
+      "output_hash": "58f5bc067da86b3777f151c8c5441cb956b93ded9c39e1550d62864c4eaaa815",
+      "latency_ms": 0
+    },
+    "fake-fbfd53c5-6754-43c3-9fcd-bd79ad46b1fa": {
+      "status": "DEGRADED",
+      "error_code": "DISABLED",
+      "fallback": "HOLD",
+      "model": "deterministic-observer",
+      "model_version": "1",
+      "prompt_version": "observer-v1",
+      "input_hash": "587e58838720e85214de05203504dd6ec929592ec82023b20415f212feb9b2b8",
+      "output_hash": null,
+      "latency_ms": 0
+    },
+    "docker-96590238-65b6-492e-96a9-3d4e50415a4c": {
+      "status": "OK",
+      "error_code": null,
+      "fallback": null,
+      "model": "local-observer",
+      "model_version": "sha256:8c3c56c0b12bf22016d4383696838395d4694bb7fa58e0714c4a71a7413ed80a",
+      "prompt_version": "observer-v1",
+      "input_hash": "587e58838720e85214de05203504dd6ec929592ec82023b20415f212feb9b2b8",
+      "output_hash": "7ebbca07ecbd69d0f5488c70e104e4fca7328f304ba8d179b503bd21f9f7638c",
+      "latency_ms": 561
+    },
+    "docker-63013448-ab9c-4bc0-9f30-3813ad010029": {
+      "status": "DEGRADED",
+      "error_code": "TIMEOUT",
+      "fallback": "HOLD",
+      "model": "local-observer",
+      "model_version": "sha256:8c3c56c0b12bf22016d4383696838395d4694bb7fa58e0714c4a71a7413ed80a",
+      "prompt_version": "observer-v1",
+      "input_hash": "587e58838720e85214de05203504dd6ec929592ec82023b20415f212feb9b2b8",
+      "output_hash": null,
+      "latency_ms": 125
+    },
+    "docker-2478b77c-08fe-433c-bbfb-66ee783f118f": {
+      "status": "DEGRADED",
+      "error_code": "MODEL_ERROR",
+      "fallback": "HOLD",
+      "model": "local-observer",
+      "model_version": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "prompt_version": "observer-v1",
+      "input_hash": "587e58838720e85214de05203504dd6ec929592ec82023b20415f212feb9b2b8",
+      "output_hash": null,
+      "latency_ms": 92
+    }
+  },
+  "paper_preserved": true,
+  "paper_paused": true,
+  "paper_fingerprint": "8536831e37779b86f74bf23a88a31a9f0f88cb557fa8eeba4085b42ba10f4c4a"
+}

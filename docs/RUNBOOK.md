@@ -1,3 +1,28 @@
+# M5 — operação local do Observer
+
+Seguir [M5_CORE](M5_CORE.md#executar-no-powershell) para snapshot, análise fake,
+contêiner opcional e retry idempotente. Migração atual `0009_m5_observer`.
+Nenhuma chave nova ou modelo real é necessário. Não iniciar Uvicorn/streaming
+para esta CLI; ela lê os dados existentes e escreve somente análises.
+
+Repetir uma operação interrompida com mesmo arquivo, UUID e parâmetros. Conflito
+de UUID ou cache corrompido é erro; investigar sem apagar evidência. Novo UUID
+significa nova análise. Sem `--enabled`, registrar DISABLED/HOLD. Timeout default
+2s, máximo30s, limpeza até3s adicionais. Banco indisponível impede a auditoria.
+
+Se Docker indisponível, restaurar o engine Linux local sem resetar volumes; o
+fake in-process continua disponível explicitamente. Não executar modelo real no
+host como alternativa. Inspecionar `docker ps -a --filter name=observer-` após
+problema de limpeza; não remover contêineres de outros serviços.
+
+Backup pré-migração local: `.artifacts/m5-before.sql` (ignorado). Nenhum restore,
+reset ou resume do paper foi executado. API temporariamente reiniciada para
+validar `/health` e encerrada após a prova; o núcleo M5 não requer servidor.
+`SIMULATOR_ENABLED=false` não desativa streaming Alpaca no runtime existente.
+Ao iniciar a API para uso normal, manter 127.0.0.1/adb reverse; nunca LAN.
+
+---
+
 # M4 — execução e aceite completos
 
 Siga [M4_ACCEPTANCE](M4_ACCEPTANCE.md) para API, APK e Xiaomi por USB/loopback.

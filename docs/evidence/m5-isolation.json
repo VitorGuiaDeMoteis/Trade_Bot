@@ -1,0 +1,18 @@
+{
+  "image": "sha256:8c3c56c0b12bf22016d4383696838395d4694bb7fa58e0714c4a71a7413ed80a",
+  "checks": {
+    "uid": 65534,
+    "cwd": "/tmp",
+    "interfaces": [
+      "lo"
+    ],
+    "repository_absent": true,
+    "docker_socket_absent": true,
+    "env_secret_names_absent": true,
+    "root_write_blocked": true,
+    "postgres_unreachable": true,
+    "CapEff": "0000000000000000",
+    "NoNewPrivs": "1",
+    "Seccomp": "2"
+  }
+}

@@ -1,3 +1,26 @@
+# Decisões M5 — somente núcleo Observer (2026-09-04)
+
+- CLI explícita; nenhuma chamada automática na API, scheduler ou tela Flutter.
+- Input/output versionados e limitados; financeiro em strings Decimal. Projeção
+  por allowlist remove metadados privados e razões livres. Configuração do adapter
+  DB restrita a POSTGRES_*; provider recebe somente bytes do snapshot e prompt.
+- Coleta READ ONLY/REPEATABLE READ, sem recomputar backtest. Paper usa reconciliação
+  existente. Sinais/risco respeitam seus horários reais; não retrodatá-los ao candle.
+- Último risco é independente do último sinal. Não inventar versão de risco ausente
+  no banco. Aceite de backtest é arquivo/hash explicitamente selecionado pelo operador.
+- Fake revisado in-process; transporte real por Docker local sem rede/mounts,
+  com imagem por hash e limites. Nenhuma integração Codex SDK/OpenAI/Ollama.
+- HOLD é exclusivamente fallback auditável. Não implementar consumer que o encaminhe
+  a Strategy/Risk/PaperExecutor ou pause/resume.
+- UUID explícito + lock/PK/binding; INSERT atômico, sem raw output/stderr. Falha do DB
+  é erro explícito, não falso sucesso. Crash pré-commit pode repetir inferência.
+- Núcleo aprovado pelos gates e prova OCI. M5 visual/tablet continuam pendentes.
+
+[Detalhes](M5_CORE.md) · [Threat model](M5_THREAT_MODEL.md) · [Gates](STATUS.md).
+As seções abaixo registram decisões de marcos anteriores.
+
+---
+
 # Aceite M4 — decisões da validação final
 
 Correções restritas às bordas API/Flutter: contratos e arquivos fail closed,

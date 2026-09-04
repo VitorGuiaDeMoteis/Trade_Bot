@@ -1,3 +1,20 @@
+# Segurança M5 — núcleo Observer (2026-09-04)
+
+Escopo atual e fronteiras verificadas em [M5_THREAT_MODEL](M5_THREAT_MODEL.md).
+Input saneado, output estrito e bounded, modelo sem credenciais/DB/executor,
+contêiner sem rede ou volumes; fake revisado é o único provider in-process.
+Adapter host possui conexão DB, mas só faz SELECT/reconciliação na coleta e INSERT
+na auditoria. Não há role SQL restrita nem garantia contra operador/daemon/kernel
+comprometido. Não passar código arbitrário como provider Python.
+
+Nenhuma resposta é executável; HOLD/erros permanecem na auditoria. Não armazenar
+stdout bruto, stderr, exceções externas ou configuração. Prompt é defesa adicional;
+a separação de autoridade é estrutural. Limites e recuperação em [M5_CORE](M5_CORE.md).
+Somente núcleo aprovado; modelo real, interface e validação Xiaomi M5 pendentes.
+Registros abaixo mantêm o contexto histórico dos outros marcos.
+
+---
+
 # M4 — API somente leitura e transporte local
 
 Backend em 127.0.0.1:8000 com --no-proxy-headers, Xiaomi por adb reverse.
