@@ -231,7 +231,9 @@ def test_migration_quarantine_preserves_complete_graph_and_downgrade(market):  #
                 correlation_id=uuid4(),
             )
         )
-        connection.execute(signals.insert().values(**asdict(signal)))
+        old_signal = asdict(signal)
+        old_signal.pop("reason")  # Column did not exist at the old revision.
+        connection.execute(signals.insert().values(**old_signal))
         connection.execute(risk_decisions.insert().values(**asdict(decision)))
     command.upgrade(config, "head")
     assert counts(engine) == [0] * 4  # type: ignore

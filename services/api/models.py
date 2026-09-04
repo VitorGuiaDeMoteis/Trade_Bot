@@ -68,6 +68,8 @@ signals = Table(
     Column("candle_id", Uuid, ForeignKey("candles.candle_id"), nullable=False),
     Column("stream_id", Uuid, nullable=False),
     Column("strategy_version", String(64), nullable=False),
+    Column("reason", String(255), nullable=False),
+    CheckConstraint("length(trim(reason)) > 0", name="ck_signals_reason"),
     Column("signal_type", String(16), nullable=False),
     Column("generated_at", DateTime(timezone=True), nullable=False),
     UniqueConstraint("candle_id", "strategy_version", name="uq_signals_candle_strategy"),

@@ -1,5 +1,23 @@
 # Contratos M1.5 — versão 2.0
 
+## M2 — GET /api/v1/decisions (envelope 1.0)
+
+Consulta somente leitura, independente do contrato de mercado 2.0. Parâmetros: `symbol` (primeiro configurado por padrão), `timeframe=1h`, `limit=50` (1..200). Retorna somente a série configurada, sem consultar o arquivo de quarentena e sem executar estratégia ou risco.
+
+- Envelope: `schema_version=1.0`, `symbol`, `symbols` configurados, `timeframe`, `limit`, `items`, `execution=NONE`, `market_data`, `correlation_id`.
+- Cada item contém `candle` (CandleResponse completo, Decimal como string e UTC), `signal` e `risk`.
+- Signal: `signal_id`, `candle_id`, `stream_id`, `strategy_version`, `signal_type` (BUY/SELL/HOLD), `reason`, `generated_at` UTC.
+- Risk: `decision_id`, `signal_id`, `decision` (APPROVED/REJECTED), `reason`, `decided_at` UTC.
+- Ordem: candle.open_time decrescente, desempate signal_id decrescente. Não ordenar pelo cursor de ingestão; backfills podem chegar fora da ordem do mercado. Sem paginação nesta etapa; limite representa uma janela recente.
+- HTTP 200 com items vazio indica ausência de decisões completas persistidas. Série/parâmetros inválidos: 422. Banco/schema indisponível: 503/database_unavailable, nunca histórico vazio fictício. Cache-Control: no-store.
+- Somente GET; POST retorna 405. Nenhuma rota de execução.
+
+O risco é a avaliação persistida naquele instante, não uma aprovação atual nem ordem. Não reavaliar expiração ao consultar. HOLD significa SEM AÇÃO mesmo se a avaliação registrada for APPROVED. A regra de validade permanece até 1h inclusive; maior que 1h rejeita; pausa tem precedência. Não existe controle de pausa pela API neste recorte.
+
+`market_data.feed` representa a configuração atual. O candle preserva provider, mas o modelo legado não armazena feed histórico; a tela de detalhe informa essa limitação. Os dados usados na validação física foram importados de Alpaca/IEX.
+
+Migração 0007_m2_decisions acrescenta `signals.reason` obrigatório e não vazio. Backfill prova versão v1-deterministic + sinal + comparação OHLC antes de preencher o motivo. Casos não comprovados recebem motivo explícito de justificativa histórica indisponível; IDs, sinais, decisões e timestamps não são recalculados. Novos sinais recebem reason diretamente da estratégia.
+
 Somente leitura local. A versão 2.0 rompe com o cursor Alpaca por timestamp e com snapshots que misturavam ativos. Contratos M1 antigos estão em [CONTRACTS-M1](CONTRACTS-M1.md); não usar seus exemplos como contrato atual.
 
 ## Candle fechado

@@ -16,9 +16,12 @@ class Signal:
     strategy_version: str
     signal_type: SignalType
     generated_at: datetime
+    reason: str
 
     def __post_init__(self) -> None:
         if self.generated_at.utcoffset() != timedelta(0):
             raise ValueError("O relógio deve estar em UTC.")
         if not self.strategy_version:
             raise ValueError("A versão da estratégia é obrigatória.")
+        if not self.reason.strip():
+            raise ValueError("A justificativa do sinal é obrigatória.")

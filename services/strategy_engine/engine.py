@@ -29,4 +29,9 @@ class BaseStrategy:
             strategy_version=self.VERSION,
             signal_type=signal_type,
             generated_at=current_time,
+            reason={
+                "BUY": "Fechamento acima da abertura.",
+                "SELL": "Fechamento abaixo da abertura.",
+                "HOLD": "Abertura e fechamento equivalentes. Sem ação.",
+            }[signal_type],
         )
