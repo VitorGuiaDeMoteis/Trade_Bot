@@ -31,54 +31,64 @@ class _ObserverPageState extends State<ObserverPage> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: widget.controller.load,
-          )
+          ),
         ],
       ),
-      body: ListenableBuilder(
-        listenable: widget.controller,
-        builder: (context, _) {
-          if (widget.controller.state == ObserverState.loading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (widget.controller.state == ObserverState.error) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text('Erro: ${widget.controller.errorMessage}'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: widget.controller.load,
-                    child: const Text('Tentar Novamente'),
+      body: SafeArea(
+        child: ListenableBuilder(
+          listenable: widget.controller,
+          builder: (context, _) {
+            if (widget.controller.state == ObserverState.loading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (widget.controller.state == ObserverState.error) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: Colors.red,
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Erro: ${widget.controller.errorMessage}'),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: widget.controller.load,
+                      child: const Text('Tentar Novamente'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final status = widget.controller.currentStatus;
+            final timeline = widget.controller.timeline;
+
+            return CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: _buildHeaderWarning()),
+                if (status != null)
+                  SliverToBoxAdapter(child: _buildStatusCard(status)),
+                const SliverToBoxAdapter(child: Divider()),
+                if (timeline.isEmpty)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('Nenhuma análise registrada'),
+                    ),
+                  )
+                else
+                  SliverList.builder(
+                    itemCount: timeline.length,
+                    itemBuilder: (context, index) =>
+                        _buildTimelineItem(context, timeline[index]),
                   ),
-                ],
-              ),
+              ],
             );
-          }
-
-          final status = widget.controller.currentStatus;
-          final timeline = widget.controller.timeline;
-
-          return Column(
-            children: [
-              _buildHeaderWarning(),
-              if (status != null) _buildStatusCard(status),
-              const Divider(),
-              Expanded(
-                child: timeline.isEmpty
-                    ? const Center(child: Text('Nenhuma análise registrada'))
-                    : ListView.builder(
-                        itemCount: timeline.length,
-                        itemBuilder: (context, index) {
-                          return _buildTimelineItem(context, timeline[index]);
-                        },
-                      ),
-              ),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -101,10 +111,13 @@ class _ObserverPageState extends State<ObserverPage> {
   }
 
   Widget _buildStatusCard(ObserverStatus status) {
+    final displayStatus = status.errorCode == 'DISABLED'
+        ? 'DISABLED'
+        : status.status;
     Color statusColor;
-    if (status.status == 'OK') {
+    if (displayStatus == 'OK') {
       statusColor = Colors.green;
-    } else if (status.status == 'DISABLED') {
+    } else if (displayStatus == 'DISABLED') {
       statusColor = Colors.grey;
     } else {
       statusColor = Colors.orange;
@@ -122,31 +135,40 @@ class _ObserverPageState extends State<ObserverPage> {
                 children: [
                   Icon(Icons.psychology, color: statusColor, size: 32),
                   const SizedBox(width: 8),
-                  Text(
-                    'Status: ${status.status}',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: statusColor,
+                  Expanded(
+                    child: Text(
+                      'Status: $displayStatus',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: statusColor,
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              if (status.status == 'DISABLED')
+              if (displayStatus == 'DISABLED')
                 const Text(
-                  'AI OBSERVER DESLIGADO\n\nStrategy: continua ativa\nRisk Engine: continua ativo\nPaper controls: inalterados',
+                  'AI OBSERVER DESLIGADO\n\nStrategy e Risk: não alterados pelo Observer\nPaper: controle independente',
                   style: TextStyle(color: Colors.orangeAccent),
                 ),
-              if (status.status != 'DISABLED') ...[
+              if (displayStatus != 'DISABLED') ...[
                 Text('Provider: ${status.provider ?? 'N/A'}'),
-                Text('Model: ${status.model ?? 'N/A'} (${status.modelVersion ?? 'N/A'})'),
+                Text(
+                  'Model: ${status.model ?? 'N/A'} (${status.modelVersion ?? 'N/A'})',
+                ),
                 Text('Prompt Version: ${status.promptVersion ?? 'N/A'}'),
                 if (status.asOfUtc != null)
-                  Text('Última análise: ${_formatDate(status.asOfUtc!.toLocal())}'),
+                  Text(
+                    'Data base do snapshot: ${_formatDate(status.asOfUtc!.toLocal())}',
+                  ),
                 Text('Latência: ${status.latencyMs ?? 0} ms'),
                 if (status.errorCode != null)
-                  Text('Último erro: ${status.errorCode}', style: const TextStyle(color: Colors.redAccent)),
+                  Text(
+                    'Último erro: ${status.errorCode}',
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
               ],
             ],
           ),
@@ -156,6 +178,9 @@ class _ObserverPageState extends State<ObserverPage> {
   }
 
   Widget _buildTimelineItem(BuildContext context, ObserverAnalysisItem item) {
+    final displayStatus = item.errorCode == 'DISABLED'
+        ? 'DISABLED'
+        : item.status;
     Color itemColor = Colors.grey;
     if (item.status == 'OK') itemColor = Colors.green;
     if (item.status == 'DEGRADED') itemColor = Colors.orange;
@@ -165,8 +190,10 @@ class _ObserverPageState extends State<ObserverPage> {
         backgroundColor: itemColor.withValues(alpha: 0.2),
         child: Icon(Icons.analytics, color: itemColor),
       ),
-      title: Text(item.asOfUtc != null ? _formatDate(item.asOfUtc!.toLocal()) : 'Desconhecido'),
-      subtitle: Text('Status: ${item.status} | Regime: ${item.regime ?? 'N/A'} | Riscos: ${item.riskFlagsCount}'),
+      title: Text(_formatDate(item.createdAt.toLocal())),
+      subtitle: Text(
+        'Status: $displayStatus | ${item.errorCode ?? 'Sem erro'} | Regime: ${item.regime ?? 'N/A'} | Riscos: ${item.riskFlagsCount}',
+      ),
       trailing: const Icon(Icons.chevron_right),
       onTap: () {
         Navigator.push(
@@ -204,70 +231,89 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalhe da Análise'),
-      ),
-      body: ListenableBuilder(
-        listenable: widget.controller,
-        builder: (context, _) {
-          if (widget.controller.state == ObserverState.loading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (widget.controller.state == ObserverState.error) {
-            return Center(child: Text('Erro: ${widget.controller.errorMessage}'));
-          }
+      appBar: AppBar(title: const Text('Detalhe da Análise')),
+      body: SafeArea(
+        child: ListenableBuilder(
+          listenable: widget.controller,
+          builder: (context, _) {
+            if (widget.controller.state == ObserverState.loading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (widget.controller.state == ObserverState.error) {
+              return Center(
+                child: Text('Erro: ${widget.controller.errorMessage}'),
+              );
+            }
 
-          final detail = widget.controller.detail;
-          if (detail == null) return const SizedBox.shrink();
+            final detail = widget.controller.detail;
+            if (detail == null) return const SizedBox.shrink();
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(detail),
-                const SizedBox(height: 16),
-                if (detail.status == 'DEGRADED' || detail.fallback == 'HOLD') _buildDegradedNotice(),
-                const SizedBox(height: 16),
-                _buildRegime(detail),
-                const SizedBox(height: 16),
-                _buildEvidences(detail),
-                const SizedBox(height: 16),
-                _buildRiskFlags(detail),
-                const SizedBox(height: 16),
-                _buildObservations(detail),
-                const SizedBox(height: 16),
-                _buildAudit(detail),
-              ],
-            ),
-          );
-        },
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'OBSERVADOR\nSEM AUTORIDADE DE EXECUÇÃO',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.deepPurpleAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildHeader(detail),
+                  const SizedBox(height: 16),
+                  if (detail.status == 'DEGRADED' || detail.fallback == 'HOLD')
+                    _buildDegradedNotice(detail),
+                  const SizedBox(height: 16),
+                  _buildRegime(detail),
+                  const SizedBox(height: 16),
+                  _buildEvidences(detail),
+                  const SizedBox(height: 16),
+                  _buildRiskFlags(detail),
+                  const SizedBox(height: 16),
+                  _buildObservations(detail),
+                  const SizedBox(height: 16),
+                  _buildAudit(detail),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
 
   Widget _buildHeader(ObserverAnalysisDetail detail) {
     return Text(
-      detail.asOfUtc != null ? 'Data base: ${_formatDate(detail.asOfUtc!.toLocal())}' : 'Data base desconhecida',
+      detail.asOfUtc != null
+          ? 'Data base: ${_formatDate(detail.asOfUtc!.toLocal())}'
+          : 'Data base desconhecida',
       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
     );
   }
 
-  Widget _buildDegradedNotice() {
+  Widget _buildDegradedNotice(ObserverAnalysisDetail detail) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       color: Colors.orange[900],
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'AI OBSERVER DEGRADED',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            detail.errorCode == 'DISABLED'
+                ? 'AI OBSERVER DESLIGADO'
+                : 'AI OBSERVER DEGRADED',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
           SizedBox(height: 8),
           Text(
-            'A análise de IA não pôde ser concluída.\n\nFallback interno: HOLD\n\nEsse HOLD pertence somente ao Observer e NÃO altera Strategy, Risk ou execução.',
+            'Observer HOLD ≠ Strategy HOLD.\n\nFallback interno: HOLD\n\nEsse HOLD pertence somente ao Observer e NÃO altera Strategy, Risk ou execução.',
             style: TextStyle(color: Colors.white),
           ),
         ],
@@ -282,11 +328,22 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('REGIME', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+            const Text(
+              'REGIME',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.blueAccent,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(detail.regimeLabel ?? 'N/A', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            Text(
+              detail.regimeLabel ?? 'N/A',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
             if (detail.regimeConfidence != null)
-              Text('Confiança reportada pelo modelo: ${(detail.regimeConfidence! * 100).toStringAsFixed(1)}%'),
+              Text(
+                'Confiança reportada pelo modelo: ${(detail.regimeConfidence! * 100).toStringAsFixed(1)}%',
+              ),
           ],
         ),
       ),
@@ -294,25 +351,34 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
   }
 
   Widget _buildEvidences(ObserverAnalysisDetail detail) {
-    if (detail.regimeEvidence.isEmpty) return const SizedBox.shrink();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('EVIDÊNCIAS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+            const Text(
+              'EVIDÊNCIAS',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.blueAccent,
+              ),
+            ),
             const SizedBox(height: 8),
-            ...detail.regimeEvidence.map((e) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('• ', style: TextStyle(fontSize: 18)),
-                      Expanded(child: Text(e)),
-                    ],
-                  ),
-                )),
+            if (detail.regimeEvidence.isEmpty)
+              const Text('Nenhuma evidência fornecida pelo provider.'),
+            ...detail.regimeEvidence.map(
+              (e) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• ', style: TextStyle(fontSize: 18)),
+                    Expanded(child: Text(e)),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -326,19 +392,31 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('RISK FLAGS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+            const Text(
+              'RISK FLAGS',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.redAccent,
+              ),
+            ),
             const SizedBox(height: 8),
-            if (detail.riskFlags.isEmpty) const Text('Nenhuma flag de risco identificada.'),
-            ...detail.riskFlags.map((f) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${f.code} (${f.severity})', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(f.message),
-                    ],
-                  ),
-                )),
+            if (detail.riskFlags.isEmpty)
+              const Text('Nenhuma flag de risco identificada.'),
+            ...detail.riskFlags.map(
+              (f) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${f.code} (${f.severity})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(f.message),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -353,18 +431,26 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('OBSERVATIONS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+            const Text(
+              'OBSERVATIONS',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.blueAccent,
+              ),
+            ),
             const SizedBox(height: 8),
-            ...detail.observations.map((o) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('• ', style: TextStyle(fontSize: 18)),
-                      Expanded(child: Text(o)),
-                    ],
-                  ),
-                )),
+            ...detail.observations.map(
+              (o) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• ', style: TextStyle(fontSize: 18)),
+                    Expanded(child: Text(o)),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -378,9 +464,16 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('AUDITORIA', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+            const Text(
+              'AUDITORIA',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+            ),
             const SizedBox(height: 8),
             _auditRow('Analysis ID', detail.analysisId),
+            _auditRow(
+              'Criada em UTC',
+              detail.createdAt.toUtc().toIso8601String(),
+            ),
             _auditRow('Model Provider', detail.provider),
             _auditRow('Model', detail.model),
             _auditRow('Model Version', detail.modelVersion),
@@ -390,7 +483,8 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
             _auditRow('Output Hash', _shorten(detail.outputHash)),
             _auditRow('Latency', '${detail.latencyMs} ms'),
             _auditRow('Status', detail.status),
-            if (detail.errorCode != null) _auditRow('Error Code', detail.errorCode!),
+            if (detail.errorCode != null)
+              _auditRow('Error Code', detail.errorCode!),
           ],
         ),
       ),
@@ -409,7 +503,13 @@ class _ObserverDetailPageState extends State<ObserverDetailPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 120, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold))),
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
           Expanded(child: Text(value)),
         ],
       ),

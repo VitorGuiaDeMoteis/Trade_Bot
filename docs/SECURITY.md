@@ -10,7 +10,11 @@ comprometido. Não passar código arbitrário como provider Python.
 Nenhuma resposta é executável; HOLD/erros permanecem na auditoria. Não armazenar
 stdout bruto, stderr, exceções externas ou configuração. Prompt é defesa adicional;
 a separação de autoridade é estrutural. Limites e recuperação em [M5_CORE](M5_CORE.md).
-Somente núcleo aprovado; modelo real, interface e validação Xiaomi M5 pendentes.
+API/Flutter FAKE também validados: HTTP expõe apenas metadados permitidos e saída
+revalidada por schema/hash; corrupção/erro de banco gera503 genérico. Não retorna
+snapshot/config/raw stdout/stderr. GET não importa nem inicia provider e não há
+métodos HTTP de execução Observer. [Aceite físico](M5_FAKE_ACCEPTANCE.md).
+Modelo real pendente; nenhum acesso de IA a executor, risco ou pause/resume.
 Registros abaixo mantêm o contexto histórico dos outros marcos.
 
 ---

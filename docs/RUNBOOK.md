@@ -1,4 +1,20 @@
-# M5 — operação local do Observer
+# M5 — API/Flutter FAKE validados
+
+[Comandos e procedimento físico](M5_FAKE_ACCEPTANCE.md#ambiente-e-execução).
+Backend em 127.0.0.1, Xiaomi por adb reverse, sem LAN. API lê análises já persistidas;
+não executar CLI de análise por rota. Reiniciar backend ao atualizar o contrato.
+Para esta validação, MARKET_DATA_PROVIDER=simulator e SIMULATOR_ENABLED=false
+congelam os dados de mercado; desligar apenas o segundo flag não para Alpaca.
+
+Corrupção de auditoria resulta em 503 genérico. Investigar a linha localmente,
+preservando evidência; não remover validações para exibir conteúdo adulterado.
+Metadados aceitam os dois providers fake/OCI já aprovados; outros providers exigem
+autorização/evolução posterior. Modelo real pendente. APK/API/reverse ficaram
+disponíveis após a prova; fonte e rotação do tablet foram restauradas.
+
+---
+
+# Histórico: operação local do núcleo Observer
 
 Seguir [M5_CORE](M5_CORE.md#executar-no-powershell) para snapshot, análise fake,
 contêiner opcional e retry idempotente. Migração atual `0009_m5_observer`.

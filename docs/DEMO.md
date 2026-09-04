@@ -1,3 +1,13 @@
+# M5 — demonstração FAKE no Xiaomi
+
+[Fluxo físico, dados persistidos e screenshots reais](M5_FAKE_ACCEPTANCE.md).
+Status/Timeline, OK/UNCERTAIN, evidências e flags vazias, observações, auditoria,
+DEGRADED/HOLD e DISABLED validados em retrato/paisagem e fonte 2x. Paper preservado
+e pausado; nenhuma inferência real. Modelo real pendente, M6 não iniciado.
+As seções abaixo registram as demonstrações anteriores do núcleo.
+
+---
+
 # M5 — demonstração do núcleo em 2026-09-04
 
 CLI executada contra PostgreSQL local após backup/migração0009. Snapshot histórico

@@ -1,4 +1,80 @@
-# M5 — aceite do núcleo Observer, 2026-09-04
+# M5 — aceite físico FAKE, 2026-09-04
+
+M5 Core Observer ✅
+M5 API ✅
+M5 Flutter ✅
+M5 Xiaomi Fake ✅
+
+M5 modelo real ⏳
+M6 não iniciado
+
+**M5 fake visual acceptance: APPROVED.** Não é conclusão do M5 inteiro.
+Pull confirmou `c1867db03ed33f797abf2cc8e10260a885a9223c` em
+`codex/m5-observer`. Somente validação e correção de bugs reproduzidos na API/UI
+Observer e sua fixture; nenhum motor financeiro ou provider foi alterado.
+
+## Gates finais desta validação
+
+| Gate | Resultado |
+| --- | --- |
+| `uv run ruff format --check .` | OK, 120 arquivos |
+| `uv run ruff check .` | OK |
+| `uv run mypy` | OK, 68 arquivos |
+| `docker compose --profile test up -d --wait postgres_test` | Healthy |
+| `$env:RUN_DB_TESTS='1'; uv run pytest -q` | **282 passaram**, 39,89s |
+| Unit / não-PostgreSQL | **212 passaram** |
+| PostgreSQL dedicado 5433 | **70 passaram**; contagem confirmada por collect-only |
+| `uv run alembic check` | Sem novas operações; revisão 0009_m5_observer |
+| `flutter analyze` | Sem problemas |
+| `flutter test` | **83 passaram** |
+| `flutter build apk --debug --dart-define=API_BASE_URL=http://127.0.0.1:8000` | Compilado e instalado no Xiaomi |
+
+Primeira checagem de formatação falhou na fixture nova; corrigida. Primeira suíte
+Python interrompida após identificar que a fixture apontava para o banco de uso.
+Agora todos os testes de API usam a fixture dedicada e sem geração de mercado.
+Reproduções falharam antes das correções: conteúdo persistido não validado, motivo
+DISABLED ausente e RenderFlex overflow de 33 pixels em paisagem 2x. Todos corrigidos
+antes dos gates finais. Nenhuma redução/desativação de testes. Permanecem apenas
+avisos de terceiros Starlette/AnyIO e SDK XML na primeira compilação.
+
+## API e dispositivo reais
+
+Backend **127.0.0.1:8000**, sem proxy/LAN. Xiaomi **23073RPBFG /1791a20e /Android15
+API35**, confirmado por `adb devices -l` e `flutter devices`; reverse confirmado
+como `tcp:8000 tcp:8000`. Coleta desligada com MARKET_DATA_PROVIDER=simulator e
+SIMULATOR_ENABLED=false; Market usa histórico TEST, sem gerar Signal/Risk novo.
+
+Oito análises FAKE persistidas: cinco do núcleo e três criadas pela CLI aprovada
+(OK, DISABLED, TIMEOUT OCI real). Nenhum INSERT inventado no banco de uso.
+GET status/lista/detalhes 200 conferidos com PostgreSQL; inexistente 404, UUID
+inválido 422, POST/PUT/PATCH/DELETE 405. Nenhum provider iniciado por rota; nenhum
+segredo/path/stdout/stderr exposto. Corrupção testada em PostgreSQL retorna 503
+genérico após revalidar metadados, schema e hash. Não inclui snapshot na API.
+
+Fluxo físico completo em retrato 1200×1920 e paisagem 1920×1200, também fonte 2x:
+Market → Observer → Status/Timeline → OK → Regime/Confidence → Evidências/Risk Flags
+→ Observations/Auditoria → DEGRADED/HOLD → DISABLED → Paper. Timeline, detalhe e
+auditoria roláveis; texto legível; **Observer HOLD ≠ Strategy HOLD** explícito.
+Evidências/flags vazias refletem exatamente o fake aprovado, sem fabricação de dados.
+Sem crash/overflow/exceção Flutter nos **256 registros de logcat do PID 18630**.
+Fonte restaurada para 1.0, rotação para free. APK instalado, API local e reverse ativos.
+
+## Integridade e evidências
+
+Antes/depois: **cash 9084.3458912448, TSLA 3, 1 order/1 fill, paused=true**.
+As nove tabelas paper, **2.193 signals** e **2.193 risk_decisions** ficaram integralmente
+idênticas. Relatórios M4 com os mesmos hashes. Nenhum pause/resume/reset/backtest.
+[Manifesto com hashes antes/depois e 21 screenshots físicos](evidence/m5-fake-acceptance.json).
+Os três placeholders anteriores de timeline/detail/degraded foram substituídos.
+
+[Fluxo, comandos, correções e índice das capturas reais](M5_FAKE_ACCEPTANCE.md).
+Logs completos e snapshots de comparação em `.artifacts/m5-physical-*`, ignorados
+pelo Git. Modelo real não implementado, nenhum gate de modelo real aprovado.
+M1.5 streaming Alpaca em sessão aberta continua pendente. Sem merge ou avanço M6.
+
+---
+
+# Histórico: aceite do núcleo Observer, 2026-09-04
 
 M4 ✅
 M5 Core Observer ✅

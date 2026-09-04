@@ -26,7 +26,9 @@ class ObserverStatus {
       model: json['model'],
       modelVersion: json['model_version'],
       promptVersion: json['prompt_version'],
-      asOfUtc: json['as_of_utc'] != null ? DateTime.parse(json['as_of_utc']) : null,
+      asOfUtc: json['as_of_utc'] != null
+          ? DateTime.parse(json['as_of_utc'])
+          : null,
       latencyMs: json['latency_ms'],
       errorCode: json['error_code'],
     );
@@ -47,6 +49,7 @@ class ObserverAnalysisItem {
   final String promptVersion;
   final int latencyMs;
   final String? fallback;
+  final String? errorCode;
 
   ObserverAnalysisItem({
     required this.analysisId,
@@ -62,12 +65,15 @@ class ObserverAnalysisItem {
     required this.promptVersion,
     required this.latencyMs,
     this.fallback,
+    this.errorCode,
   });
 
   factory ObserverAnalysisItem.fromJson(Map<String, dynamic> json) {
     return ObserverAnalysisItem(
       analysisId: json['analysis_id'],
-      asOfUtc: json['as_of_utc'] != null ? DateTime.parse(json['as_of_utc']) : null,
+      asOfUtc: json['as_of_utc'] != null
+          ? DateTime.parse(json['as_of_utc'])
+          : null,
       createdAt: DateTime.parse(json['created_at']),
       status: json['status'],
       regime: json['regime'],
@@ -79,6 +85,7 @@ class ObserverAnalysisItem {
       promptVersion: json['prompt_version'],
       latencyMs: json['latency_ms'] ?? 0,
       fallback: json['fallback'],
+      errorCode: json['error_code'],
     );
   }
 }
@@ -114,7 +121,7 @@ class ObserverAnalysisDetail {
   final String status;
   final String? errorCode;
   final String? fallback;
-  
+
   final String? regimeLabel;
   final double? regimeConfidence;
   final List<String> regimeEvidence;
@@ -145,13 +152,13 @@ class ObserverAnalysisDetail {
 
   factory ObserverAnalysisDetail.fromJson(Map<String, dynamic> json) {
     final vo = json['validated_output'];
-    
+
     String? rLabel;
     double? rConf;
     List<String> rEvid = [];
     List<RiskFlag> rFlags = [];
     List<String> obs = [];
-    
+
     if (vo != null) {
       if (vo['regime'] != null) {
         rLabel = vo['regime']['label'];
@@ -161,7 +168,9 @@ class ObserverAnalysisDetail {
         }
       }
       if (vo['risk_flags'] != null) {
-        rFlags = (vo['risk_flags'] as List).map((i) => RiskFlag.fromJson(i)).toList();
+        rFlags = (vo['risk_flags'] as List)
+            .map((i) => RiskFlag.fromJson(i))
+            .toList();
       }
       if (vo['observations'] != null) {
         obs = List<String>.from(vo['observations']);
@@ -170,7 +179,9 @@ class ObserverAnalysisDetail {
 
     return ObserverAnalysisDetail(
       analysisId: json['analysis_id'],
-      asOfUtc: json['as_of_utc'] != null ? DateTime.parse(json['as_of_utc']) : null,
+      asOfUtc: json['as_of_utc'] != null
+          ? DateTime.parse(json['as_of_utc'])
+          : null,
       createdAt: DateTime.parse(json['created_at']),
       provider: json['provider'],
       model: json['model'],

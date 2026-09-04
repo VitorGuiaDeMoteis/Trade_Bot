@@ -1,5 +1,10 @@
 # Threat model — núcleo M5
 
+Escopo original do núcleo preservado abaixo. A extensão HTTP/Flutter FAKE tem
+aceite e fronteiras em [M5_FAKE_ACCEPTANCE](M5_FAKE_ACCEPTANCE.md#api-e-segurança-funcional):
+somente GET de auditoria, com schema/hash/metadados revalidados e sem ModelProvider.
+Não acrescenta autoridade financeira ou exposição LAN. Modelo real não integrado.
+
 ## 1. Overview
 
 Escopo: Observer local por CLI, autorizado pelo usuário sobre M4 aceito. Não é

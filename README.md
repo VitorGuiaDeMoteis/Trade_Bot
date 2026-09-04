@@ -39,7 +39,9 @@ Flutter apenas o apresenta. M1.5 streaming em sessão aberta permanece pendente.
 M5 Core Observer: contrato saneado, provider fake/isolado e auditoria PostgreSQL
 por CLI, sem autoridade financeira. [Executar M5 e limites](docs/M5_CORE.md) ·
 [Threat model](docs/M5_THREAT_MODEL.md). Modelo real não integrado;
-M5 Flutter/Xiaomi pendentes, M6 não iniciado. Alpaca é somente Market Data;
+M5 API/Flutter e Xiaomi FAKE validados, incluindo retrato/paisagem e texto 2x.
+[Aceite físico e screenshots reais](docs/M5_FAKE_ACCEPTANCE.md).
+M5 modelo real pendente, M6 não iniciado. Alpaca é somente Market Data;
 não há Trading API ou dinheiro real.
 
 ### Pré-requisitos

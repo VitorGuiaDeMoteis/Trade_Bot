@@ -1,0 +1,401 @@
+{
+  "base_sha": "c1867db03ed33f797abf2cc8e10260a885a9223c",
+  "device": "1791a20e / 23073RPBFG / Android 15 API35",
+  "backend_unit": 212,
+  "postgresql": 70,
+  "total_python": 282,
+  "flutter_tests": 83,
+  "financial_tables": {
+    "paper_runs": {
+      "rows_before": 1,
+      "rows_after": 1,
+      "before_sha256": "caf69efc2a7cdec7ce8a79c2bfa148164877c883286b11c2a949fbf0a4b71529",
+      "after_sha256": "caf69efc2a7cdec7ce8a79c2bfa148164877c883286b11c2a949fbf0a4b71529",
+      "unchanged": true
+    },
+    "paper_events": {
+      "rows_before": 7,
+      "rows_after": 7,
+      "before_sha256": "eada98389d32ec4ee81ed28e1168bfe04c8d1a50d1002eabe76be9d2a50e333c",
+      "after_sha256": "eada98389d32ec4ee81ed28e1168bfe04c8d1a50d1002eabe76be9d2a50e333c",
+      "unchanged": true
+    },
+    "paper_marks": {
+      "rows_before": 1,
+      "rows_after": 1,
+      "before_sha256": "d45aa5f0c1f57c3cc271f22f3de34965af04a12dd3404fc06576c890f74ef0ac",
+      "after_sha256": "d45aa5f0c1f57c3cc271f22f3de34965af04a12dd3404fc06576c890f74ef0ac",
+      "unchanged": true
+    },
+    "portfolio_snapshots": {
+      "rows_before": 2,
+      "rows_after": 2,
+      "before_sha256": "6501afa40f948ef06dd9d6211f4c5264c22db46a9d49181789518fee927e90d9",
+      "after_sha256": "6501afa40f948ef06dd9d6211f4c5264c22db46a9d49181789518fee927e90d9",
+      "unchanged": true
+    },
+    "positions": {
+      "rows_before": 1,
+      "rows_after": 1,
+      "before_sha256": "7926397e7e730ba8ec2c2920e9c3a9036567a5cdd1e3f07bb5153c3c81b2574b",
+      "after_sha256": "7926397e7e730ba8ec2c2920e9c3a9036567a5cdd1e3f07bb5153c3c81b2574b",
+      "unchanged": true
+    },
+    "system_controls": {
+      "rows_before": 1,
+      "rows_after": 1,
+      "before_sha256": "fea072b9512a63fb790ec8debd8c492d30d2405af858ef347bcbb7860d888ac8",
+      "after_sha256": "fea072b9512a63fb790ec8debd8c492d30d2405af858ef347bcbb7860d888ac8",
+      "unchanged": true
+    },
+    "paper_orders": {
+      "rows_before": 1,
+      "rows_after": 1,
+      "before_sha256": "e7f45a4bb1255187e04e03740813215a30cb8facb17909e49c9811fd50801b56",
+      "after_sha256": "e7f45a4bb1255187e04e03740813215a30cb8facb17909e49c9811fd50801b56",
+      "unchanged": true
+    },
+    "paper_fills": {
+      "rows_before": 1,
+      "rows_after": 1,
+      "before_sha256": "aee71c3fefaaa5ce60382eb1912213b26598597617c7f2080e5f6db0f24ad53b",
+      "after_sha256": "aee71c3fefaaa5ce60382eb1912213b26598597617c7f2080e5f6db0f24ad53b",
+      "unchanged": true
+    },
+    "paper_outcomes": {
+      "rows_before": 1,
+      "rows_after": 1,
+      "before_sha256": "0043739f0517242346e536f2d14d83047abacb2b87a947cc232e10cd08d91376",
+      "after_sha256": "0043739f0517242346e536f2d14d83047abacb2b87a947cc232e10cd08d91376",
+      "unchanged": true
+    },
+    "signals": {
+      "rows_before": 2193,
+      "rows_after": 2193,
+      "before_sha256": "22bd214dd9a04809bc062869b9f3d60ac4659579767d3c403daaf9b7c1feab7c",
+      "after_sha256": "22bd214dd9a04809bc062869b9f3d60ac4659579767d3c403daaf9b7c1feab7c",
+      "unchanged": true
+    },
+    "risk_decisions": {
+      "rows_before": 2193,
+      "rows_after": 2193,
+      "before_sha256": "ec98f66049a84928a2a5bc407cf7aec150897e5d320adae2b6da668561c6d299",
+      "after_sha256": "ec98f66049a84928a2a5bc407cf7aec150897e5d320adae2b6da668561c6d299",
+      "unchanged": true
+    }
+  },
+  "backtest_reports_unchanged": true,
+  "api_no_provider_calls": true,
+  "paper": {
+    "cash": "9084.3458912448",
+    "paused": true,
+    "orders_count": 1,
+    "fills_count": 1,
+    "positions": [
+      {
+        "symbol": "TSLA",
+        "quantity": 3
+      }
+    ]
+  },
+  "logcat": {
+    "pid": 18630,
+    "lines": 256,
+    "flutter_errors": 0,
+    "crash": false
+  },
+  "font_scale_restored": "1.0",
+  "rotation_restored": "free",
+  "screenshots": [
+    {
+      "file": "m5-xiaomi-observer-status.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:53:43.608583+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "1.0",
+      "sha256": "a1fecdd54d7352c6615a85f8a458c3e04372ffe9fb65fcd48238fecb45f202dc"
+    },
+    {
+      "file": "m5-xiaomi-observer-timeline.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:53:47.020130+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "1.0",
+      "sha256": "a1fecdd54d7352c6615a85f8a458c3e04372ffe9fb65fcd48238fecb45f202dc"
+    },
+    {
+      "file": "m5-xiaomi-observer-analysis.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:53:53.683401+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "1.0",
+      "sha256": "43d99ed751c0ce97a08872b37fc74e427c5d54e07a9cb3a46d5959a0f0348418"
+    },
+    {
+      "file": "m5-xiaomi-observer-detail.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:53:57.677689+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "1.0",
+      "sha256": "5e0155a1264eba4f4bca70ff3ab6ae1196d3541409dca175aaa0943a57015bfc"
+    },
+    {
+      "file": "m5-xiaomi-observer-risk.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:54:14.535206+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "2.0",
+      "sha256": "934c4760da81d6bdb1e2ae0586a87ce92b4fe7b8f2d1562e8f6fa6c087a2d000"
+    },
+    {
+      "file": "m5-xiaomi-observer-audit.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:54:18.938414+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "2.0",
+      "sha256": "15c4950f480551e382b481b6fa69e35570d6a1b262d2ed77325c6e70f4d76279"
+    },
+    {
+      "file": "m5-xiaomi-observer-degraded.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:54:29.869017+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "1.0",
+      "sha256": "fde6ba941ec312c5e146a2a717b233c5521dc5e95a356c39879669747f8aaf18"
+    },
+    {
+      "file": "m5-xiaomi-observer-disabled.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:54:53.956495+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "1.0",
+      "sha256": "f33f204bb4c825f4fa1e50c23a2c5ae23cabfe1fd17fc7eb8439ee53c0b6c74e"
+    },
+    {
+      "file": "m5-xiaomi-paper-preserved.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:55:06.425515+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "1.0",
+      "sha256": "974ee36a2347e1812de851c296dffb0e24dce2a2bd3476d0dcc3cd938a950da7"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-status.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:55:18.035082+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "1.0",
+      "sha256": "da84b6ab73ad5e17c75084530f6447e94dd8f659b6548b9762af7fb4fa986cf8"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:55:24.839322+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "1.0",
+      "sha256": "e0387bff9b51584afd89528142030e7041ea81c3f6c0fefe51bba6938fa21760"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-audit.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:55:30.116540+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "1.0",
+      "sha256": "9c6824dd4197d77f438f3e4709e62277bdcf2c01d38f29fa31076b5dded5b64c"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-2x-status.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:56:14.276673+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "2.0",
+      "sha256": "65f9cab710dc830152a10729ac041f85f20414982a5fa0c27b46aa4db9005e3f"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-2x-timeline.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:56:18.626025+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "2.0",
+      "sha256": "8b026832d491ea54f297ce62112b85abf6e88117a05ea4764787ce1a352ef7c5"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-2x-degraded.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:56:25.159644+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "2.0",
+      "sha256": "8a68afeddd2bf04022dd03f42ae0add1b14af6eccb3df8698655475f8f325f27"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-2x-audit.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:56:30.546503+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "2.0",
+      "sha256": "21ce8ca5b9bde3bc749ee870557d349d179725c8c32a86a539d5035b23618d48"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-2x-audit-bottom.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:57:08.362193+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "2.0",
+      "sha256": "0bc60817964dc3663928464c052e917c245fdf7a7eb9b23a6340ce1b9c4851ab"
+    },
+    {
+      "file": "m5-xiaomi-observer-landscape-2x-disabled.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:57:17.304927+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "2.0",
+      "sha256": "ea4dc6de9fb35075a85eceb76a2993abb7e15e3b9d5821ffe415f7e729c59c6a"
+    },
+    {
+      "file": "m5-xiaomi-observer-portrait-2x-status.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:57:24.685983+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "2.0",
+      "sha256": "daf1fe3a2bf9deb17ece2a759791c157409040504a6bd4f7cb2ed5695ad777c5"
+    },
+    {
+      "file": "m5-xiaomi-paper-portrait-2x.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:57:49.596129+00:00",
+      "size": [
+        1200,
+        1920
+      ],
+      "font_scale": "2.0",
+      "sha256": "0fe4c323a6d248430df0003a0949bf5f651962ad173c312b920f68faed09792f"
+    },
+    {
+      "file": "m5-xiaomi-paper-landscape-2x.png",
+      "device": "1791a20e",
+      "physical": true,
+      "captured_at_utc": "2026-09-04T15:57:53.299909+00:00",
+      "size": [
+        1920,
+        1200
+      ],
+      "font_scale": "2.0",
+      "sha256": "a648c06bd37b1cbdedfe4accf4030d8ee917a24fc67a7ac1827f063328eeb7dd"
+    }
+  ],
+  "fake_visual_acceptance": "APPROVED",
+  "real_model": "PENDING",
+  "apk_sha256": "d7fc74a412a5458387a9a10ab8811e6c94b8c012346c37d0de7c0525da0fb3e2",
+  "api_checks": {
+    "get_from_db": true,
+    "unknown_404": true,
+    "invalid_uuid_422": true,
+    "write_methods_405": true,
+    "audit_unchanged": true,
+    "no_sensitive_fields": true,
+    "methods": [
+      "GET"
+    ],
+    "analysis_count": 8
+  },
+  "replaced_placeholders": {
+    "timeline": {
+      "old_bytes": 68,
+      "old_size": [
+        1,
+        1
+      ]
+    },
+    "detail": {
+      "old_bytes": 68,
+      "old_size": [
+        1,
+        1
+      ]
+    },
+    "degraded": {
+      "old_bytes": 68,
+      "old_size": [
+        1,
+        1
+      ]
+    }
+  }
+}

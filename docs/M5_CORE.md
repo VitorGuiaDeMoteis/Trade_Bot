@@ -1,5 +1,9 @@
 # M5 — núcleo seguro do Observer
 
+Este documento registra o recorte original do núcleo. A etapa FAKE passou também
+pela [validação física de API/Flutter](M5_FAKE_ACCEPTANCE.md); essa API somente lê
+auditoria persistida, sem acionar os providers. Modelo real permanece pendente.
+
 Recorte autorizado sobre `bc942b046d7f9f3961f4fe0352492d8849897613`, branch
 `codex/m5-observer`. Somente análise por CLI e auditoria. M4 permanece aceito;
 Flutter/Xiaomi M5 pendentes, M6 não iniciado. Nenhum fornecedor de IA integrado.

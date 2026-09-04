@@ -1,3 +1,19 @@
+# Decisões M5 — validação física FAKE
+
+- Preservar status auditável DEGRADED/HOLD para DISABLED; a apresentação usa o
+  error_code para identificar DESLIGADO. Observer HOLD não é Strategy HOLD.
+- Revalidar registros no HTTP, incluindo metadados e output_hash, sem expor raw
+  output/snapshot e sem iniciar modelo. Corrupção falha fechada com 503 genérico.
+- Usar somente o fake aprovado: listas vazias permanecem vazias. Não fabricar
+  flags/evidências para screenshots. Placeholders substituídos por capturas ADB.
+- Status e timeline compartilham rolagem; SafeArea e cards ocupam largura disponível
+  para funcionar em paisagem/fonte 2x. Data base e criação da análise são distintas.
+- Fixtures REST usam PostgreSQL descartável 5433, nunca credenciais/banco de uso.
+
+[Evidências e limitações](M5_FAKE_ACCEPTANCE.md). Modelo real e M6 não iniciados.
+
+---
+
 # Decisões M5 — somente núcleo Observer (2026-09-04)
 
 - CLI explícita; nenhuma chamada automática na API, scheduler ou tela Flutter.
