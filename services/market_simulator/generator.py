@@ -11,7 +11,6 @@ from packages.domain.timeframes import timeframe_duration
 REGIMES: tuple[Regime, ...] = ("uptrend", "downtrend", "sideways", "volatile")
 
 
-
 class CandleGenerator:
     def __init__(self, spec: SimulationSpec, timeframe: str = "1h") -> None:
         self.spec = spec

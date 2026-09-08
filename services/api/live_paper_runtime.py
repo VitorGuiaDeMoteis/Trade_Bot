@@ -2,29 +2,40 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
+from uuid import NAMESPACE_OID, uuid5
 
 from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
 from packages.contracts.broker import BrokerOrder, ExternalBroker
+from packages.contracts.provider import MarketDataProvider
 
 logger = logging.getLogger("live_paper_runtime")
 
 
 class LivePaperExecutionRuntime:
-    def __init__(self, broker: ExternalBroker, engine, symbol: str):
+    def __init__(
+        self,
+        broker: ExternalBroker,
+        engine: Engine,
+        symbols: list[str],
+        provider: MarketDataProvider,
+    ):
         self.broker = broker
         self.engine = engine
-        self.symbol = symbol
+        self.symbols = symbols
+        self.provider = provider
         self.running = False
-        self._task = None
+        self._task: asyncio.Task[None] | None = None
         self.execution_ready = False
 
-    def start(self):
+    def start(self) -> None:
         if not self.running:
             self.running = True
             self._task = asyncio.create_task(self._run())
 
-    async def stop(self):
+    async def stop(self) -> None:
         self.running = False
         if self._task:
             self._task.cancel()
@@ -33,7 +44,7 @@ class LivePaperExecutionRuntime:
             except asyncio.CancelledError:
                 pass
 
-    async def _run(self):
+    async def _run(self) -> None:
         try:
             await self._reconcile()
             self.execution_ready = True
@@ -48,7 +59,7 @@ class LivePaperExecutionRuntime:
                 logger.error(f"Error processing pending decisions: {e}")
             await asyncio.sleep(5)
 
-    async def _reconcile(self):
+    async def _reconcile(self) -> None:
         # 1. DB check (already running if we are here)
         account = await self.broker.get_account()
         clock = await self.broker.get_clock()
@@ -88,30 +99,38 @@ class LivePaperExecutionRuntime:
                     )
 
                     if r_order.filled_qty > 0:
-                        fill_id = f"{r_order.broker_order_id}-{r_order.filled_qty}"
-                        conn.execute(
-                            text("""
-                            INSERT INTO broker_fills (fill_id, client_order_id, qty, price, filled_at)
-                            VALUES (:fid, :cid, :qty, :price, :filled_at)
-                            ON CONFLICT DO NOTHING
-                        """),
-                            {
-                                "fid": fill_id,
-                                "cid": r_order.client_order_id,
-                                "qty": r_order.filled_qty,
-                                "price": r_order.filled_avg_price,
-                                "filled_at": now,
-                            },
-                        )
+                        already_filled = conn.execute(
+                            text(
+                                "SELECT COALESCE(SUM(qty), 0) FROM broker_fills WHERE client_order_id = :cid"
+                            ),
+                            {"cid": r_order.client_order_id},
+                        ).scalar()
+                        delta = r_order.filled_qty - (already_filled or 0)
+                        if delta > 0:
+                            fill_id = f"{r_order.broker_order_id}-{r_order.filled_qty}"
+                            conn.execute(
+                                text("""
+                                INSERT INTO broker_fills (fill_id, client_order_id, qty, price, filled_at)
+                                VALUES (:fid, :cid, :qty, :price, :filled_at)
+                                ON CONFLICT DO NOTHING
+                            """),
+                                {
+                                    "fid": fill_id,
+                                    "cid": r_order.client_order_id,
+                                    "qty": delta,
+                                    "price": r_order.filled_avg_price,
+                                    "filled_at": now,
+                                },
+                            )
 
-    async def _process_pending(self):
+    async def _process_pending(self) -> None:
         if not self.execution_ready:
             return
 
         now = datetime.now(UTC)
 
         clock = await self.broker.get_clock()
-        if not clock.get("is_open", False):
+        if not clock.is_open:
             return
 
         with self.engine.begin() as conn:
@@ -122,20 +141,37 @@ class LivePaperExecutionRuntime:
         if not ctrl or not ctrl.armed:
             return
 
+        status = self.provider.get_status()
+        if status.state in (
+            "degraded",
+            "stalled",
+            "reconnecting",
+            "starting",
+            "stopped",
+            "offline",
+            "configuration_error",
+        ):
+            logger.warning(f"Market provider unhealthy ({status.state}). Halting execution.")
+            return
+
         cutoff = ctrl.activation_cutoff
 
+        for symbol in self.symbols:
+            await self._process_symbol(symbol, now, cutoff)
+
+    async def _process_symbol(self, symbol: str, now: datetime, cutoff: datetime) -> None:
         with self.engine.begin() as conn:
             latest_candle = conn.execute(
                 text(
                     "SELECT close_time FROM candles WHERE symbol = :sym AND timeframe = '1m' ORDER BY close_time DESC LIMIT 1"
                 ),
-                {"sym": self.symbol},
+                {"sym": symbol},
             ).fetchone()
 
         if latest_candle:
             # If the market data is more than 5 minutes old while market is open, it's stale.
             if now - latest_candle.close_time > timedelta(minutes=5):
-                logger.warning(f"Market data stale for {self.symbol}. Halting execution.")
+                logger.warning(f"Market data stale for {symbol}. Halting execution.")
                 return
 
         query = text("""
@@ -151,10 +187,11 @@ class LivePaperExecutionRuntime:
               AND c.symbol = :symbol
               AND c.timeframe = '15m'
               AND s.strategy_version = 'v2-15m-baseline'
+            ORDER BY s.generated_at ASC
         """)
 
         with self.engine.begin() as conn:
-            rows = conn.execute(query, {"symbol": self.symbol}).fetchall()
+            rows = conn.execute(query, {"symbol": symbol}).fetchall()
 
         if not rows:
             return
@@ -165,52 +202,49 @@ class LivePaperExecutionRuntime:
 
         # Open order conflict protection
         for o in open_orders:
-            if o.symbol == self.symbol and o.status in (
+            if o.symbol == symbol and o.status in (
                 "new",
                 "accepted",
                 "pending_new",
                 "partially_filled",
             ):
-                logger.warning(
-                    f"Conflicting open order exists for {self.symbol}. Halting execution."
-                )
+                logger.warning(f"Conflicting open order exists for {symbol}. Halting execution.")
                 return
 
         current_qty = 0
         for p in positions:
-            if p.symbol == self.symbol:
+            if p.symbol == symbol:
                 current_qty = p.quantity
                 break
 
         # Limit one eligible decision per cycle to avoid multiple buys
         row = rows[0]
 
+        deterministic_id = uuid5(
+            NAMESPACE_OID, f"{row.strategy_version}-{row.signal_id}-{row.decision_id}-{symbol}-15m"
+        )
+        client_order_id = f"agy-{deterministic_id.hex}"
+
         # Cutoff check
         if row.generated_at < cutoff:
-            self._persist_failed_order(
-                row, f"agy-{row.decision_id}-{row.signal_id}", "rejected_historical"
-            )
+            self._persist_failed_order(symbol, row, client_order_id, "rejected_historical")
             return
 
         # Expiry check (signal valid for 30 minutes max)
         if (now - row.generated_at) > timedelta(minutes=30):
-            self._persist_failed_order(
-                row, f"agy-{row.decision_id}-{row.signal_id}", "rejected_expired"
-            )
+            self._persist_failed_order(symbol, row, client_order_id, "rejected_expired")
             return
-
-        client_order_id = f"agy-{row.decision_id}-{row.signal_id}"
 
         remote_order = await self.broker.get_order_by_client_order_id(client_order_id)
         if remote_order:
-            self._persist_order(row, remote_order)
+            self._persist_order(symbol, row, remote_order)
             return
 
         # Position sizing
         qty = 0
         if row.signal_type == "BUY":
             if current_qty > 0:
-                self._persist_failed_order(row, client_order_id, "rejected_position_exists")
+                self._persist_failed_order(symbol, row, client_order_id, "rejected_position_exists")
                 return
             max_cash = min(account.equity * Decimal("0.10"), account.cash)
             ref_price = Decimal(row.reference_price)
@@ -218,26 +252,26 @@ class LivePaperExecutionRuntime:
                 qty = int(max_cash // ref_price)
         elif row.signal_type == "SELL":
             if current_qty <= 0:
-                self._persist_failed_order(row, client_order_id, "rejected_no_position")
+                self._persist_failed_order(symbol, row, client_order_id, "rejected_no_position")
                 return
             qty = current_qty
 
         if qty <= 0:
-            self._persist_failed_order(row, client_order_id, "rejected_sizing")
+            self._persist_failed_order(symbol, row, client_order_id, "rejected_sizing")
             return
 
         try:
             order = await self.broker.submit_order(
-                symbol=self.symbol,
+                symbol=symbol,
                 side=row.signal_type,
                 quantity=qty,
                 client_order_id=client_order_id,
             )
-            self._persist_order(row, order)
+            self._persist_order(symbol, row, order)
         except Exception as e:
             logger.error(f"Order failed {client_order_id}: {e}")
 
-    def _persist_order(self, row, order: BrokerOrder):
+    def _persist_order(self, symbol: str, row: Any, order: BrokerOrder) -> None:
         with self.engine.begin() as t_conn:
             t_conn.execute(
                 text("""
@@ -260,7 +294,7 @@ class LivePaperExecutionRuntime:
                     "sid": row.signal_id,
                     "rid": row.decision_id,
                     "sv": row.strategy_version,
-                    "sym": self.symbol,
+                    "sym": symbol,
                     "tf": "15m",
                     "side": row.signal_type,
                     "rq": order.requested_qty,
@@ -272,7 +306,9 @@ class LivePaperExecutionRuntime:
                 },
             )
 
-    def _persist_failed_order(self, row, client_order_id: str, reason: str):
+    def _persist_failed_order(
+        self, symbol: str, row: Any, client_order_id: str, reason: str
+    ) -> None:
         with self.engine.begin() as t_conn:
             t_conn.execute(
                 text("""
@@ -289,7 +325,7 @@ class LivePaperExecutionRuntime:
                     "sid": row.signal_id,
                     "rid": row.decision_id,
                     "sv": row.strategy_version,
-                    "sym": self.symbol,
+                    "sym": symbol,
                     "tf": "15m",
                     "side": row.signal_type,
                     "st": reason,

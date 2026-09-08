@@ -36,5 +36,6 @@ class BaseStrategy:
             }[signal_type],
         )
 
+
 class StrategyV2_15mBaseline(BaseStrategy):
     VERSION = "v2-15m-baseline"

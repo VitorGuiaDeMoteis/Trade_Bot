@@ -171,4 +171,7 @@ async def fills(request: Request) -> dict[str, Any]:
             ).fetchall()
             return {"items": [dict(r._mapping) for r in rows]}
     except Exception as e:
-        raise HTTPException(503, f"database_error: {e}")
+        import logging
+
+        logging.getLogger("live_paper_routes").error(f"Fills database error: {e}")
+        raise HTTPException(503, "database_unavailable") from None

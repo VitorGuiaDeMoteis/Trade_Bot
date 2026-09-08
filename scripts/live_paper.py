@@ -1,14 +1,72 @@
 import argparse
 import asyncio
-import os
 import sys
 from datetime import UTC, datetime
 
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from dotenv import load_dotenv
 from sqlalchemy import text
 
 from services.api.config import Settings
 from services.api.database import create_database_engine
+from services.paper_executor.alpaca import AlpacaPaperBroker
+
+
+async def _preflight_arm(settings: Settings, engine) -> bool:
+    if settings.execution_mode != "alpaca_paper":
+        print(f"ERROR: EXECUTION_MODE must be alpaca_paper, got {settings.execution_mode}")
+        return False
+
+    if not settings.alpaca_api_key_id or not settings.alpaca_api_secret_key:
+        print("ERROR: Missing ALPACA_API_KEY_ID or ALPACA_API_SECRET_KEY")
+        return False
+
+    broker = AlpacaPaperBroker(
+        settings.alpaca_api_key_id.get_secret_value(),
+        settings.alpaca_api_secret_key.get_secret_value(),
+    )
+    if broker.base_url != "https://paper-api.alpaca.markets":
+        print(f"ERROR: Provider endpoint is not paper: {broker.base_url}")
+        return False
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        print(f"ERROR: check_database failed: {e}")
+        return False
+
+    try:
+        with engine.begin() as conn:
+            context = MigrationContext.configure(conn)
+            current_rev = context.get_current_revision()
+            alembic_cfg = Config("alembic.ini")
+            script = ScriptDirectory.from_config(alembic_cfg)
+            head_rev = script.get_current_head()
+            if current_rev != head_rev:
+                print(
+                    f"ERROR: Database schema out of date. Current: {current_rev}, Head: {head_rev}"
+                )
+                return False
+    except Exception as e:
+        print(f"ERROR: Alembic revision check failed: {e}")
+        return False
+
+    try:
+        await broker.get_clock()
+    except Exception as e:
+        print(f"ERROR: Alpaca get_clock failed: {e}")
+        return False
+
+    try:
+        await broker.get_account()
+    except Exception as e:
+        print(f"ERROR: Alpaca get_account failed: {e}")
+        return False
+
+    return True
 
 
 async def main():
@@ -17,12 +75,8 @@ async def main():
     args = parser.parse_args()
 
     load_dotenv()
-
-    execution_mode = os.getenv("EXECUTION_MODE", "local_paper")
-    api_key = os.getenv("ALPACA_API_KEY_ID")
-    secret = os.getenv("ALPACA_API_SECRET_KEY")
-
-    engine = create_database_engine(Settings())
+    settings = Settings()
+    engine = create_database_engine(settings)
 
     if args.action == "status":
         with engine.begin() as conn:
@@ -32,55 +86,50 @@ async def main():
                 )
             ).fetchone()
 
-        print(f"Execution Mode: {execution_mode}")
         if row:
-            print(f"Armed: {row.armed}")
-            print(f"Armed At: {row.armed_at}")
-            print(f"Activation Cutoff: {row.activation_cutoff}")
+            print(f"Status: {'ARMED' if row.armed else 'DISARMED'}")
+            if row.armed:
+                print(f"Armed At: {row.armed_at}")
+                print(f"Activation Cutoff: {row.activation_cutoff}")
         else:
-            print("System not initialized in DB.")
+            print("Status: UNINITIALIZED (DISARMED)")
 
     elif args.action == "arm":
-        if execution_mode != "alpaca_paper":
-            print("ERROR: EXECUTION_MODE must be alpaca_paper")
+        ok = await _preflight_arm(settings, engine)
+        if not ok:
+            print("ARM PREFLIGHT FAILED. Aborting.")
             sys.exit(1)
-        if not api_key or not secret:
-            print("ERROR: ALPACA credentials missing")
-            sys.exit(1)
-
-        # Optional: Ping broker to confirm
-        print("Arming system for Live Paper Trading...")
-        now = datetime.now(UTC)
 
         with engine.begin() as conn:
+            now = datetime.now(UTC)
             conn.execute(
                 text("""
                 INSERT INTO live_paper_control (control_id, armed, armed_at, updated_at, activation_cutoff)
                 VALUES (1, true, :now, :now, :now)
                 ON CONFLICT (control_id) DO UPDATE SET 
-                armed = true,
-                armed_at = :now,
-                updated_at = :now,
-                activation_cutoff = :now
-            """),
+                    armed = true,
+                    armed_at = EXCLUDED.armed_at,
+                    updated_at = EXCLUDED.updated_at,
+                    activation_cutoff = EXCLUDED.activation_cutoff
+                """),
                 {"now": now},
             )
-
-        print("System ARMED successfully!")
+        print("ARMED. Alpaca Paper execution enabled.")
 
     elif args.action == "disarm":
-        now = datetime.now(UTC)
         with engine.begin() as conn:
+            now = datetime.now(UTC)
             conn.execute(
                 text("""
-                UPDATE live_paper_control SET 
-                armed = false,
-                updated_at = :now
-                WHERE control_id = 1
-            """),
+                INSERT INTO live_paper_control (control_id, armed, updated_at)
+                VALUES (1, false, :now)
+                ON CONFLICT (control_id) DO UPDATE SET 
+                    armed = false,
+                    updated_at = EXCLUDED.updated_at
+                """),
                 {"now": now},
             )
-        print("System DISARMED")
+        print("DISARMED. All executions paused.")
 
 
 if __name__ == "__main__":

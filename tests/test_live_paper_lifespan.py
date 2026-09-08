@@ -5,7 +5,13 @@ from decimal import Decimal
 
 import pytest
 
-from packages.contracts.broker import BrokerAccount, BrokerOrder, BrokerPosition, ExternalBroker
+from packages.contracts.broker import (
+    BrokerAccount,
+    BrokerClock,
+    BrokerOrder,
+    BrokerPosition,
+    ExternalBroker,
+)
 from services.api.live_paper_runtime import LivePaperExecutionRuntime
 from services.api.main import create_app
 
@@ -39,8 +45,8 @@ class FakeExternalBroker(ExternalBroker):
             updated_at=datetime.now(UTC),
         )
 
-    async def get_clock(self):
-        return {"is_open": True, "timestamp": datetime.now(UTC).isoformat()}
+    async def get_clock(self) -> BrokerClock:
+        return BrokerClock(is_open=True, timestamp=datetime.now(UTC))
 
 
 @pytest.mark.skipif(os.getenv("RUN_DB_TESTS") != "1", reason="Dedicated PostgreSQL required")

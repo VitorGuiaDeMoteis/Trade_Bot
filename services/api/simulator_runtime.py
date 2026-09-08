@@ -116,6 +116,7 @@ class SimulatorRuntime:
             def make_callback(sym: str) -> Callable[[MarketBar], None]:
                 def callback(b: MarketBar) -> None:
                     asyncio.create_task(self._persist(b, sym))
+
                 return callback
 
             for symbol in self.settings.symbols:

@@ -6,6 +6,7 @@ import httpx
 
 from packages.contracts.broker import (
     BrokerAccount,
+    BrokerClock,
     BrokerOrder,
     BrokerPosition,
     ExternalBroker,
@@ -81,11 +82,16 @@ class AlpacaPaperBroker(ExternalBroker):
             resp.raise_for_status()
             return self._map_order(resp.json())
 
-    async def get_clock(self) -> dict[str, Any]:
+    async def get_clock(self) -> BrokerClock:
+        from datetime import datetime
         async with httpx.AsyncClient() as client:
             resp = await client.get(f"{self.base_url}/v2/clock", headers=self.headers)
             resp.raise_for_status()
-            return dict(resp.json())
+            data = resp.json()
+            return BrokerClock(
+                is_open=data.get("is_open", False),
+                timestamp=datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
+            )
 
     async def submit_order(
         self, symbol: str, side: str, quantity: int, client_order_id: str

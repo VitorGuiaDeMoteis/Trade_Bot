@@ -51,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for tf in ["1m", "5m", "15m", "1h"]:
                     is_operational = tf == configuration.market_timeframe
                     from services.strategy_engine.engine import StrategyV2_15mBaseline
+
                     stores[(symbol, tf)] = MarketStore(
                         engine,
                         series_id("alpaca", symbol, tf),
@@ -76,21 +77,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.market = stores[(configuration.symbols[0], configuration.market_timeframe)]
         app.state.simulator = SimulatorRuntime(configuration, app.state.market, provider, stores)
         app.state.simulator.start()
-        
+
         app.state.live_paper = None
         if configuration.execution_mode == "alpaca_paper":
             from services.api.live_paper_runtime import LivePaperExecutionRuntime
             from services.paper_executor.alpaca import AlpacaPaperBroker
+
             assert configuration.alpaca_api_key_id and configuration.alpaca_api_secret_key
             broker = AlpacaPaperBroker(
                 configuration.alpaca_api_key_id.get_secret_value(),
-                configuration.alpaca_api_secret_key.get_secret_value()
+                configuration.alpaca_api_secret_key.get_secret_value(),
             )
             app.state.live_paper = LivePaperExecutionRuntime(
-                broker, app.state.market, engine, configuration.symbols[0]
+                broker, engine, configuration.symbols, provider
             )
             app.state.live_paper.start()
-            
+
         try:
             yield
         finally:

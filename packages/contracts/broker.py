@@ -1,18 +1,13 @@
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
-
-from packages.domain.paper import PaperBook, PaperResult
-from packages.domain.risk import RiskDecision
 
 
 @dataclass
 class BrokerAccount:
     currency: str
-    cash: Decimal
     equity: Decimal
+    cash: Decimal
     buying_power: Decimal
 
 
@@ -22,15 +17,6 @@ class BrokerPosition:
     quantity: int
     average_entry_price: Decimal
     current_price: Decimal
-
-
-@dataclass
-class BrokerFill:
-    fill_id: str
-    client_order_id: str
-    quantity: int
-    price: Decimal
-    filled_at: datetime
 
 
 @dataclass
@@ -47,39 +33,38 @@ class BrokerOrder:
     updated_at: datetime
 
 
-class ExecutionBroker(ABC):
-    @abstractmethod
-    async def execute(
-        self,
-        book: PaperBook,
-        symbol: str,
-        side: Literal["BUY", "SELL"],
-        reference: Decimal,
-        quantity: int,
-        risk: RiskDecision,
-    ) -> PaperResult:
-        pass
+@dataclass
+class BrokerFill:
+    fill_id: str
+    client_order_id: str
+    quantity: int
+    price: Decimal
+    filled_at: datetime
 
 
-class ExternalBroker(ABC):
-    @abstractmethod
+@dataclass
+class BrokerClock:
+    is_open: bool
+    timestamp: datetime
+
+
+class ExternalBroker:
     async def get_account(self) -> BrokerAccount:
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     async def get_positions(self) -> list[BrokerPosition]:
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     async def get_orders(self) -> list[BrokerOrder]:
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     async def get_order_by_client_order_id(self, client_order_id: str) -> BrokerOrder | None:
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     async def submit_order(
         self, symbol: str, side: str, quantity: int, client_order_id: str
     ) -> BrokerOrder:
-        pass
+        raise NotImplementedError
+
+    async def get_clock(self) -> BrokerClock:
+        raise NotImplementedError
