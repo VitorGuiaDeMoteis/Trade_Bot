@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from time import monotonic
 from uuid import uuid4
@@ -28,10 +29,10 @@ class SimulatorRuntime:
         settings: Settings,
         store: MarketStore,
         provider: MarketDataProvider,
-        stores: dict[str, MarketStore] | None = None,
+        stores: dict[tuple[str, str], MarketStore] | None = None,
     ) -> None:
         self.settings, self.store, self.provider = settings, store, provider
-        self.stores = stores or {settings.symbols[0]: store}
+        self.stores = stores or {(settings.symbols[0], settings.market_timeframe): store}
         self.task: asyncio.Task[None] | None = None
         self.state: ProviderState = "stopped"
         self.error: str | None = None
@@ -86,11 +87,13 @@ class SimulatorRuntime:
             )
         )
 
-    async def _persist(self, bar: Candle | MarketBar) -> None:
+    async def _persist(self, bar: Candle | MarketBar, symbol: str | None = None) -> None:
         attempt = 0
         while True:
             try:
-                event = await asyncio.to_thread(self.stores[bar.symbol].append, bar)
+                event = await asyncio.to_thread(
+                    self.stores[(bar.symbol, bar.timeframe)].append, bar
+                )
                 self.last_persisted_at = event.occurred_at
                 self.last_progress = monotonic()
                 self.state, self.error = "connected", None
@@ -105,18 +108,36 @@ class SimulatorRuntime:
             if isinstance(self.provider, SimulatorMarketDataProvider):
                 await self._simulate()
                 return
+
+            from services.market_data.aggregator import TimeframeAggregator
+
+            aggregators: dict[str, TimeframeAggregator] = {}
+
+            def make_callback(sym: str) -> Callable[[MarketBar], None]:
+                def callback(b: MarketBar) -> None:
+                    asyncio.create_task(self._persist(b, sym))
+                return callback
+
+            for symbol in self.settings.symbols:
+                aggregators[symbol] = TimeframeAggregator(
+                    target_timeframes=["1m", "5m", "15m", "1h"],
+                    on_candle_closed=make_callback(symbol),
+                )
+
             attempt = 0
             while True:
                 try:
-                    for symbol, store in self.stores.items():
+                    for symbol in self.settings.symbols:
+                        store = self.stores[(symbol, "1m")]
                         last = await asyncio.to_thread(store.latest_open)
                         history = await self.provider.get_historical_candles(
                             symbol,
-                            self.settings.market_timeframe,
+                            "1m",
                             start=last,
                         )
                         for bar in history:
-                            await self._persist(bar)
+                            assert isinstance(bar, MarketBar)
+                            aggregators[symbol].process(bar)
                         if isinstance(self.provider, AlpacaMarketDataProvider) and history:
                             self.provider.resume_from(symbol, history[-1].open_time)
                     break
@@ -130,7 +151,8 @@ class SimulatorRuntime:
                 attempt += 1
             self.state, self.error = "connected", None
             async for bar in self.provider.subscribe():
-                await self._persist(bar)
+                assert isinstance(bar, MarketBar)
+                aggregators[bar.symbol].process(bar)
         except ContentConflict:
             self._failure("market_identity_content_conflict")
         except ProviderError as error:

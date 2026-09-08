@@ -13,10 +13,13 @@ from services.market_simulator.generator import CandleGenerator
 
 
 class SimulatorMarketDataProvider(MarketDataProvider):
-    def __init__(self, spec: SimulationSpec, interval_seconds: float = 2.0) -> None:
+    def __init__(
+        self, spec: SimulationSpec, interval_seconds: float = 2.0, timeframe: str = "1h"
+    ) -> None:
         self.spec = spec
         self.interval_seconds = interval_seconds
-        self.generator = CandleGenerator(spec)
+        self.timeframe = timeframe
+        self.generator = CandleGenerator(spec, timeframe)
         self.cursor = 0
         self.last_close = Decimal("100.0000")
 
@@ -28,7 +31,11 @@ class SimulatorMarketDataProvider(MarketDataProvider):
         *,
         start: datetime | None = None,
     ) -> list[MarketBar | Candle]:
-        if symbol != "TEST" or timeframe != "1h" or not 1 <= limit <= 10000:
+        if (
+            symbol != "TEST"
+            or timeframe not in {"1m", "5m", "15m", "1h"}
+            or not 1 <= limit <= 10000
+        ):
             raise ValueError("invalid_simulator_series")
         result: list[MarketBar | Candle] = []
         previous = Decimal("100.0000")

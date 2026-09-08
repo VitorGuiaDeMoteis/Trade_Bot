@@ -34,7 +34,7 @@ class Socket(Protocol):
 
 def alpaca_timeframe(timeframe: str) -> str:
     timeframe_duration(timeframe)
-    return {"1h": "1Hour"}[timeframe]
+    return {"1m": "1Min", "5m": "5Min", "15m": "15Min", "1h": "1Hour"}[timeframe]
 
 
 def parse_time(value: str) -> datetime:

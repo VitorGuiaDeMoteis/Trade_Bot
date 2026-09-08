@@ -44,24 +44,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 secret_key=configuration.alpaca_api_secret_key.get_secret_value(),
                 feed=configuration.alpaca_data_feed,
                 symbols=configuration.symbols,
-                timeframe=configuration.market_timeframe,
+                timeframe="1m",
             )
+            stores = {}
+            for symbol in configuration.symbols:
+                for tf in ["1m", "5m", "15m", "1h"]:
+                    is_operational = tf == configuration.market_timeframe
+                    stores[(symbol, tf)] = MarketStore(
+                        engine,
+                        series_id("alpaca", symbol, tf),
+                        strategy=BaseStrategy() if is_operational else None,
+                        risk=RiskEngine() if is_operational else None,
+                    )
         else:
-            provider = SimulatorMarketDataProvider(spec, configuration.simulator_interval_seconds)
-        stores = {
-            symbol: MarketStore(
-                engine,
-                spec.stream_id
-                if configuration.market_data_provider == "simulator"
-                else series_id("alpaca", symbol, configuration.market_timeframe),
-                strategy=BaseStrategy(),
-                risk=RiskEngine(),
+            provider = SimulatorMarketDataProvider(
+                spec, configuration.simulator_interval_seconds, configuration.market_timeframe
             )
-            for symbol in configuration.symbols
-        }
+            stores = {
+                (symbol, configuration.market_timeframe): MarketStore(
+                    engine,
+                    spec.stream_id,
+                    strategy=BaseStrategy(),
+                    risk=RiskEngine(),
+                )
+                for symbol in configuration.symbols
+            }
+
         app.state.markets = stores
         app.state.configuration = configuration
-        app.state.market = stores[configuration.symbols[0]]
+        app.state.market = stores[(configuration.symbols[0], configuration.market_timeframe)]
         app.state.simulator = SimulatorRuntime(configuration, app.state.market, provider, stores)
         app.state.simulator.start()
         try:
@@ -71,9 +82,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine.dispose()
 
     app = FastAPI(title="Trading Bot Dashboard", version="0.1.0", lifespan=lifespan)
+    from services.api.live_paper_routes import router as live_paper_router
+
     app.include_router(market_router)
     app.include_router(decisions_router)
     app.include_router(paper_router)
+    app.include_router(live_paper_router)
     app.include_router(backtest_router)
     app.include_router(observer_router)
 

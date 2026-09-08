@@ -31,11 +31,12 @@ class Settings(BaseSettings):
     simulator_interval_seconds: float = Field(default=2.0, ge=0.1, le=3600)
 
     market_data_provider: Literal["simulator", "alpaca"] = "simulator"
+    execution_mode: Literal["local_paper", "alpaca_paper"] = "local_paper"
     alpaca_api_key_id: SecretStr | None = None
     alpaca_api_secret_key: SecretStr | None = None
     alpaca_data_feed: Literal["iex", "sip"] = "iex"
     market_symbols: str = "SPY,AAPL,TSLA"
-    market_timeframe: str = "1h"
+    market_timeframe: str = "15m"
     backtest_artifacts_dir: str = ".artifacts"
 
     @field_validator("market_symbols")

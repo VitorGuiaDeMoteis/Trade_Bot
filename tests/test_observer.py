@@ -84,7 +84,7 @@ def test_fake_ok_and_deterministic_snapshot():
     assert first["status"] == "OK" and first["fallback"] is None
     assert first["output_hash"] == second["output_hash"]
     assert first["input_hash"] == snapshot.input_hash
-    assert first["prompt_version"] == "observer-v1" and first["model_version"] == "1"
+    assert first["prompt_version"] == "observer-v2" and first["model_version"] == "1"
 
 
 def test_explicit_projection_excludes_secrets_at_every_source_boundary():

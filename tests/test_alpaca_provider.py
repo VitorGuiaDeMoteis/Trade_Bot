@@ -106,7 +106,7 @@ def test_history_respects_single_requested_symbol(symbol):  # type: ignore
     assert seen == [symbol] and {bar.symbol for bar in bars} == {symbol}
 
 
-@pytest.mark.parametrize("timeframe", ["1m", "5m", "15m", "1d", "1Hour", "bad"])
+@pytest.mark.parametrize("timeframe", ["1d", "1Hour", "bad"])
 def test_unsupported_timeframe_is_explicit(timeframe):  # type: ignore
     with pytest.raises(ValueError, match="unsupported_timeframe"):
         alpaca_timeframe(timeframe)
@@ -332,7 +332,7 @@ def test_calendar_dst_transition():  # type: ignore
     [
         {"market_data_provider": "unknown"},
         {"market_data_provider": "alpaca"},
-        {"market_timeframe": "1m"},
+        {"market_timeframe": "1s"},
         {"market_symbols": ", ,"},
     ],
 )

@@ -194,9 +194,18 @@ class AIObserverOutput(Strict):
             if re.search(r"(?i)\b(backtest|paper|strategy|risk)\b", evidence):
                 raise ValueError("observer_regime_evidence_leak")
 
-        any(re.search(r"(?i)\b(paper.*pnl|pnl.*paper|paper.*profit)\b", obs) for obs in self.observations)  # noqa: E501
-        any(re.search(r"(?i)\b(backtest.*pnl|pnl.*backtest|backtest.*profit)\b", obs) for obs in self.observations)  # noqa: E501
-        if any(re.search(r"(?i)\b(backtest.*paper|paper.*backtest)\b", obs) for obs in self.observations):  # noqa: E501
+        any(
+            re.search(r"(?i)\b(paper.*pnl|pnl.*paper|paper.*profit)\b", obs)
+            for obs in self.observations
+        )  # noqa: E501
+        any(
+            re.search(r"(?i)\b(backtest.*pnl|pnl.*backtest|backtest.*profit)\b", obs)
+            for obs in self.observations
+        )  # noqa: E501
+        if any(
+            re.search(r"(?i)\b(backtest.*paper|paper.*backtest)\b", obs)
+            for obs in self.observations
+        ):  # noqa: E501
             raise ValueError("observer_domain_mix")
 
         return self

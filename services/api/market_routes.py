@@ -30,9 +30,15 @@ def history(
 ) -> MarketSnapshot:
     symbols = request.app.state.configuration.symbols
     selected = symbol or symbols[0]
-    if selected not in symbols or timeframe != "1h":
+    if selected not in symbols or timeframe not in ["1m", "5m", "15m", "1h"]:
         raise HTTPException(422, detail="unsupported_series")
-    store: MarketStore = request.app.state.markets[selected]
+
+    stores = request.app.state.markets
+    store_key = (selected, timeframe)
+    if store_key not in stores:
+        raise HTTPException(422, detail="unsupported_series")
+
+    store: MarketStore = stores[store_key]
     if stream_id is not None and stream_id != store.stream_id:
         raise HTTPException(409, detail="stream_changed")
     try:
@@ -63,14 +69,23 @@ async def events(
     if origin and urlparse(origin).hostname not in {"localhost", "127.0.0.1", "::1"}:
         await websocket.close(code=1008, reason="local_origin_required")
         return
-    stores: dict[str, MarketStore] = websocket.app.state.markets
+    stores: dict[tuple[str, str], MarketStore] = websocket.app.state.markets
     selected = symbol or next(
-        (s for s, store in stores.items() if store.stream_id == stream_id), ""
+        (s for (s, tf), store in stores.items() if store.stream_id == stream_id), ""
     )
-    if selected not in stores or timeframe != "1h":
+    if selected not in websocket.app.state.configuration.symbols or timeframe not in [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+    ]:
         await websocket.close(code=1008, reason="unsupported_series")
         return
-    store = stores[selected]
+    store_key = (selected, timeframe)
+    if store_key not in stores:
+        await websocket.close(code=1008, reason="unsupported_series")
+        return
+    store = stores[store_key]
     runtime: SimulatorRuntime = websocket.app.state.simulator
     if stream_id != store.stream_id:
         await websocket.close(code=1008, reason="stream_changed")

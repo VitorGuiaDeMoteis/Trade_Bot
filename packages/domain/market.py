@@ -61,4 +61,4 @@ class Candle:
         ):
             raise ValueError("Timestamps devem estar em UTC.")
         if self.close_time - self.open_time != timeframe_duration(self.timeframe):
-            raise ValueError("Candle deve representar exatamente uma hora fechada.")
+            raise ValueError(f"Candle deve representar exatamente {self.timeframe} fechado.")

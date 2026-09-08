@@ -93,9 +93,9 @@ def test_reset_decisions_only_link_active_run(market: Market) -> None:
         from services.api.market_store import MarketStore
 
         client.app.state.markets = {
-            "SPY": MarketStore(store.engine, series_id("alpaca", "SPY", "1h"))
+            ("SPY", "1h"): MarketStore(store.engine, series_id("alpaca", "SPY", "1h"))
         }  # type: ignore[attr-defined]
-        items = client.get("/api/v1/decisions?symbol=SPY").json()["items"]
+        items = client.get("/api/v1/decisions?symbol=SPY&timeframe=1h").json()["items"]
         assert len(items) == 7
         assert len({item["signal"]["signal_id"] for item in items}) == 7
         assert all(item["paper"]["run_id"] == str(new) for item in items)

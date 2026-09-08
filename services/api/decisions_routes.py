@@ -37,14 +37,16 @@ def decisions(
     request: Request,
     response: Response,
     symbol: str | None = None,
-    timeframe: str = "1h",
+    timeframe: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> DecisionsSnapshot:
     configuration = request.app.state.configuration
-    selected = symbol or configuration.symbols[0]
-    if selected not in configuration.symbols or timeframe != "1h":
+    selected_symbol = symbol or configuration.symbols[0]
+    selected_timeframe = timeframe or configuration.market_timeframe
+    store_key = (selected_symbol, selected_timeframe)
+    if store_key not in request.app.state.markets:
         raise HTTPException(422, detail="unsupported_series")
-    store: MarketStore = request.app.state.markets[selected]
+    store: MarketStore = request.app.state.markets[store_key]
     if check_database(store.engine) != "up":
         raise HTTPException(503, detail="database_unavailable")
     query = (
@@ -65,8 +67,8 @@ def decisions(
         )
         .where(
             candles.c.stream_id == store.stream_id,
-            candles.c.symbol == selected,
-            candles.c.timeframe == timeframe,
+            candles.c.symbol == selected_symbol,
+            candles.c.timeframe == selected_timeframe,
             candles.c.is_closed.is_(True),
         )
         .order_by(candles.c.open_time.desc(), signals.c.signal_id.desc())
@@ -129,7 +131,7 @@ def decisions(
         raise HTTPException(503, detail="paper_reconciliation_failed") from None
     response.headers["Cache-Control"] = "no-store"
     return DecisionsSnapshot(
-        symbol=selected,
+        symbol=selected_symbol,
         symbols=configuration.symbols,
         items=items,
         limit=limit,

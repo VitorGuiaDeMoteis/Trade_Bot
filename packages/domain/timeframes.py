@@ -2,11 +2,16 @@
 
 from datetime import timedelta
 
-SUPPORTED_TIMEFRAMES = {"1h": timedelta(hours=1)}
+SUPPORTED_TIMEFRAMES = {
+    "1m": timedelta(minutes=1),
+    "5m": timedelta(minutes=5),
+    "15m": timedelta(minutes=15),
+    "1h": timedelta(hours=1),
+}
 
 
 def timeframe_duration(timeframe: str) -> timedelta:
     try:
         return SUPPORTED_TIMEFRAMES[timeframe]
     except KeyError as error:
-        raise ValueError("unsupported_timeframe: somente 1h está validado") from error
+        raise ValueError(f"unsupported_timeframe: {timeframe} não é um timeframe válido") from error
