@@ -1,13 +1,14 @@
-import httpx
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
+
+import httpx
 
 from packages.contracts.broker import (
-    ExternalBroker,
     BrokerAccount,
-    BrokerPosition,
     BrokerOrder,
+    BrokerPosition,
+    ExternalBroker,
 )
 
 
@@ -20,7 +21,7 @@ class AlpacaPaperBroker(ExternalBroker):
         try:
             return datetime.fromisoformat(t_str.replace("Z", "+00:00"))
         except (ValueError, TypeError):
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
     def _map_order(self, data: dict[str, Any]) -> BrokerOrder:
         return BrokerOrder(
@@ -68,7 +69,7 @@ class AlpacaPaperBroker(ExternalBroker):
             resp.raise_for_status()
             return [self._map_order(o) for o in resp.json()]
 
-    async def get_order_by_client_order_id(self, client_order_id: str) -> Optional[BrokerOrder]:
+    async def get_order_by_client_order_id(self, client_order_id: str) -> BrokerOrder | None:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{self.base_url}/v2/orders:by_client_order_id",

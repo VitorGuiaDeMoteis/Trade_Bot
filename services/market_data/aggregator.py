@@ -1,7 +1,7 @@
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from dataclasses import replace
 
 from packages.domain.market_bar import MarketBar
 from packages.domain.timeframes import timeframe_duration
@@ -22,16 +22,17 @@ class TimeframeAggregator:
         self.durations = {tf: timeframe_duration(tf) for tf in self.target_timeframes}
         self.latest_received: datetime | None = None
 
-    def _align_time(self, dt: datetime, tf: str) -> datetime:
+    def _align_time(self, dt: datetime, tf: str) -> datetime | None:
         ny_time = dt.astimezone(NY_TZ)
-        # Regular session starts at 09:30 NY
+        # Regular session starts at 09:30 NY, ends at 16:00
         if ny_time.hour < 9 or (ny_time.hour == 9 and ny_time.minute < 30) or ny_time.hour >= 16:
-            # Extended hours or invalid - for this v0.1 we might just align strictly
-            pass
+            return None
 
         minutes_since_930 = (ny_time.hour - 9) * 60 + ny_time.minute - 30
-        if minutes_since_930 < 0:
-            minutes_since_930 = 0  # Fallback for pre-market, though unsupported
+
+        # 15:30-16:00 is not a full 1h candle (only 30m)
+        if tf == "1h" and minutes_since_930 >= 360:
+            return None
 
         if tf == "1h":
             aligned_minutes = (minutes_since_930 // 60) * 60
@@ -64,6 +65,8 @@ class TimeframeAggregator:
 
         for tf in self.target_timeframes:
             aligned_open = self._align_time(bar.open_time, tf)
+            if not aligned_open:
+                continue
             aligned_close = aligned_open + self.durations[tf]
 
             bucket_key = f"{bar.symbol}_{tf}_{aligned_open.isoformat()}"

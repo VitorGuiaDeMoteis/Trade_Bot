@@ -29,6 +29,36 @@ async def dashboard(request: Request) -> DashboardResponse:
     market_status: MarketDataStatus = request.app.state.simulator.status()
     mode = "ALPACA_PAPER" if settings.execution_mode == "alpaca_paper" else "LOCAL_PAPER"
 
+    from sqlalchemy import text
+
+    engine = request.app.state.database
+
+    with engine.begin() as conn:
+        ctrl = conn.execute(
+            text("SELECT armed FROM live_paper_control WHERE control_id = 1")
+        ).fetchone()
+        armed = ctrl.armed if ctrl else False
+
+        last_sig = conn.execute(
+            text(
+                "SELECT r.decision_id, r.signal_id, r.decision, s.signal_type "
+                "FROM risk_decisions r "
+                "JOIN signals s ON r.signal_id = s.signal_id "
+                "WHERE s.timeframe = '15m' "
+                "ORDER BY r.decided_at DESC LIMIT 1"
+            )
+        ).fetchone()
+        latest_decision = (
+            {
+                "decision_id": str(last_sig.decision_id),
+                "signal_id": str(last_sig.signal_id),
+                "decision": last_sig.decision,
+                "signal_type": last_sig.signal_type,
+            }
+            if last_sig
+            else None
+        )
+
     if settings.execution_mode == "alpaca_paper":
         if not settings.alpaca_api_key_id or not settings.alpaca_api_secret_key:
             raise HTTPException(503, "ALPACA PAPER CREDENTIALS PENDING")
@@ -43,21 +73,21 @@ async def dashboard(request: Request) -> DashboardResponse:
             raise HTTPException(503, "broker_unavailable") from None
 
         account_data = {
-            "currency": account.get("currency", "USD"),
-            "equity": account.get("equity", "0"),
-            "cash": account.get("cash", "0"),
-            "buying_power": account.get("buying_power", "0"),
+            "currency": account.currency,
+            "equity": str(account.equity),
+            "cash": str(account.cash),
+            "buying_power": str(account.buying_power),
             "day_pnl": None,
             "total_pnl": None,
         }
         positions = [
             {
-                "symbol": p["symbol"],
-                "quantity": int(p["qty"]),
-                "average_price": p["avg_entry_price"],
-                "current_price": p["current_price"],
-                "market_value": p["market_value"],
-                "unrealized_pnl": p["unrealized_pl"],
+                "symbol": p.symbol,
+                "quantity": int(p.quantity),
+                "average_price": str(p.average_entry_price),
+                "current_price": str(p.current_price),
+                "market_value": None,
+                "unrealized_pnl": None,
             }
             for p in positions_data
         ]
@@ -83,6 +113,13 @@ async def dashboard(request: Request) -> DashboardResponse:
             "last_sync_utc": datetime.now(UTC).isoformat(),
             "degraded_reason": None,
         }
+        positions = []
+        broker = {
+            "name": "local",
+            "connected": True,
+            "last_sync_utc": datetime.now(UTC).isoformat(),
+            "degraded_reason": None,
+        }
 
     return DashboardResponse(
         mode=mode,
@@ -97,8 +134,8 @@ async def dashboard(request: Request) -> DashboardResponse:
             "operational_timeframe": settings.market_timeframe,
         },
         account=account_data,
-        risk={"paused": False, "degraded": False, "reason": None},
-        latest_decision=None,
+        risk={"paused": not armed, "degraded": False, "reason": None},
+        latest_decision=latest_decision,
         positions=positions,
         updated_at=datetime.now(UTC),
     )
@@ -125,10 +162,13 @@ async def orders(request: Request) -> dict[str, Any]:
 @router.get("/fills")
 async def fills(request: Request) -> dict[str, Any]:
     from sqlalchemy import text
+
     engine = request.app.state.database
     try:
         with engine.begin() as conn:
-            rows = conn.execute(text("SELECT fill_id, client_order_id, qty, price, filled_at FROM broker_fills")).fetchall()
+            rows = conn.execute(
+                text("SELECT fill_id, client_order_id, qty, price, filled_at FROM broker_fills")
+            ).fetchall()
             return {"items": [dict(r._mapping) for r in rows]}
     except Exception as e:
         raise HTTPException(503, f"database_error: {e}")

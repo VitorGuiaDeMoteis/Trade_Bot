@@ -46,6 +46,16 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["client_order_id"], ["broker_orders.client_order_id"]),
     )
 
+    op.create_table(
+        "live_paper_control",
+        sa.Column("control_id", sa.Integer(), primary_key=True),
+        sa.Column("armed", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("armed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("activation_cutoff", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint("control_id = 1", name="ck_live_paper_singleton")
+    )
+
 
     op.drop_constraint("ck_candles_hour", "candles", type_="check")
     op.create_check_constraint(
@@ -64,6 +74,6 @@ def downgrade() -> None:
         "candles",
         "close_time = open_time + interval '1 hour'"
     )
+    op.drop_table("live_paper_control")
     op.drop_table("broker_fills")
     op.drop_table("broker_orders")
-

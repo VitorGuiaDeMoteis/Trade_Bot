@@ -1,11 +1,12 @@
-from unittest.mock import patch, MagicMock
+import asyncio
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
 import httpx
 import pytest
-from decimal import Decimal
-import asyncio
+
 from services.paper_executor.alpaca import AlpacaPaperBroker
-from uuid import uuid4
-from datetime import datetime, timezone
+
 
 @pytest.fixture
 def mock_httpx():

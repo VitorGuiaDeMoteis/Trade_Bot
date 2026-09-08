@@ -1,11 +1,12 @@
-from datetime import datetime, timezone, timedelta
-import pytest
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+
 from packages.domain.market_bar import MarketBar
 from services.market_data.aggregator import TimeframeAggregator
 
+
 def make_bar(minute: int, close: str = "10.0") -> MarketBar:
-    dt = datetime(2026, 9, 3, 9, minute, tzinfo=timezone.utc)
+    dt = datetime(2026, 9, 3, 9, minute, tzinfo=UTC)
     return MarketBar(
         provider="alpaca",
         symbol="SPY",

@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from decimal import Decimal
-from typing import Literal, Optional
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 
 from packages.domain.paper import PaperBook, PaperResult
 from packages.domain.risk import RiskDecision
@@ -75,7 +75,7 @@ class ExternalBroker(ABC):
         pass
 
     @abstractmethod
-    async def get_order_by_client_order_id(self, client_order_id: str) -> Optional[BrokerOrder]:
+    async def get_order_by_client_order_id(self, client_order_id: str) -> BrokerOrder | None:
         pass
 
     @abstractmethod

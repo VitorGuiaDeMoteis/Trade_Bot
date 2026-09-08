@@ -47,7 +47,7 @@ candles = Table(
         "(timeframe = '5m' AND close_time = open_time + interval '5 minutes') OR "
         "(timeframe = '15m' AND close_time = open_time + interval '15 minutes') OR "
         "(timeframe = '1h' AND close_time = open_time + interval '1 hour')",
-        name="ck_candles_timeframe_duration"
+        name="ck_candles_timeframe_duration",
     ),
     CheckConstraint(
         "regime IN ('uptrend','downtrend','sideways','volatile')", name="ck_candles_regime"
@@ -294,4 +294,46 @@ observer_analysis_runs = Table(
         "AND output_hash IS NULL AND validated_output IS NULL)",
         name="ck_observer_status",
     ),
+)
+live_paper_control = Table(
+    "live_paper_control",
+    metadata,
+    Column("control_id", BigInteger, primary_key=True),
+    Column("armed", Boolean, nullable=False),
+    Column("armed_at", DateTime(timezone=True), nullable=True),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("activation_cutoff", DateTime(timezone=True), nullable=True),
+    CheckConstraint("control_id = 1", name="ck_live_paper_singleton"),
+)
+
+broker_orders = Table(
+    "broker_orders",
+    metadata,
+    Column("client_order_id", String(64), primary_key=True),
+    Column("broker_order_id", String(64), nullable=True),
+    Column("signal_id", Uuid, nullable=False),
+    Column("risk_decision_id", Uuid, nullable=False),
+    Column("strategy_version", String(32), nullable=False),
+    Column("symbol", String(16), nullable=False),
+    Column("timeframe", String(16), nullable=False),
+    Column("side", String(16), nullable=False),
+    Column("requested_qty", BigInteger, nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("filled_qty", BigInteger, nullable=False),
+    Column("filled_avg_price", Numeric(20, 10), nullable=True),
+    Column("submitted_at", DateTime(timezone=True), nullable=False),
+    Column("filled_at", DateTime(timezone=True), nullable=True),
+    Column("last_reconciliation_at", DateTime(timezone=True), nullable=False),
+)
+
+broker_fills = Table(
+    "broker_fills",
+    metadata,
+    Column("fill_id", String(64), primary_key=True),
+    Column(
+        "client_order_id", String(64), ForeignKey("broker_orders.client_order_id"), nullable=False
+    ),
+    Column("qty", BigInteger, nullable=False),
+    Column("price", Numeric(20, 10), nullable=False),
+    Column("filled_at", DateTime(timezone=True), nullable=False),
 )
