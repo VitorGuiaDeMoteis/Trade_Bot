@@ -47,8 +47,8 @@ async def dashboard(request: Request) -> DashboardResponse:
             "equity": account.get("equity", "0"),
             "cash": account.get("cash", "0"),
             "buying_power": account.get("buying_power", "0"),
-            "day_pnl": account.get("equity", "0"),
-            "total_pnl": "0",
+            "day_pnl": None,
+            "total_pnl": None,
         }
         positions = [
             {
@@ -88,7 +88,7 @@ async def dashboard(request: Request) -> DashboardResponse:
         mode=mode,
         broker=broker,
         market={
-            "status": "OPEN",
+            "status": "OPEN" if market_status.state != "market_closed" else "CLOSED",
             "provider": market_status.provider or "simulator",
             "feed": market_status.feed or "local",
             "last_bar_utc": market_status.last_bar_at.isoformat()
@@ -124,4 +124,11 @@ async def orders(request: Request) -> dict[str, Any]:
 
 @router.get("/fills")
 async def fills(request: Request) -> dict[str, Any]:
-    return {"items": []}
+    from sqlalchemy import text
+    engine = request.app.state.database
+    with engine.begin() as conn:
+        try:
+            rows = conn.execute(text("SELECT fill_id, client_order_id, qty, price, filled_at FROM broker_fills")).fetchall()
+            return {"items": [dict(r._mapping) for r in rows]}
+        except Exception:
+            return {"items": []}

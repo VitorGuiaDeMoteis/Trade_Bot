@@ -1,8 +1,12 @@
 from collections.abc import Callable
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from dataclasses import replace
 
 from packages.domain.market_bar import MarketBar
 from packages.domain.timeframes import timeframe_duration
+
+NY_TZ = ZoneInfo("America/New_York")
 
 
 class TimeframeAggregator:
@@ -12,34 +16,60 @@ class TimeframeAggregator:
         self.target_timeframes = target_timeframes
         self.on_candle_closed = on_candle_closed
         self.partials: dict[str, MarketBar] = {}
+        self.minutes_received: dict[str, set[datetime]] = {}
+        self.expected_minutes = {"5m": 5, "15m": 15, "1h": 60}
         self.durations = {tf: timeframe_duration(tf) for tf in target_timeframes}
+        self.latest_received: datetime | None = None
 
     def _align_time(self, dt: datetime, tf: str) -> datetime:
+        ny_time = dt.astimezone(NY_TZ)
+        # Regular session starts at 09:30 NY
+        if ny_time.hour < 9 or (ny_time.hour == 9 and ny_time.minute < 30) or ny_time.hour >= 16:
+            # Extended hours or invalid - for this v0.1 we might just align strictly
+            pass
+
+        minutes_since_930 = (ny_time.hour - 9) * 60 + ny_time.minute - 30
+        if minutes_since_930 < 0:
+            minutes_since_930 = 0  # Fallback for pre-market, though unsupported
+
         if tf == "1h":
-            return dt.replace(minute=0, second=0, microsecond=0)
+            aligned_minutes = (minutes_since_930 // 60) * 60
         elif tf == "15m":
-            return dt.replace(minute=(dt.minute // 15) * 15, second=0, microsecond=0)
+            aligned_minutes = (minutes_since_930 // 15) * 15
         elif tf == "5m":
-            return dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
-        elif tf == "1m":
-            return dt.replace(second=0, microsecond=0)
-        return dt
+            aligned_minutes = (minutes_since_930 // 5) * 5
+        else:
+            aligned_minutes = minutes_since_930
+
+        aligned_ny = ny_time.replace(hour=9, minute=30, second=0, microsecond=0)
+        from datetime import timedelta
+
+        aligned_ny += timedelta(minutes=aligned_minutes)
+        return aligned_ny.astimezone(dt.tzinfo or ZoneInfo("UTC"))
 
     def process(self, bar: MarketBar) -> None:
         if bar.timeframe != "1m":
             self.on_candle_closed(bar)
             return
 
+        # Reject late bars
+        if self.latest_received and bar.open_time < self.latest_received:
+            return
+
+        self.latest_received = max(self.latest_received or bar.open_time, bar.open_time)
+
         for tf in self.target_timeframes:
             aligned_open = self._align_time(bar.open_time, tf)
             aligned_close = aligned_open + self.durations[tf]
 
+            bucket_key = f"{bar.symbol}_{tf}_{aligned_open.isoformat()}"
+
+            # If moving to a new bucket, discard the old incomplete one
             if tf in self.partials:
-                partial = self.partials[tf]
-                if partial.open_time != aligned_open:
-                    from dataclasses import replace
-                    self.on_candle_closed(replace(partial, is_closed=True))
+                current_partial = self.partials[tf]
+                if current_partial.open_time != aligned_open:
                     self.partials.pop(tf)
+                    self.minutes_received.pop(tf, None)
 
             if tf not in self.partials:
                 self.partials[tf] = MarketBar(
@@ -55,8 +85,11 @@ class TimeframeAggregator:
                     volume=bar.volume,
                     is_closed=False,
                 )
+                self.minutes_received[tf] = {bar.open_time}
             else:
-                from dataclasses import replace
+                if bar.open_time in self.minutes_received.get(tf, set()):
+                    continue  # Duplicate minute
+
                 partial = self.partials[tf]
                 self.partials[tf] = replace(
                     partial,
@@ -65,9 +98,10 @@ class TimeframeAggregator:
                     close=bar.close,
                     volume=partial.volume + bar.volume,
                 )
+                self.minutes_received[tf].add(bar.open_time)
 
-            if bar.close_time >= aligned_close:
-                from dataclasses import replace
+            if len(self.minutes_received[tf]) == self.expected_minutes[tf]:
                 partial = self.partials[tf]
                 self.on_candle_closed(replace(partial, is_closed=True))
                 self.partials.pop(tf)
+                self.minutes_received.pop(tf)

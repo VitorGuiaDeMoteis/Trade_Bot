@@ -30,6 +30,18 @@ class AlpacaPaperExecutor(ExecutionBroker):
             resp = await client.get(f"{self.base_url}/v2/orders?status=all", headers=self.headers)
             resp.raise_for_status()
             return list(resp.json())
+            
+    async def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{self.base_url}/v2/orders:by_client_order_id",
+                headers=self.headers,
+                params={"client_order_id": client_order_id}
+            )
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return dict(resp.json())
 
     async def execute(
         self,
@@ -63,4 +75,4 @@ class AlpacaPaperExecutor(ExecutionBroker):
                 return PaperResult("NO_ACTION", "rejected_by_broker")
             resp.raise_for_status()
             resp.json()
-            return PaperResult("FILLED", "order_submitted")
+            return PaperResult("SUBMITTED", "order_submitted")

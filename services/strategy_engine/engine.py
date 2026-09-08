@@ -1,4 +1,4 @@
-"""Motor de estratégia determinístico da v0.1 (M2)."""
+"""Motor de estratgia determinstico da v0.1 (M2)."""
 
 from datetime import datetime
 from uuid import uuid4
@@ -11,7 +11,7 @@ class BaseStrategy:
     VERSION = "v1-deterministic"
 
     def process_candle(self, candle: Candle, current_time: datetime) -> Signal:
-        """Processa um candle e retorna um sinal determinístico."""
+        """Processa um candle e retorna um sinal determinstico."""
         if not candle.is_closed or (
             candle.provider == "alpaca" and candle.close_time > current_time
         ):
@@ -32,6 +32,9 @@ class BaseStrategy:
             reason={
                 "BUY": "Fechamento acima da abertura.",
                 "SELL": "Fechamento abaixo da abertura.",
-                "HOLD": "Abertura e fechamento equivalentes. Sem ação.",
+                "HOLD": "Abertura e fechamento equivalentes. Sem ao.",
             }[signal_type],
         )
+
+class StrategyV2_15mBaseline(BaseStrategy):
+    VERSION = "v2-15m-baseline"

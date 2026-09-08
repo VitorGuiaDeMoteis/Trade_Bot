@@ -50,10 +50,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for symbol in configuration.symbols:
                 for tf in ["1m", "5m", "15m", "1h"]:
                     is_operational = tf == configuration.market_timeframe
+                    from services.strategy_engine.engine import StrategyV2_15mBaseline
                     stores[(symbol, tf)] = MarketStore(
                         engine,
                         series_id("alpaca", symbol, tf),
-                        strategy=BaseStrategy() if is_operational else None,
+                        strategy=StrategyV2_15mBaseline() if is_operational else None,
                         risk=RiskEngine() if is_operational else None,
                     )
         else:
