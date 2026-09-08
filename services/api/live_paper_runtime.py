@@ -110,7 +110,11 @@ class LivePaperExecutionRuntime:
                 remote = await self.broker.get_order_by_client_order_id(client_id)
             if remote is None:
                 if row.status == "pre_submit":
-                    self._mark_failed_local(client_id)
+                    with self.engine.begin() as conn:
+                        conn.execute(
+                            text("DELETE FROM broker_orders WHERE client_order_id=:cid"),
+                            {"cid": client_id}
+                        )
                     continue
                 if row.status in {
                     "pending_new",
@@ -275,11 +279,12 @@ class LivePaperExecutionRuntime:
                 ).fetchone()
             if not ctrl or not ctrl.armed or ctrl.activation_cutoff is None:
                 return
-            if self.provider.get_status().state != "connected":
+            status = self.provider.get_status()
+            if status.state not in ("connected", "degraded"):
                 return
             now = datetime.now(UTC)
             for symbol in self.symbols:
-                if symbol in blocked_symbols:
+                if symbol in blocked_symbols or symbol in status.degraded_symbols:
                     continue
                 await self._process_symbol(symbol, now, ctrl.activation_cutoff)
 

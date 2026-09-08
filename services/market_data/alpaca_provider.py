@@ -79,6 +79,7 @@ class AlpacaMarketDataProvider(MarketDataProvider):
         self._last_bar: datetime | None = None
         self._last_open: dict[str, datetime] = {}
         self._socket: Socket | None = None
+        self.degraded_symbols: set[str] = set()
 
     async def _connect(self) -> Socket:
         try:
@@ -343,6 +344,7 @@ class AlpacaMarketDataProvider(MarketDataProvider):
             last_message_at=self._last_message,
             last_bar_at=self._last_bar,
             error=self._error,
+            degraded_symbols=list(self.degraded_symbols),
         )
 
     async def close(self) -> None:

@@ -66,6 +66,87 @@ async def _preflight_arm(settings: Settings, engine) -> bool:
         print(f"ERROR: Alpaca get_account failed: {e}")
         return False
 
+    try:
+        import sqlalchemy as sa
+        inspector = sa.inspect(engine)
+        tables = inspector.get_table_names()
+
+        if "broker_orders" not in tables:
+            print("ERROR: Missing table broker_orders")
+            return False
+        if "broker_fills" not in tables:
+            print("ERROR: Missing table broker_fills")
+            return False
+        if "live_paper_control" not in tables:
+            print("ERROR: Missing table live_paper_control")
+            return False
+
+        bo_pk = inspector.get_pk_constraint("broker_orders")
+        if not bo_pk or "client_order_id" not in bo_pk.get("constrained_columns", []):
+            print("ERROR: broker_orders PK must be client_order_id")
+            return False
+
+        bo_uqs = [uq.get("name") for uq in inspector.get_unique_constraints("broker_orders")]
+        if "uq_broker_order_risk_decision" not in bo_uqs:
+            print("ERROR: Missing unique constraint uq_broker_order_risk_decision on broker_orders")
+            return False
+
+        bo_cols = {col["name"]: str(col["type"]) for col in inspector.get_columns("broker_orders")}
+        if not bo_cols.get("requested_qty", "").startswith("BIGINT"):
+            print("ERROR: broker_orders.requested_qty must be BIGINT")
+            return False
+        if not bo_cols.get("filled_qty", "").startswith("BIGINT"):
+            print("ERROR: broker_orders.filled_qty must be BIGINT")
+            return False
+
+        bo_cks = [ck.get("name") for ck in inspector.get_check_constraints("broker_orders")]
+        required_bo_cks = [
+            "ck_broker_orders_side",
+            "ck_broker_orders_timeframe",
+            "ck_broker_orders_status",
+            "ck_broker_orders_quantities",
+            "ck_broker_orders_fill_price",
+            "ck_broker_orders_filled_complete",
+        ]
+        for ck in required_bo_cks:
+            if ck not in bo_cks:
+                print(f"ERROR: Missing check constraint {ck} on broker_orders")
+                return False
+
+        bf_fks = inspector.get_foreign_keys("broker_fills")
+        if not any("client_order_id" in fk.get("constrained_columns", []) and fk.get("referred_table") == "broker_orders" for fk in bf_fks):
+            print("ERROR: broker_fills missing FK to broker_orders.client_order_id")
+            return False
+
+        bf_cols = {col["name"]: str(col["type"]) for col in inspector.get_columns("broker_fills")}
+        if not bf_cols.get("qty", "").startswith("BIGINT"):
+            print("ERROR: broker_fills.qty must be BIGINT")
+            return False
+
+        bf_cks = [ck.get("name") for ck in inspector.get_check_constraints("broker_fills")]
+        if "ck_broker_fills_values" not in bf_cks:
+            print("ERROR: Missing check constraint ck_broker_fills_values on broker_fills")
+            return False
+
+        lpc_cols = {col["name"]: str(col["type"]) for col in inspector.get_columns("live_paper_control")}
+        if not lpc_cols.get("control_id", "").startswith("BIGINT"):
+            print("ERROR: live_paper_control.control_id must be BIGINT")
+            return False
+
+        lpc_cks = [ck.get("name") for ck in inspector.get_check_constraints("live_paper_control")]
+        if "ck_live_paper_singleton" not in lpc_cks:
+            print("ERROR: Missing check constraint ck_live_paper_singleton on live_paper_control")
+            return False
+
+        candles_cks = [ck.get("name") for ck in inspector.get_check_constraints("candles")]
+        if "ck_candles_timeframe_duration" not in candles_cks:
+            print("ERROR: Missing check constraint ck_candles_timeframe_duration on candles")
+            return False
+
+    except Exception as e:
+        print(f"ERROR: Schema physical validation failed: {e}")
+        return False
+
     return True
 
 

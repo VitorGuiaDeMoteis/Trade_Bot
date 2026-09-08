@@ -100,12 +100,30 @@ def test_multisymbol_duplicate_late_gap_and_dst():
     assert len(closed) == 2
 
     gap_output = []
-    gap = TimeframeAggregator(["5m"], gap_output.append)
-    for minute in (30, 31, 33, 34):
-        gap.process(ny_bar(summer, 9, minute))
-    for minute in range(0, 5):
-        gap.process(ny_bar(summer, 10, minute))
-    assert [(bar.open_time.minute, bar.volume) for bar in gap_output] == [(0, 500)]
+    gaps_detected = []
+    gap = TimeframeAggregator(
+        ["5m", "15m"], 
+        gap_output.append,
+        on_gap=lambda sym, tf: gaps_detected.append((sym, tf)),
+        on_recovery=lambda sym, tf: gaps_detected.append(("RECOVER", sym, tf)),
+    )
+    # Simulating 15m gap behavior
+    # We will send 14 bars and then skip the 15th to create a gap in the 15m bucket.
+    for minute in range(30, 44):  # 14 minutes (9:30 - 9:43)
+        gap.process(ny_bar(summer, 9, minute, "QQQ"))
+        
+    # Send a minute in the next bucket to force the previous bucket to close
+    gap.process(ny_bar(summer, 9, 45, "QQQ"))
+    
+    assert ("QQQ", "15m") in gaps_detected
+    
+    # Send remaining 14 minutes of the next bucket (9:45 - 9:59)
+    # We need 15 minutes to form a full bucket, so let's send 9:45 to 9:59 (15 minutes)
+    for minute in range(46, 60):
+        gap.process(ny_bar(summer, 9, minute, "QQQ"))
+        
+    assert ("RECOVER", "QQQ", "15m") in gaps_detected
+    assert sum(bar.timeframe == "15m" for bar in gap_output) == 1
 
     dst = []
     for day in (winter, summer):

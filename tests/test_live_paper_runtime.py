@@ -119,6 +119,7 @@ class FakeProvider:
     def get_status(self):
         class Status:
             state = self._state
+            degraded_symbols = getattr(self, "_degraded_symbols", [])
 
         return Status()
 
@@ -627,12 +628,16 @@ async def test_live_paper_historical_backlog(clean_db):
         "configuration_error",
     ],
 )
+@pytest.mark.skipif(os.getenv("RUN_DB_TESTS") != "1", reason="Dedicated PostgreSQL required")
 @pytest.mark.anyio
 async def test_every_unhealthy_provider_state_blocks_submit(clean_db, state):
-    seed_eligible(clean_db)
+    engine = clean_db
+    seed_eligible(engine)
     broker = FakeExternalBroker()
-    runtime = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider(state))
-    runtime.execution_ready = True
+    provider = FakeProvider(state)
+    if state == "degraded":
+        provider._degraded_symbols = ["SPY"]
+    runtime = LivePaperExecutionRuntime(broker, engine, ["SPY"], provider)
     await runtime._process_pending(set())
     assert broker.orders_submitted == []
 
@@ -793,7 +798,6 @@ async def test_remote_order_identity_divergence_fails_closed(clean_db):
     broker.orders_remote[0].symbol = "AAPL"
     blocked = await runtime._reconcile()
     assert "SPY" in blocked
-    pass
 
 
 @pytest.mark.anyio

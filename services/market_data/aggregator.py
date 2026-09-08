@@ -11,11 +11,17 @@ NY_TZ = ZoneInfo("America/New_York")
 
 class TimeframeAggregator:
     def __init__(
-        self, target_timeframes: list[str], on_candle_closed: Callable[[MarketBar], None]
+        self, 
+        target_timeframes: list[str], 
+        on_candle_closed: Callable[[MarketBar], None],
+        on_gap: Callable[[str, str], None] | None = None,
+        on_recovery: Callable[[str, str], None] | None = None,
     ) -> None:
         self.emit_1m = "1m" in target_timeframes
         self.target_timeframes = [tf for tf in target_timeframes if tf != "1m"]
         self.on_candle_closed = on_candle_closed
+        self.on_gap = on_gap
+        self.on_recovery = on_recovery
         self.partials: dict[tuple[str, str], MarketBar] = {}
         self.minutes_received: dict[tuple[str, str], set[datetime]] = {}
         self.expected_minutes = {"5m": 5, "15m": 15, "1h": 60}
@@ -88,10 +94,14 @@ class TimeframeAggregator:
                         logging.getLogger("trading_bot.market").error(
                             f"aggregator_gap_detected_{actual}_of_{expected}_for_{key}"
                         )
+                        if self.on_gap:
+                            self.on_gap(bar.symbol, tf)
                         self.partials.pop(key)
                         self.minutes_received.pop(key, None)
                     else:
                         self.on_candle_closed(replace(current_partial, is_closed=True))
+                        if self.on_recovery:
+                            self.on_recovery(bar.symbol, tf)
                         self.partials.pop(key)
                         self.minutes_received.pop(key, None)
 
@@ -127,5 +137,7 @@ class TimeframeAggregator:
             if len(self.minutes_received[key]) == self.expected_minutes[tf]:
                 partial = self.partials[key]
                 self.on_candle_closed(replace(partial, is_closed=True))
+                if self.on_recovery:
+                    self.on_recovery(bar.symbol, tf)
                 self.partials.pop(key)
                 self.minutes_received.pop(key)

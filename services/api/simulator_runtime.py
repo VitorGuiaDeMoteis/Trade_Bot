@@ -129,10 +129,24 @@ class SimulatorRuntime:
                     finally:
                         pending.difference_update(current)
 
+            def make_on_gap(sym: str) -> Callable[[str, str], None]:
+                def on_gap(s: str, tf: str) -> None:
+                    if hasattr(self.provider, "degraded_symbols"):
+                        self.provider.degraded_symbols.add(s)
+                return on_gap
+
+            def make_on_recovery(sym: str) -> Callable[[str, str], None]:
+                def on_recovery(s: str, tf: str) -> None:
+                    if hasattr(self.provider, "degraded_symbols"):
+                        self.provider.degraded_symbols.discard(s)
+                return on_recovery
+
             for symbol in self.settings.symbols:
                 aggregators[symbol] = TimeframeAggregator(
                     target_timeframes=["1m", "5m", "15m", "1h"],
                     on_candle_closed=make_callback(symbol),
+                    on_gap=make_on_gap(symbol),
+                    on_recovery=make_on_recovery(symbol),
                 )
 
             attempt = 0

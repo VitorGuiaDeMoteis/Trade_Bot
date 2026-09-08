@@ -72,6 +72,7 @@ class MarketDataStatus(BaseModel):
     last_bar_at: datetime | None = None
     accelerated: bool = False
     interval_seconds: float | None = None
+    degraded_symbols: list[str] = Field(default_factory=list)
 
 
 class MarketSnapshot(BaseModel):
