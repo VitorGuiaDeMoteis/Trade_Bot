@@ -1,25 +1,15 @@
 
-import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.engine.reflection import Inspector
 
 # Assuming alembic.ini is in the root and we are running tests from root.
 ALEMBIC_INI_PATH = "alembic.ini"
 
-@pytest.fixture
-def clean_db_for_migrations():
-    # Drop all tables first
-    engine = sa.create_engine("postgresql+psycopg://test_only:test_only@127.0.0.1:5433/trading_bot_test")
-    with engine.begin() as conn:
-        conn.execute(sa.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
-    yield engine
-    with engine.begin() as conn:
-        conn.execute(sa.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+# Using clean_db_for_migrations from conftest.py
 
 def get_schema_summary(engine):
-    inspector = Inspector.from_engine(engine)
+    inspector = sa.inspect(engine)
     summary = {}
     for table_name in sorted(inspector.get_table_names()):
         table_info = {"columns": {}, "unique_constraints": [], "check_constraints": [], "foreign_keys": []}

@@ -131,14 +131,16 @@ class SimulatorRuntime:
 
             def make_on_gap(sym: str) -> Callable[[str, str], None]:
                 def on_gap(s: str, tf: str) -> None:
-                    if hasattr(self.provider, "degraded_symbols"):
-                        self.provider.degraded_symbols.add(s)
+                    if tf == self.settings.market_timeframe:
+                        if hasattr(self.provider, "degraded_symbols"):
+                            self.provider.degraded_symbols.add(s)
                 return on_gap
 
             def make_on_recovery(sym: str) -> Callable[[str, str], None]:
                 def on_recovery(s: str, tf: str) -> None:
-                    if hasattr(self.provider, "degraded_symbols"):
-                        self.provider.degraded_symbols.discard(s)
+                    if tf == self.settings.market_timeframe:
+                        if hasattr(self.provider, "degraded_symbols"):
+                            self.provider.degraded_symbols.discard(s)
                 return on_recovery
 
             for symbol in self.settings.symbols:

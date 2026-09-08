@@ -741,16 +741,21 @@ async def test_definitive_rejection_blocks_symbol_and_no_duplicate_post(clean_db
     # The fake broker doesn't normally raise except for ConnectionError when told.
     # We will subclass it just for this test.
     class RejectingBroker(FakeExternalBroker):
+        def __init__(self):
+            super().__init__()
+            self.submit_calls = 0
+
         async def submit_order(self, *args, **kwargs):
+            self.submit_calls += 1
             raise ValueError("HTTP 422 Unprocessable Entity")
 
     reject_broker = RejectingBroker()
-    runtime = LivePaperExecutionRuntime(reject_broker, clean_db, ["SPY"], FakeProvider())
+    runtime = LivePaperExecutionRuntime(reject_broker, clean_db, ['SPY'], FakeProvider())
     runtime.execution_ready = True
 
     # First cycle fails the POST definitively.
     await runtime._process_pending(set())
-    assert len(reject_broker.orders_submitted) == 0
+    assert reject_broker.submit_calls == 1
     assert runtime.execution_ready is False
 
     # Restart
@@ -764,7 +769,7 @@ async def test_definitive_rejection_blocks_symbol_and_no_duplicate_post(clean_db
     await restarted._process_pending(blocked)
 
     # No duplicate POST!
-    assert len(reject_broker.orders_submitted) == 0
+    assert reject_broker.submit_calls == 1
 
 
 @pytest.mark.anyio

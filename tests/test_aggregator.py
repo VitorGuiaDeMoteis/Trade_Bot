@@ -131,3 +131,50 @@ def test_multisymbol_duplicate_late_gap_and_dst():
         for minute in range(30, 35):
             item.process(ny_bar(day, 9, minute))
     assert [bar.open_time.hour for bar in dst] == [14, 13]
+
+def test_gap_15m_blocks_symbol_until_15m_recovery():
+    closed = []
+    degraded_symbols = set()
+    
+    def on_gap(sym: str, tf: str) -> None:
+        if tf == "15m":
+            degraded_symbols.add(sym)
+            
+    def on_recovery(sym: str, tf: str) -> None:
+        if tf == "15m":
+            degraded_symbols.discard(sym)
+
+    agg = TimeframeAggregator(
+        ["1m", "5m", "15m", "1h"],
+        closed.append,
+        on_gap=on_gap,
+        on_recovery=on_recovery
+    )
+    
+    summer = datetime(2026, 7, 6)
+    
+    # 1. Simulate a gap in the 15m bucket (9:30 - 9:43) -> missing 9:44
+    for minute in range(30, 44):
+        agg.process(ny_bar(summer, 9, minute, "SPY"))
+        
+    # Send a minute in the NEXT 5m/15m bucket (9:45)
+    # This closes the 9:30-9:44 buckets. 
+    # The 5m bucket (9:40-9:44) only got 4 bars, so it gaps.
+    # The 15m bucket (9:30-9:44) only got 14 bars, so it gaps.
+    agg.process(ny_bar(summer, 9, 45, "SPY"))
+    
+    assert "SPY" in degraded_symbols, "SPY should be degraded due to 15m gap"
+    
+    # 2. Complete the next 5m bucket (9:45 - 9:49) -> 5 minutes total
+    for minute in range(46, 50):
+        agg.process(ny_bar(summer, 9, minute, "SPY"))
+        
+    # The 5m bucket is closed. But since we only listen to 15m recovery, SPY must remain degraded.
+    assert "SPY" in degraded_symbols, "SPY MUST remain degraded even after 5m bucket recovery"
+    
+    # 3. Complete the rest of the 15m bucket (9:50 - 9:59) -> 10 minutes
+    for minute in range(50, 60):
+        agg.process(ny_bar(summer, 9, minute, "SPY"))
+        
+    assert "SPY" not in degraded_symbols, "SPY should recover only after full 15m bucket"
+    assert "SPY" not in degraded_symbols, "SPY should recover only after full 15m bucket"

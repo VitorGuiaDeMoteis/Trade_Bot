@@ -28,3 +28,14 @@ def isolate_provider(monkeypatch):  # type: ignore
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+@pytest.fixture
+def clean_db_for_migrations():
+    import sqlalchemy as sa
+    engine = sa.create_engine("postgresql+psycopg://test_only:test_only@127.0.0.1:5433/trading_bot_test")
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+    yield engine
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))

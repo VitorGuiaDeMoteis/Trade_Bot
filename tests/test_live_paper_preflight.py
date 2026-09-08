@@ -24,12 +24,12 @@ async def test_preflight_fails_on_schema_drift(clean_db_for_migrations):
     # mock broker to avoid network calls?
     # Actually _preflight_arm calls AlpacaPaperBroker.get_clock()
     # We should mock AlpacaPaperBroker inside _preflight_arm
-    from unittest.mock import patch
+    from unittest.mock import AsyncMock, patch
     with patch("scripts.live_paper.AlpacaPaperBroker") as MockBroker:
         instance = MockBroker.return_value
         instance.base_url = "https://paper-api.alpaca.markets"
-        instance.get_clock.return_value = None
-        instance.get_account.return_value = None
+        instance.get_clock = AsyncMock(return_value=None)
+        instance.get_account = AsyncMock(return_value=None)
 
         assert await _preflight_arm(settings, engine)
 

@@ -351,16 +351,18 @@ class LivePaperExecutionRuntime:
         if not self._reserve(row, symbol, requested, client_id):
             return
 
-        self._mark_ambiguous(client_id)
-
         try:
             existing = await self.broker.get_order_by_client_order_id(client_id)
-            order = existing or await self.broker.submit_order(
-                symbol=symbol,
-                side=row.signal_type,
-                quantity=requested,
-                client_order_id=client_id,
-            )
+            if existing:
+                order = existing
+            else:
+                self._mark_ambiguous(client_id)
+                order = await self.broker.submit_order(
+                    symbol=symbol,
+                    side=row.signal_type,
+                    quantity=requested,
+                    client_order_id=client_id,
+                )
             self._apply_remote(order)
         except Exception:
             self.execution_ready = False
