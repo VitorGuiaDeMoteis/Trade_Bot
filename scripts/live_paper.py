@@ -82,7 +82,8 @@ async def main():
         with engine.begin() as conn:
             row = conn.execute(
                 text(
-                    "SELECT armed, armed_at, activation_cutoff FROM live_paper_control WHERE control_id = 1"
+                    "SELECT armed, armed_at, activation_cutoff "
+                    "FROM live_paper_control WHERE control_id = 1"
                 )
             ).fetchone()
 
@@ -104,7 +105,9 @@ async def main():
             now = datetime.now(UTC)
             conn.execute(
                 text("""
-                INSERT INTO live_paper_control (control_id, armed, armed_at, updated_at, activation_cutoff)
+                INSERT INTO live_paper_control (
+                    control_id, armed, armed_at, updated_at, activation_cutoff
+                )
                 VALUES (1, true, :now, :now, :now)
                 ON CONFLICT (control_id) DO UPDATE SET 
                     armed = true,

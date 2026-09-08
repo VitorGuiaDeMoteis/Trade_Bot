@@ -324,6 +324,27 @@ broker_orders = Table(
     Column("submitted_at", DateTime(timezone=True), nullable=False),
     Column("filled_at", DateTime(timezone=True), nullable=True),
     Column("last_reconciliation_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("risk_decision_id", name="uq_broker_order_risk_decision"),
+    CheckConstraint("side IN ('BUY', 'SELL')", name="ck_broker_orders_side"),
+    CheckConstraint("timeframe = '15m'", name="ck_broker_orders_timeframe"),
+    CheckConstraint(
+        "status IN ('pending_new','accepted','new','partially_filled',"
+        "'filled','canceled','rejected','expired')",
+        name="ck_broker_orders_status",
+    ),
+    CheckConstraint(
+        "requested_qty > 0 AND filled_qty >= 0 AND filled_qty <= requested_qty",
+        name="ck_broker_orders_quantities",
+    ),
+    CheckConstraint(
+        "(filled_qty = 0 AND filled_avg_price IS NULL) OR "
+        "(filled_qty > 0 AND filled_avg_price IS NOT NULL AND filled_avg_price > 0)",
+        name="ck_broker_orders_fill_price",
+    ),
+    CheckConstraint(
+        "status != 'filled' OR filled_qty = requested_qty",
+        name="ck_broker_orders_filled_complete",
+    ),
 )
 
 broker_fills = Table(
@@ -336,4 +357,5 @@ broker_fills = Table(
     Column("qty", BigInteger, nullable=False),
     Column("price", Numeric(20, 10), nullable=False),
     Column("filled_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("qty > 0 AND price > 0", name="ck_broker_fills_values"),
 )

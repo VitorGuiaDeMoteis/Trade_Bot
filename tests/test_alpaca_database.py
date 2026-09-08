@@ -99,7 +99,7 @@ def test_multi_symbol_same_time_independent_cursors_and_rest_ws(market):  # type
     stores["SPY"].append(bar("SPY", 15))  # type: ignore
     assert counts(engine) == [3] * 4  # type: ignore
     with TestClient(create_app(settings)) as client:
-        client.app.state.markets = stores  # type: ignore
+        client.app.state.markets = {(symbol, "1h"): store for symbol, store in stores.items()}  # type: ignore
         client.app.state.configuration = settings.model_copy(  # type: ignore
             update={"market_data_provider": "alpaca", "market_symbols": "SPY,AAPL"}
         )
@@ -175,12 +175,26 @@ def test_database_unique_signal_risk_and_closed_constraints(market):  # type: ig
 
 def test_runtime_conflict_is_visible_and_stops_processing(market, caplog):  # type: ignore
     settings, engine, generator, _ = market
-    store = store_for(engine)  # type: ignore
-    store.append(bar())  # type: ignore
+    opened = datetime(2026, 9, 3, 14, tzinfo=UTC)
+    original = MarketBar(
+        "alpaca",
+        "SPY",
+        "1m",
+        opened,
+        opened + timedelta(minutes=1),
+        Decimal("100"),
+        Decimal("102"),
+        Decimal("99"),
+        Decimal("101"),
+        123,
+        True,
+    )
+    store = MarketStore(engine, series_id("alpaca", "SPY", "1m"))
+    store.append(original)
 
     class FakeProvider(MarketDataProvider):
         async def get_historical_candles(self, *args, **kwargs):  # type: ignore
-            return [replace(bar(), volume=999)]  # type: ignore
+            return [replace(original, volume=999)]
 
         async def subscribe(self):  # type: ignore
             raise AssertionError("Conflict must stop before subscription")
@@ -193,13 +207,13 @@ def test_runtime_conflict_is_visible_and_stops_processing(market, caplog):  # ty
         settings.model_copy(update={"market_data_provider": "alpaca", "market_symbols": "SPY"}),
         store,
         FakeProvider(),
-        {"SPY": store},
+        {("SPY", "1m"): store},
     )
     asyncio.run(runtime._run())
     assert runtime.status().state == "degraded"
     assert runtime.error == "market_identity_content_conflict"
     assert '"event": "market.ingestion.failed"' in caplog.text
-    assert counts(engine) == [1] * 4  # type: ignore
+    assert counts(engine) == [1, 1, 0, 0]  # type: ignore
 
 
 def test_migration_quarantine_preserves_complete_graph_and_downgrade(market):  # type: ignore

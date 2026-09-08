@@ -26,10 +26,11 @@ def history(
     through: Annotated[int | None, Query(ge=0)] = None,
     stream_id: UUID | None = None,
     symbol: str | None = None,
-    timeframe: str = "1h",
+    timeframe: str | None = None,
 ) -> MarketSnapshot:
     symbols = request.app.state.configuration.symbols
     selected = symbol or symbols[0]
+    timeframe = timeframe or request.app.state.configuration.market_timeframe
     if selected not in symbols or timeframe not in ["1m", "5m", "15m", "1h"]:
         raise HTTPException(422, detail="unsupported_series")
 

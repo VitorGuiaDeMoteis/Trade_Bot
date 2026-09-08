@@ -1,13 +1,25 @@
-# LIVE PAPER RUNTIME EVIDENCE
+# Evidências do runtime Live Paper
 
-* startup state: LivePaperExecutionRuntime handles _reconcile() on startup (fail-closed implementation).
-* account read OK/PENDING: Local testing indicates pending due to missing .env Alpaca keys.
-* market clock: Handled via MarketDataStatus.state.
-* reconciliation: Startup procedure fetches open positions/orders.
-* armed/disarmed: Controlled via external CLI (stubbed status isk.paused mapped to UI logic).
-* last 15m candle: Enforced via TimeframeAggregator (5, 15, 60 minute complete buckets, NY 09:30 aligned).
-* latest signal: Persisted in DB as 2-15m-baseline.
-* risk: Consumed by LivePaperExecutionRuntime polling for APPROVED states.
-* broker order state: Semantics fixed (POST returns SUBMITTED, not FILLED).
-* fill state: Realized via roker_fills table migration.
-* restart result: Idempotent DB transaction ignores duplicate insertions due to client_order_id constraints.
+## Invariantes
+
+- `execution_ready=false` até reconciliar banco, conta, clock, posições e ordens.
+- Conta inválida, posição short/duplicada, estado remoto desconhecido, divergência
+  de identidade ou divergência de fill bloqueiam execução.
+- A ordem remota deve corresponder ao símbolo, lado e quantidade da reserva local.
+- Estados suportados: `pending_new`, `accepted`, `new`, `partially_filled`,
+  `filled`, `canceled`, `rejected` e `expired`.
+- `POST success` não significa fill.
+- Para quantidade cumulativa remota `0 -> 2 -> 5`, os fills locais são `2` e `3`;
+  nova reconciliação em `5` não acrescenta fill.
+- Uma ordem `filled` precisa ter quantidade cumulativa igual à solicitada.
+- O banco rejeita quantidade solicitada zero, estado inválido, fill sem preço e
+  fill completo inconsistente.
+
+## Cobertura PostgreSQL
+
+Os testes usam somente `trading_bot_test` em `127.0.0.1:5433`. Eles cobrem BUY,
+SELL, partial fill, restart após perda de resposta, concorrência, no-data, stale,
+provider degradado, mercado fechado, isolamento por símbolo, 100 decisões históricas,
+lifespan FastAPI e endpoints dashboard/orders/fills.
+
+O ARM final e as leituras reais da conta Alpaca Paper permanecem fora dos testes.

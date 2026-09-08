@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -15,13 +16,24 @@ def mock_httpx():
 
 
 def test_execute_approved_buy_succeeds(mock_httpx):
+    client_id = "agy-" + uuid4().hex
     mock_resp = MagicMock()
     mock_resp.status_code = 200
-    mock_resp.json.return_value = {"id": "123", "status": "submitted"}
+    mock_resp.json.return_value = {
+        "id": "123",
+        "client_order_id": client_id,
+        "symbol": "SPY",
+        "side": "buy",
+        "status": "accepted",
+        "qty": "1",
+        "filled_qty": "0",
+        "filled_avg_price": None,
+        "submitted_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
     mock_httpx.return_value = mock_resp
 
     executor = AlpacaPaperBroker("test", "test")
-    client_id = f"agy-{uuid4()}-{uuid4()}"
 
     async def run():
         return await executor.submit_order(
@@ -29,9 +41,9 @@ def test_execute_approved_buy_succeeds(mock_httpx):
         )
 
     result = asyncio.run(run())
-    assert result.status == "submitted"
+    assert result.status == "accepted"
     assert result.broker_order_id == "123"
-    assert result.client_order_id == ""
+    assert result.client_order_id == client_id
 
     mock_httpx.assert_called_once()
     args, kwargs = mock_httpx.call_args

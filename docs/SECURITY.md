@@ -123,3 +123,20 @@ rootfs read-only, sem mounts/ports, UID65534 e capabilities zeradas. Endpoint
 Imagem/pesos verificados pelo host e pelo wrapper. Sem tools, proxy, redirects,
 pull ou consumidor financeiro. Saída/reasoning não validada é descartada.
 Os limites REAL são explícitos e separados dos limites FAKE. Histórico abaixo.
+
+---
+
+# Segurança Live Paper
+
+O único destino de execução é `https://paper-api.alpaca.markets`. Credenciais ficam
+no `.env` local e nunca entram em testes, respostas, logs ou Git. Testes definem
+`RUN_ALPACA_SMOKE_TEST=0` e bloqueiam acesso externo.
+
+Toda execução automática depende de reconciliação bem-sucedida e ARM local por CLI.
+Sem banco, candle Alpaca 1m recente, sessão regular, provider conectado ou identidade
+remota coerente, o runtime mantém `execution_ready=false` e não envia nova ordem.
+Posição short, conta inválida e fill divergente também bloqueiam.
+
+O dashboard, orders e fills são leitura. Erros de banco retornam apenas
+`database_unavailable`; DSN e exceções não atravessam a API. No modo local, métricas
+financeiras indisponíveis são `null`, em vez de números fixos inventados.

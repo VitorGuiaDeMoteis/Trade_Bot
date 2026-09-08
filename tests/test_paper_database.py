@@ -294,7 +294,7 @@ def test_paper_api_links_positions_orders_fills_and_empty(market: Market) -> Non
         store.replay()
         client.app.state.configuration = store.settings  # type: ignore[attr-defined]
         client.app.state.markets = {  # type: ignore
-            "SPY": MarketStore(store.engine, series_id("alpaca", "SPY", "1h"))
+            ("SPY", "1h"): MarketStore(store.engine, series_id("alpaca", "SPY", "1h"))
         }
         orders = client.get("/api/v1/paper/orders?limit=2").json()["items"]
         fills = client.get("/api/v1/paper/fills?limit=2").json()["items"]

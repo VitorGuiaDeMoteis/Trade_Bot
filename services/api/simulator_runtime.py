@@ -112,12 +112,22 @@ class SimulatorRuntime:
             from services.market_data.aggregator import TimeframeAggregator
 
             aggregators: dict[str, TimeframeAggregator] = {}
+            pending: set[asyncio.Task[None]] = set()
 
             def make_callback(sym: str) -> Callable[[MarketBar], None]:
                 def callback(b: MarketBar) -> None:
-                    asyncio.create_task(self._persist(b, sym))
+                    task = asyncio.create_task(self._persist(b, sym))
+                    pending.add(task)
 
                 return callback
+
+            async def drain() -> None:
+                if pending:
+                    current = tuple(pending)
+                    try:
+                        await asyncio.gather(*current)
+                    finally:
+                        pending.difference_update(current)
 
             for symbol in self.settings.symbols:
                 aggregators[symbol] = TimeframeAggregator(
@@ -139,6 +149,7 @@ class SimulatorRuntime:
                         for bar in history:
                             assert isinstance(bar, MarketBar)
                             aggregators[symbol].process(bar)
+                            await drain()
                         if isinstance(self.provider, AlpacaMarketDataProvider) and history:
                             self.provider.resume_from(symbol, history[-1].open_time)
                     break
@@ -154,6 +165,7 @@ class SimulatorRuntime:
             async for bar in self.provider.subscribe():
                 assert isinstance(bar, MarketBar)
                 aggregators[bar.symbol].process(bar)
+                await drain()
         except ContentConflict:
             self._failure("market_identity_content_conflict")
         except ProviderError as error:

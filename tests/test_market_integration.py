@@ -47,12 +47,14 @@ def market(monkeypatch):  # type: ignore
         postgres_password=SecretStr("test_only"),
         simulator_enabled=False,
         simulator_interval_seconds=0.1,
+        market_timeframe="1h",
     )
     engine = create_database_engine(settings)
     with engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE risk_decisions, signals, system_events, candles, "
+                "TRUNCATE broker_fills, broker_orders, live_paper_control, "
+                "risk_decisions, signals, system_events, candles, "
                 "legacy_market_archive, paper_runs, system_controls, paper_events, "
                 "paper_marks, portfolio_snapshots, positions, paper_orders, paper_fills, "
                 "paper_outcomes CASCADE"
@@ -66,7 +68,8 @@ def market(monkeypatch):  # type: ignore
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "TRUNCATE risk_decisions, signals, system_events, candles, "
+                    "TRUNCATE broker_fills, broker_orders, live_paper_control, "
+                    "risk_decisions, signals, system_events, candles, "
                     "legacy_market_archive, paper_runs, system_controls, paper_events, "
                     "paper_marks, portfolio_snapshots, positions, paper_orders, paper_fills, "
                     "paper_outcomes CASCADE"

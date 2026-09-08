@@ -16,11 +16,11 @@ class TimeframeAggregator:
         self.emit_1m = "1m" in target_timeframes
         self.target_timeframes = [tf for tf in target_timeframes if tf != "1m"]
         self.on_candle_closed = on_candle_closed
-        self.partials: dict[str, MarketBar] = {}
-        self.minutes_received: dict[str, set[datetime]] = {}
+        self.partials: dict[tuple[str, str], MarketBar] = {}
+        self.minutes_received: dict[tuple[str, str], set[datetime]] = {}
         self.expected_minutes = {"5m": 5, "15m": 15, "1h": 60}
         self.durations = {tf: timeframe_duration(tf) for tf in self.target_timeframes}
-        self.latest_received: datetime | None = None
+        self.latest_received: dict[str, datetime] = {}
 
     def _align_time(self, dt: datetime, tf: str) -> datetime | None:
         ny_time = dt.astimezone(NY_TZ)
@@ -54,14 +54,19 @@ class TimeframeAggregator:
             self.on_candle_closed(bar)
             return
 
-        if self.emit_1m:
-            self.on_candle_closed(bar)
-
-        # Reject late bars
-        if self.latest_received and bar.open_time < self.latest_received:
+        # Operational candles are regular-session only, including emitted 1m bars.
+        if self._align_time(bar.open_time, "1m") is None:
             return
 
-        self.latest_received = max(self.latest_received or bar.open_time, bar.open_time)
+        latest = self.latest_received.get(bar.symbol)
+        if latest and bar.open_time < latest:
+            return
+        if latest == bar.open_time:
+            return
+
+        self.latest_received[bar.symbol] = bar.open_time
+        if self.emit_1m:
+            self.on_candle_closed(bar)
 
         for tf in self.target_timeframes:
             aligned_open = self._align_time(bar.open_time, tf)
@@ -69,17 +74,17 @@ class TimeframeAggregator:
                 continue
             aligned_close = aligned_open + self.durations[tf]
 
-            bucket_key = f"{bar.symbol}_{tf}_{aligned_open.isoformat()}"
+            key = (bar.symbol, tf)
 
             # If moving to a new bucket, discard the old incomplete one
-            if tf in self.partials:
-                current_partial = self.partials[tf]
+            if key in self.partials:
+                current_partial = self.partials[key]
                 if current_partial.open_time != aligned_open:
-                    self.partials.pop(tf)
-                    self.minutes_received.pop(tf, None)
+                    self.partials.pop(key)
+                    self.minutes_received.pop(key, None)
 
-            if tf not in self.partials:
-                self.partials[tf] = MarketBar(
+            if key not in self.partials:
+                self.partials[key] = MarketBar(
                     provider=bar.provider,
                     symbol=bar.symbol,
                     timeframe=tf,
@@ -92,23 +97,23 @@ class TimeframeAggregator:
                     volume=bar.volume,
                     is_closed=False,
                 )
-                self.minutes_received[tf] = {bar.open_time}
+                self.minutes_received[key] = {bar.open_time}
             else:
-                if bar.open_time in self.minutes_received.get(tf, set()):
+                if bar.open_time in self.minutes_received.get(key, set()):
                     continue  # Duplicate minute
 
-                partial = self.partials[tf]
-                self.partials[tf] = replace(
+                partial = self.partials[key]
+                self.partials[key] = replace(
                     partial,
                     high=max(partial.high, bar.high),
                     low=min(partial.low, bar.low),
                     close=bar.close,
                     volume=partial.volume + bar.volume,
                 )
-                self.minutes_received[tf].add(bar.open_time)
+                self.minutes_received[key].add(bar.open_time)
 
-            if len(self.minutes_received[tf]) == self.expected_minutes[tf]:
-                partial = self.partials[tf]
+            if len(self.minutes_received[key]) == self.expected_minutes[tf]:
+                partial = self.partials[key]
                 self.on_candle_closed(replace(partial, is_closed=True))
-                self.partials.pop(tf)
-                self.minutes_received.pop(tf)
+                self.partials.pop(key)
+                self.minutes_received.pop(key)

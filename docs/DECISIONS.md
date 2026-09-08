@@ -179,3 +179,14 @@ image_digest identifica runtime/wrapper. Ambas entram no binding REAL da auditor
 Timeout HTTP interno usa exit124 e é convertido em TIMEOUT apenas no perfil REAL;
 o código anterior perdia essa distinção como MODEL_ERROR, mantendo HOLD.
 [Decisões, recursos e limites](M5_REAL_MODEL.md). Nenhuma autoridade financeira.
+
+## Live Paper core — decisões de integridade
+
+| ID | Decisão | Motivo e limite |
+| --- | --- | --- |
+| D042 | Endpoint fixo `paper-api.alpaca.markets` | Impede troca por configuração para o endpoint de dinheiro real. |
+| D043 | Reserva PostgreSQL antes do POST e ID determinístico por RiskDecision | Resposta perdida e restart consultam o mesmo ID sem duplicar ordem. |
+| D044 | Reconciliação completa antes de `execution_ready` | Conta, clock, posições, ordens, identidade e fills inconsistentes falham fechados. |
+| D045 | Somente candles Alpaca fechados, 15m para decisão e 1m recente para saúde | Dados simulados, futuros, ausentes ou stale não autorizam ordem externa. |
+| D046 | Fills cumulativos remotos viram deltas transacionais locais | Mantém `SUM(local qty) = remote filled_qty` sem duplicação. |
+| D047 | ARM continua CLI e fora dos gates | Esta etapa prepara a primeira ordem Paper, mas não aumenta autoridade sem autorização explícita. |

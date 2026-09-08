@@ -305,3 +305,31 @@ leitura em 127.0.0.1:8000; Xiaomi por adb reverse. Não iniciar streaming durant
 a prova de preservação. Timeout é HOLD de auditoria, não comando de estratégia.
 Não aumentar os limites FAKE nem baixar modelos para tentar corrigir uma falha.
 O diagnóstico do runtime nativo abaixo permanece histórico; ele não foi utilizado.
+
+## Live Paper — gates seguros
+
+Use somente o PostgreSQL de teste em `127.0.0.1:5433`:
+
+```powershell
+$env:APP_ENV='test'
+$env:POSTGRES_HOST='127.0.0.1'
+$env:POSTGRES_PORT='5433'
+$env:POSTGRES_DB='trading_bot_test'
+$env:POSTGRES_USER='test_only'
+$env:POSTGRES_PASSWORD='test_only'
+$env:RUN_DB_TESTS='1'
+$env:MARKET_DATA_PROVIDER='simulator'
+$env:EXECUTION_MODE='local_paper'
+$env:RUN_ALPACA_SMOKE_TEST='0'
+
+docker compose --profile test up -d --wait postgres_test
+uv run alembic upgrade head
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy
+uv run pytest -q
+uv run alembic check
+```
+
+Não execute `uv run python -m scripts.live_paper arm` como parte dos gates. Leituras
+reais Alpaca Paper só ocorrem depois de todos os gates verdes e nunca incluem POST.

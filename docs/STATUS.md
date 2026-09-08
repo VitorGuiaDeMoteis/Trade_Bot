@@ -336,4 +336,36 @@ M5 Xiaomi Real ?
 M5 Acceptance ?
 
 M1.5 streaming aberto ?
-M6 n�o iniciado
+M6 não iniciado
+
+---
+
+# Live Paper core — validação local de 2026-09-08
+
+Branch `feat/live-paper-core`, base local e remota
+`2464c8bb40b6d95884bef180d956b64960aabbd1`. Trabalho interrompido válido foi
+preservado e completado sem reset destrutivo. Diagnósticos avulsos foram movidos
+para `.artifacts/interrupted-20260908`, ignorado pelo Git.
+
+Docker Engine 29.3.1 e `postgres_test` estão healthy em `127.0.0.1:5433`.
+A migration `002ad6ee70d8` foi aplicada por downgrade/upgrade no banco descartável,
+`check_database=up` e `alembic check` não encontrou operações novas.
+
+O recorte Live Paper tem **62 testes focados passando** e o restante do repositório,
+sem as duas suítes de rota do M5 Observer, tem **363 testes passando**. Testes sem
+PostgreSQL: **260 passando**. Foram coletados **115 testes PostgreSQL**.
+
+O gate completo permanece bloqueado por **9 falhas preexistentes e exclusivas do
+M5 Observer**: `services/observer/prompt.py` persiste `observer-v2`, enquanto
+`services/api/observer_routes.py` aceita somente `observer-v1`. O pedido desta etapa
+proíbe alterar o M5 Observer. Os mesmos nove casos falharam pelo mesmo motivo em um
+worktree detached e limpo no SHA base. Portanto não são regressão do Live Paper. O
+gate completo registra **366 passed / 9 failed / 0 errors / 0 skipped**, sem declará-lo
+verde.
+
+Após a autorização excepcional e com todos os gates Live Paper e non-M5 verdes,
+foram executadas somente leituras reais da Alpaca Paper: account, clock, positions e
+orders responderam pelo endpoint `https://paper-api.alpaca.markets`; conta em USD,
+equity 100000, cash 100000, mercado aberto, zero posições e zero ordens. Nenhum POST,
+ARM ou acesso ao endpoint de dinheiro real foi executado. O M5 permanece congelado
+para correção separada.
