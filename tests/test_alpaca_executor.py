@@ -1,11 +1,9 @@
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 import httpx
 import pytest
 from decimal import Decimal
 import asyncio
-from packages.domain.risk import RiskDecision
-from packages.domain.paper import PaperBook, PaperResult
-from services.paper_executor.alpaca import AlpacaPaperExecutor
+from services.paper_executor.alpaca import AlpacaPaperBroker
 from uuid import uuid4
 from datetime import datetime, timezone
 
@@ -17,51 +15,47 @@ def mock_httpx():
 def test_execute_approved_buy_succeeds(mock_httpx):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
-    mock_resp.json.return_value = {"id": "123"}
-    mock_httpx.return_value.__aenter__.return_value = mock_resp
+    mock_resp.json.return_value = {"id": "123", "status": "submitted"}
+    mock_httpx.return_value = mock_resp
 
-    executor = AlpacaPaperExecutor("test", "test")
-    risk = RiskDecision(decision_id=uuid4(), signal_id=uuid4(), decision="APPROVED", reason="OK", decided_at=datetime.now(timezone.utc))
+    executor = AlpacaPaperBroker("test", "test")
+    client_id = f"agy-{uuid4()}-{uuid4()}"
     
     async def run():
-        return await executor.execute(
-            book=None,
+        return await executor.submit_order(
             symbol="SPY",
             side="BUY",
-            reference=Decimal("100.0"),
             quantity=1,
-            risk=risk
+            client_order_id=client_id
         )
     
     result = asyncio.run(run())
-    assert result.status == "FILLED"
-    assert result.reason == "order_submitted"
+    assert result.status == "submitted"
+    assert result.broker_order_id == "123"
+    assert result.client_order_id == ""
     
     mock_httpx.assert_called_once()
     args, kwargs = mock_httpx.call_args
     assert "client_order_id" in kwargs["json"]
-    assert kwargs["json"]["client_order_id"] == f"agy-{risk.decision_id}-{risk.signal_id}"
+    assert kwargs["json"]["client_order_id"] == client_id
 
 def test_execute_duplicate_client_order_id(mock_httpx):
     mock_resp = MagicMock()
     mock_resp.status_code = 422
     mock_resp.json.return_value = {"message": "order_id must be unique"}
-    mock_httpx.return_value.__aenter__.return_value = mock_resp
+    mock_httpx.return_value = mock_resp
+    mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError('error', request=MagicMock(), response=mock_resp)
 
-    executor = AlpacaPaperExecutor("test", "test")
-    risk = RiskDecision(decision_id=uuid4(), signal_id=uuid4(), decision="APPROVED", reason="OK", decided_at=datetime.now(timezone.utc))
+    executor = AlpacaPaperBroker("test", "test")
+    client_id = f"agy-{uuid4()}-{uuid4()}"
     
     async def run():
-        return await executor.execute(
-            book=None,
+        return await executor.submit_order(
             symbol="SPY",
             side="BUY",
-            reference=Decimal("100.0"),
             quantity=1,
-            risk=risk
+            client_order_id=client_id
         )
         
-    result = asyncio.run(run())
-    
-    assert result.status == "NO_ACTION"
-    assert result.reason == "duplicate_client_order_id"
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(run())

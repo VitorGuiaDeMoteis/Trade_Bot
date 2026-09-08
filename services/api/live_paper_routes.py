@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from packages.contracts.market import MarketDataStatus
-from services.paper_executor.alpaca import AlpacaPaperExecutor
+from services.paper_executor.alpaca import AlpacaPaperBroker
 
 router = APIRouter(prefix="/api/v1/live-paper", tags=["live-paper"])
 
@@ -32,7 +32,7 @@ async def dashboard(request: Request) -> DashboardResponse:
     if settings.execution_mode == "alpaca_paper":
         if not settings.alpaca_api_key_id or not settings.alpaca_api_secret_key:
             raise HTTPException(503, "ALPACA PAPER CREDENTIALS PENDING")
-        executor = AlpacaPaperExecutor(
+        executor = AlpacaPaperBroker(
             settings.alpaca_api_key_id.get_secret_value(),
             settings.alpaca_api_secret_key.get_secret_value(),
         )
@@ -110,7 +110,7 @@ async def orders(request: Request) -> dict[str, Any]:
     if settings.execution_mode == "alpaca_paper":
         if not settings.alpaca_api_key_id or not settings.alpaca_api_secret_key:
             raise HTTPException(503, "ALPACA PAPER CREDENTIALS PENDING")
-        executor = AlpacaPaperExecutor(
+        executor = AlpacaPaperBroker(
             settings.alpaca_api_key_id.get_secret_value(),
             settings.alpaca_api_secret_key.get_secret_value(),
         )
@@ -126,9 +126,9 @@ async def orders(request: Request) -> dict[str, Any]:
 async def fills(request: Request) -> dict[str, Any]:
     from sqlalchemy import text
     engine = request.app.state.database
-    with engine.begin() as conn:
-        try:
+    try:
+        with engine.begin() as conn:
             rows = conn.execute(text("SELECT fill_id, client_order_id, qty, price, filled_at FROM broker_fills")).fetchall()
             return {"items": [dict(r._mapping) for r in rows]}
-        except Exception:
-            return {"items": []}
+    except Exception as e:
+        raise HTTPException(503, f"database_error: {e}")

@@ -13,12 +13,13 @@ class TimeframeAggregator:
     def __init__(
         self, target_timeframes: list[str], on_candle_closed: Callable[[MarketBar], None]
     ) -> None:
-        self.target_timeframes = target_timeframes
+        self.emit_1m = "1m" in target_timeframes
+        self.target_timeframes = [tf for tf in target_timeframes if tf != "1m"]
         self.on_candle_closed = on_candle_closed
         self.partials: dict[str, MarketBar] = {}
         self.minutes_received: dict[str, set[datetime]] = {}
         self.expected_minutes = {"5m": 5, "15m": 15, "1h": 60}
-        self.durations = {tf: timeframe_duration(tf) for tf in target_timeframes}
+        self.durations = {tf: timeframe_duration(tf) for tf in self.target_timeframes}
         self.latest_received: datetime | None = None
 
     def _align_time(self, dt: datetime, tf: str) -> datetime:
@@ -51,6 +52,9 @@ class TimeframeAggregator:
         if bar.timeframe != "1m":
             self.on_candle_closed(bar)
             return
+
+        if self.emit_1m:
+            self.on_candle_closed(bar)
 
         # Reject late bars
         if self.latest_received and bar.open_time < self.latest_received:

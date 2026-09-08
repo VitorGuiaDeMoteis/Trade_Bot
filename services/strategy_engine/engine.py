@@ -32,7 +32,7 @@ class BaseStrategy:
             reason={
                 "BUY": "Fechamento acima da abertura.",
                 "SELL": "Fechamento abaixo da abertura.",
-                "HOLD": "Abertura e fechamento equivalentes. Sem ao.",
+                "HOLD": "Abertura e fechamento equivalentes. Sem ação.",
             }[signal_type],
         )
 

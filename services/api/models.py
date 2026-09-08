@@ -42,7 +42,13 @@ candles = Table(
         '"high" >= "open" AND "high" >= "close"',
         name="ck_candles_ohlc",
     ),
-    CheckConstraint("close_time = open_time + interval '1 hour'", name="ck_candles_hour"),
+    CheckConstraint(
+        "(timeframe = '1m' AND close_time = open_time + interval '1 minute') OR "
+        "(timeframe = '5m' AND close_time = open_time + interval '5 minutes') OR "
+        "(timeframe = '15m' AND close_time = open_time + interval '15 minutes') OR "
+        "(timeframe = '1h' AND close_time = open_time + interval '1 hour')",
+        name="ck_candles_timeframe_duration"
+    ),
     CheckConstraint(
         "regime IN ('uptrend','downtrend','sideways','volatile')", name="ck_candles_regime"
     ),

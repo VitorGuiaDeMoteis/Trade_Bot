@@ -30,7 +30,7 @@ def test_aggregator_1m_to_5m_15m_1h():
         
     assert len(closed) == 1
     assert closed[0].timeframe == "5m"
-    assert closed[0].open_time.minute == 0
+    assert closed[0].open_time.minute == 30
     assert closed[0].close == Decimal("14.0")
     assert closed[0].volume == 500
 

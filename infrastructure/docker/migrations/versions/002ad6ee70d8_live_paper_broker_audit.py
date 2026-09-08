@@ -47,6 +47,23 @@ def upgrade() -> None:
     )
 
 
+    op.drop_constraint("ck_candles_hour", "candles", type_="check")
+    op.create_check_constraint(
+        "ck_candles_timeframe_duration",
+        "candles",
+        "(timeframe = '1m' AND close_time = open_time + interval '1 minute') OR "
+        "(timeframe = '5m' AND close_time = open_time + interval '5 minutes') OR "
+        "(timeframe = '15m' AND close_time = open_time + interval '15 minutes') OR "
+        "(timeframe = '1h' AND close_time = open_time + interval '1 hour')"
+    )
+
 def downgrade() -> None:
+    op.drop_constraint("ck_candles_timeframe_duration", "candles", type_="check")
+    op.create_check_constraint(
+        "ck_candles_hour",
+        "candles",
+        "close_time = open_time + interval '1 hour'"
+    )
     op.drop_table("broker_fills")
     op.drop_table("broker_orders")
+
