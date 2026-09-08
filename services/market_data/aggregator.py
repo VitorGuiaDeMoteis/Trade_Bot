@@ -76,12 +76,24 @@ class TimeframeAggregator:
 
             key = (bar.symbol, tf)
 
-            # If moving to a new bucket, discard the old incomplete one
+            # If moving to a new bucket, close the old incomplete one
             if key in self.partials:
                 current_partial = self.partials[key]
                 if current_partial.open_time != aligned_open:
-                    self.partials.pop(key)
-                    self.minutes_received.pop(key, None)
+                    expected = self.expected_minutes[tf]
+                    actual = len(self.minutes_received.get(key, set()))
+                    if actual < expected:
+                        import logging
+
+                        logging.getLogger("trading_bot.market").error(
+                            f"aggregator_gap_detected_{actual}_of_{expected}_for_{key}"
+                        )
+                        self.partials.pop(key)
+                        self.minutes_received.pop(key, None)
+                    else:
+                        self.on_candle_closed(replace(current_partial, is_closed=True))
+                        self.partials.pop(key)
+                        self.minutes_received.pop(key, None)
 
             if key not in self.partials:
                 self.partials[key] = MarketBar(

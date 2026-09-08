@@ -329,7 +329,7 @@ broker_orders = Table(
     CheckConstraint("timeframe = '15m'", name="ck_broker_orders_timeframe"),
     CheckConstraint(
         "status IN ('pending_new','accepted','new','partially_filled',"
-        "'filled','canceled','rejected','expired')",
+        "'filled','canceled','rejected','expired','pre_submit','submission_ambiguous','failed_local')",
         name="ck_broker_orders_status",
     ),
     CheckConstraint(

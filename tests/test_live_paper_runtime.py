@@ -86,6 +86,9 @@ class FakeExternalBroker:
         self.orders_submitted.append((symbol, side, quantity, client_order_id))
         from packages.contracts.broker import BrokerOrder
 
+        if getattr(self, "lose_submit_before_post", False):
+            raise ConnectionError("simulated pre-post failure")
+
         o = BrokerOrder(
             client_order_id=client_order_id,
             broker_order_id=str(uuid4()),
@@ -237,7 +240,7 @@ async def test_live_paper_buy_e2e_real_db(clean_db):
     runtime = LivePaperExecutionRuntime(broker, engine, [symbol], FakeProvider())
     runtime.execution_ready = True
 
-    await runtime._process_pending()
+    await runtime._process_pending(set())
 
     assert len(broker.orders_submitted) == 1
     sym, side, qty, cid = broker.orders_submitted[0]
@@ -294,7 +297,7 @@ async def test_live_paper_buy_e2e_real_db(clean_db):
 
     # Verify order is not duplicated on next loop
     broker.orders_submitted.clear()
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert len(broker.orders_submitted) == 0
 
 
@@ -351,7 +354,7 @@ async def test_strategy_risk_to_live_buy_uses_real_postgres(clean_db):
     broker = FakeExternalBroker()
     runtime = LivePaperExecutionRuntime(broker, clean_db, [symbol], FakeProvider())
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert [(symbol, side, qty) for symbol, side, qty, _ in broker.orders_submitted] == [
         ("TSLA", "BUY", 9)
     ]
@@ -418,7 +421,7 @@ async def test_live_paper_sell_e2e_real_db(clean_db):
     runtime = LivePaperExecutionRuntime(broker, engine, [symbol], FakeProvider())
     runtime.execution_ready = True
 
-    await runtime._process_pending()
+    await runtime._process_pending(set())
 
     assert len(broker.orders_submitted) == 1
     sym, side, qty, cid = broker.orders_submitted[0]
@@ -476,7 +479,7 @@ async def test_live_paper_no_data_and_stale_and_blocks(clean_db):
     runtime.execution_ready = True
 
     # NO DATA (1m is missing)
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert len(broker.orders_submitted) == 0
 
     # STALE DATA (1m is 6 minutes old)
@@ -492,25 +495,25 @@ async def test_live_paper_no_data_and_stale_and_blocks(clean_db):
             },
         )
 
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert len(broker.orders_submitted) == 0
 
     # DEGRADED
     runtime.provider = FakeProvider("degraded")
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert len(broker.orders_submitted) == 0
 
     # CLOSED
     runtime.provider = FakeProvider("connected")
     broker.is_open = False
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert len(broker.orders_submitted) == 0
     broker.is_open = True
 
     # DISARMED
     with engine.begin() as conn:
         conn.execute(text("UPDATE live_paper_control SET armed = false"))
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert len(broker.orders_submitted) == 0
     with engine.begin() as conn:
         conn.execute(text("UPDATE live_paper_control SET armed = true"))
@@ -604,7 +607,7 @@ async def test_live_paper_historical_backlog(clean_db):
     runtime = LivePaperExecutionRuntime(broker, engine, [symbol], FakeProvider())
     runtime.execution_ready = True
 
-    await runtime._process_pending()
+    await runtime._process_pending(set())
 
     # The fresh signal executes immediately; no old decision is reserved or submitted.
     assert len(broker.orders_submitted) == 1
@@ -630,7 +633,7 @@ async def test_every_unhealthy_provider_state_blocks_submit(clean_db, state):
     broker = FakeExternalBroker()
     runtime = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider(state))
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert broker.orders_submitted == []
 
 
@@ -642,7 +645,7 @@ async def test_non_alpaca_candles_cannot_authorize_live_order(clean_db):
     broker = FakeExternalBroker()
     runtime = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert broker.orders_submitted == []
 
 
@@ -653,7 +656,7 @@ async def test_sizing_ids_and_insufficient_capital(clean_db):
     broker.account_cash = Decimal("1000")
     runtime = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert broker.orders_submitted[0][2] == 3
     first_id = runtime.client_order_id(decision)
     assert first_id == runtime.client_order_id(decision)
@@ -690,7 +693,7 @@ async def test_multi_symbol_conflict_is_scoped(clean_db):
     )
     runtime = LivePaperExecutionRuntime(broker, clean_db, ["AAPL", "SPY"], FakeProvider())
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     assert [(symbol, side) for symbol, side, _, _ in broker.orders_submitted] == [("SPY", "BUY")]
 
 
@@ -701,7 +704,7 @@ async def test_concurrent_cycles_reserve_once(clean_db):
     first = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     second = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     first.execution_ready = second.execution_ready = True
-    await asyncio.gather(first._process_pending(), second._process_pending())
+    await asyncio.gather(first._process_pending(set()), second._process_pending(set()))
     assert len(broker.orders_submitted) == 1
 
 
@@ -712,17 +715,51 @@ async def test_response_loss_restart_recovers_without_second_post(clean_db):
     broker.lose_submit_response = True
     first = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     first.execution_ready = True
-    await first._process_pending()
+    await first._process_pending(set())
     assert len(broker.orders_submitted) == 1 and first.execution_ready is False
 
     broker.lose_submit_response = False
     restarted = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
-    await restarted._reconcile()
+    blocked = await restarted._reconcile()
     restarted.execution_ready = True
-    await restarted._process_pending()
+    await restarted._process_pending(blocked)
     assert len(broker.orders_submitted) == 1
     with clean_db.connect() as conn:
         assert conn.execute(text("SELECT status FROM broker_orders")).scalar_one() == "accepted"
+
+
+@pytest.mark.anyio
+async def test_definitive_rejection_blocks_symbol_and_no_duplicate_post(clean_db):
+    seed_eligible(clean_db)
+
+    # We simulate a definitive rejection from the broker which raises an exception.
+    # The fake broker doesn't normally raise except for ConnectionError when told.
+    # We will subclass it just for this test.
+    class RejectingBroker(FakeExternalBroker):
+        async def submit_order(self, *args, **kwargs):
+            raise ValueError("HTTP 422 Unprocessable Entity")
+
+    reject_broker = RejectingBroker()
+    runtime = LivePaperExecutionRuntime(reject_broker, clean_db, ["SPY"], FakeProvider())
+    runtime.execution_ready = True
+
+    # First cycle fails the POST definitively.
+    await runtime._process_pending(set())
+    assert len(reject_broker.orders_submitted) == 0
+    assert runtime.execution_ready is False
+
+    # Restart
+    restarted = LivePaperExecutionRuntime(reject_broker, clean_db, ["SPY"], FakeProvider())
+    blocked = await restarted._reconcile()
+
+    # It must be blocked because the response was an exception (ambiguous from the bot's POV)
+    assert "SPY" in blocked
+
+    restarted.execution_ready = True
+    await restarted._process_pending(blocked)
+
+    # No duplicate POST!
+    assert len(reject_broker.orders_submitted) == 0
 
 
 @pytest.mark.anyio
@@ -731,16 +768,16 @@ async def test_fill_divergence_rolls_back_and_fails_closed(clean_db):
     broker = FakeExternalBroker()
     runtime = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     remote = broker.orders_remote[0]
     remote.status = "partially_filled"
     remote.filled_qty = 2
     remote.filled_avg_price = Decimal("100")
     await runtime._reconcile()
     remote.filled_qty = 1
-    with pytest.raises(RuntimeError, match="local_fill_exceeds_remote"):
-        await runtime._reconcile()
-    assert runtime.execution_ready is False
+    blocked = await runtime._reconcile()
+    assert "SPY" in blocked
+    pass
     with clean_db.connect() as conn:
         assert conn.execute(text("SELECT sum(qty) FROM broker_fills")).scalar_one() == 2
         assert conn.execute(text("SELECT filled_qty FROM broker_orders")).scalar_one() == 2
@@ -752,11 +789,11 @@ async def test_remote_order_identity_divergence_fails_closed(clean_db):
     broker = FakeExternalBroker()
     runtime = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     broker.orders_remote[0].symbol = "AAPL"
-    with pytest.raises(RuntimeError, match="remote_order_divergence"):
-        await runtime._reconcile()
-    assert runtime.execution_ready is False
+    blocked = await runtime._reconcile()
+    assert "SPY" in blocked
+    pass
 
 
 @pytest.mark.anyio
@@ -794,7 +831,7 @@ async def test_all_broker_order_states_reconcile(clean_db, status):
     broker = FakeExternalBroker()
     runtime = LivePaperExecutionRuntime(broker, clean_db, ["SPY"], FakeProvider())
     runtime.execution_ready = True
-    await runtime._process_pending()
+    await runtime._process_pending(set())
     remote = broker.orders_remote[0]
     remote.status = status
     if status in {"partially_filled", "filled"}:

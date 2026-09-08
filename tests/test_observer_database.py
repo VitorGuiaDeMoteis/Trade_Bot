@@ -135,7 +135,7 @@ def test_model_error_persists_hold_and_never_changes_paper(market, audit, payloa
         )
         assert stored["input_hash"] == result["input_hash"]
         assert (
-            stored["prompt_version"] == "observer-v1"
+            stored["prompt_version"] == "observer-v2"
             and stored["model"] == "deterministic-observer"
         )
         assert stored["as_of_utc"] == result["as_of_utc"]

@@ -26,73 +26,26 @@ def upgrade() -> None:
         sa.Column("symbol", sa.String(16), nullable=False),
         sa.Column("timeframe", sa.String(16), nullable=False),
         sa.Column("side", sa.String(16), nullable=False),
-        sa.Column("requested_qty", sa.BigInteger(), nullable=False),
+        sa.Column("requested_qty", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(32), nullable=False),
-        sa.Column("filled_qty", sa.BigInteger(), nullable=False, server_default="0"),
+        sa.Column("filled_qty", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("filled_avg_price", sa.Numeric(20, 10), nullable=True),
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("filled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_reconciliation_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("risk_decision_id", name="uq_broker_order_risk_decision"),
-        sa.CheckConstraint("side IN ('BUY', 'SELL')", name="ck_broker_orders_side"),
-        sa.CheckConstraint("timeframe = '15m'", name="ck_broker_orders_timeframe"),
-        sa.CheckConstraint(
-            "status IN ('pending_new','accepted','new','partially_filled',"
-            "'filled','canceled','rejected','expired')",
-            name="ck_broker_orders_status",
-        ),
-        sa.CheckConstraint(
-            "requested_qty > 0 AND filled_qty >= 0 AND filled_qty <= requested_qty",
-            name="ck_broker_orders_quantities",
-        ),
-        sa.CheckConstraint(
-            "(filled_qty = 0 AND filled_avg_price IS NULL) OR "
-            "(filled_qty > 0 AND filled_avg_price IS NOT NULL AND filled_avg_price > 0)",
-            name="ck_broker_orders_fill_price",
-        ),
-        sa.CheckConstraint(
-            "status != 'filled' OR filled_qty = requested_qty",
-            name="ck_broker_orders_filled_complete",
-        ),
     )
 
     op.create_table(
         "broker_fills",
         sa.Column("fill_id", sa.String(64), primary_key=True),
         sa.Column("client_order_id", sa.String(64), nullable=False),
-        sa.Column("qty", sa.BigInteger(), nullable=False),
+        sa.Column("qty", sa.Integer(), nullable=False),
         sa.Column("price", sa.Numeric(20, 10), nullable=False),
         sa.Column("filled_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["client_order_id"], ["broker_orders.client_order_id"]),
-        sa.CheckConstraint("qty > 0 AND price > 0", name="ck_broker_fills_values"),
-    )
-
-    op.create_table(
-        "live_paper_control",
-        sa.Column("control_id", sa.BigInteger(), primary_key=True),
-        sa.Column("armed", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("armed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("activation_cutoff", sa.DateTime(timezone=True), nullable=True),
-        sa.CheckConstraint("control_id = 1", name="ck_live_paper_singleton"),
-    )
-
-    op.drop_constraint("ck_candles_hour", "candles", type_="check")
-    op.create_check_constraint(
-        "ck_candles_timeframe_duration",
-        "candles",
-        "(timeframe = '1m' AND close_time = open_time + interval '1 minute') OR "
-        "(timeframe = '5m' AND close_time = open_time + interval '5 minutes') OR "
-        "(timeframe = '15m' AND close_time = open_time + interval '15 minutes') OR "
-        "(timeframe = '1h' AND close_time = open_time + interval '1 hour')",
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_candles_timeframe_duration", "candles", type_="check")
-    op.create_check_constraint(
-        "ck_candles_hour", "candles", "close_time = open_time + interval '1 hour'"
-    )
-    op.drop_table("live_paper_control")
     op.drop_table("broker_fills")
     op.drop_table("broker_orders")

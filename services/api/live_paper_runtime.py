@@ -61,15 +61,15 @@ class LivePaperExecutionRuntime:
     async def _run(self) -> None:
         while self.running:
             try:
-                await self._reconcile()
+                blocked_symbols = await self._reconcile()
                 self.execution_ready = True
-                await self._process_pending()
+                await self._process_pending(blocked_symbols)
             except Exception:
                 self.execution_ready = False
                 logger.error("Live paper cycle failed closed")
             await asyncio.sleep(5)
 
-    async def _reconcile(self) -> None:
+    async def _reconcile(self) -> set[str]:
         self.execution_ready = False
         if check_database(self.engine) != "up":
             raise ReconciliationError("database_not_ready")
@@ -87,7 +87,7 @@ class LivePaperExecutionRuntime:
                 row.client_order_id: row
                 for row in conn.execute(
                     text(
-                        "SELECT client_order_id,status FROM broker_orders "
+                        "SELECT client_order_id,status,symbol FROM broker_orders "
                         "ORDER BY submitted_at,client_order_id"
                     )
                 )
@@ -96,16 +96,59 @@ class LivePaperExecutionRuntime:
         for client_id in remote_by_id:
             if client_id.startswith("agy-") and client_id not in local:
                 raise ReconciliationError("remote_order_missing_local_audit")
+
+        blocked_symbols = set()
         for client_id, row in local.items():
             remote = remote_by_id.get(client_id)
-            if remote is None and row.status in OPEN_STATES:
+            if remote is None and row.status in {
+                "pending_new",
+                "accepted",
+                "new",
+                "partially_filled",
+                "submission_ambiguous",
+            }:
                 remote = await self.broker.get_order_by_client_order_id(client_id)
             if remote is None:
-                if row.status in OPEN_STATES:
-                    raise ReconciliationError("pending_order_missing_remote")
+                if row.status == "pre_submit":
+                    self._mark_failed_local(client_id)
+                    continue
+                if row.status in {
+                    "pending_new",
+                    "accepted",
+                    "new",
+                    "partially_filled",
+                    "submission_ambiguous",
+                }:
+                    logger.error(f"Ambiguous order {client_id} for {row.symbol}; blocking symbol")
+                    blocked_symbols.add(row.symbol)
                 continue
-            self._apply_remote(remote)
+
+            try:
+                self._apply_remote(remote)
+            except ReconciliationError:
+                logger.error(f"Reconciliation error for {row.symbol}; blocking symbol")
+                blocked_symbols.add(row.symbol)
+
         self.execution_ready = True
+        return blocked_symbols
+
+    def _mark_failed_local(self, client_id: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE broker_orders SET status='failed_local', last_reconciliation_at=:now WHERE client_order_id=:cid"
+                ),
+                {"cid": client_id, "now": datetime.now(UTC)},
+            )
+
+    def _mark_ambiguous(self, client_id: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE broker_orders SET status='submission_ambiguous', last_reconciliation_at=:now WHERE client_order_id=:cid"
+                ),
+                {"cid": client_id, "now": datetime.now(UTC)},
+            )
 
     def _apply_remote(self, order: BrokerOrder) -> None:
         if (
@@ -217,7 +260,7 @@ class LivePaperExecutionRuntime:
         minute = local.hour * 60 + local.minute
         return bool(clock.is_open and local.weekday() < 5 and 570 <= minute < 960)
 
-    async def _process_pending(self) -> None:
+    async def _process_pending(self, blocked_symbols: set[str]) -> None:
         async with self._cycle_lock:
             if not self.execution_ready or check_database(self.engine) != "up":
                 return
@@ -236,6 +279,8 @@ class LivePaperExecutionRuntime:
                 return
             now = datetime.now(UTC)
             for symbol in self.symbols:
+                if symbol in blocked_symbols:
+                    continue
                 await self._process_symbol(symbol, now, ctrl.activation_cutoff)
 
     async def _process_symbol(self, symbol: str, now: datetime, cutoff: datetime) -> None:
@@ -286,7 +331,7 @@ class LivePaperExecutionRuntime:
             (position.quantity for position in positions if position.symbol == symbol), 0
         )
         if row.signal_type == "BUY":
-            if quantity > 0:
+            if quantity != 0:
                 return
             reference = Decimal(row.reference_price)
             maximum = min(Decimal(account.equity) * Decimal("0.10"), Decimal(account.cash))
@@ -300,6 +345,9 @@ class LivePaperExecutionRuntime:
         client_id = self.client_order_id(row.decision_id)
         if not self._reserve(row, symbol, requested, client_id):
             return
+
+        self._mark_ambiguous(client_id)
+
         try:
             existing = await self.broker.get_order_by_client_order_id(client_id)
             order = existing or await self.broker.submit_order(
@@ -325,7 +373,7 @@ class LivePaperExecutionRuntime:
                     "(client_order_id,broker_order_id,signal_id,risk_decision_id,"
                     "strategy_version,symbol,timeframe,side,requested_qty,status,filled_qty,"
                     "submitted_at,last_reconciliation_at) VALUES "
-                    "(:cid,NULL,:sid,:rid,:version,:symbol,'15m',:side,:qty,'pending_new',0,"
+                    "(:cid,NULL,:sid,:rid,:version,:symbol,'15m',:side,:qty,'pre_submit',0,"
                     ":now,:now) ON CONFLICT DO NOTHING"
                 ),
                 {
