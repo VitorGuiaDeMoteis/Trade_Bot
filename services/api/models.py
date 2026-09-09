@@ -206,10 +206,6 @@ paper_orders = Table(
     Column("requested_at", DateTime(timezone=True), nullable=False),
     Column("idempotency_key", Uuid, nullable=False, unique=True),
     Column("reason", String(128), nullable=False),
-    Column("client_order_id", String(64), nullable=True, unique=True),
-    Column("broker_order_id", String(64), nullable=True, unique=True),
-    Column("broker_status", String(32), nullable=True),
-    Column("last_reconciled_at", DateTime(timezone=True), nullable=True),
     UniqueConstraint("run_id", "risk_decision_id", name="uq_paper_order_risk"),
     CheckConstraint(
         "side IN ('BUY','SELL') AND status IN ('SUBMITTING', 'NEW', 'ACCEPTED', 'PENDING_NEW', 'PARTIALLY_FILLED', 'FILLED', 'PENDING_CANCEL', 'CANCELED', 'REJECTED', 'EXPIRED', 'REPLACED', 'UNKNOWN') AND quantity >= 0 AND filled_quantity >= 0 AND filled_quantity <= quantity",
@@ -217,12 +213,35 @@ paper_orders = Table(
     ),
 )
 
+broker_orders = Table(
+    "broker_orders",
+    metadata,
+    Column("order_id", Uuid, ForeignKey("paper_orders.order_id"), primary_key=True),
+    Column("client_order_id", String(64), nullable=False, unique=True),
+    Column("broker_order_id", String(64), nullable=True, unique=True),
+    Column("status", String(32), nullable=False),
+    Column("requested_notional", Numeric(28, 10), nullable=True),
+    Column("requested_quantity", Numeric(28, 10), nullable=True),
+    Column("filled_quantity", Numeric(28, 10), nullable=False, default=0, server_default="0"),
+    Column("last_reconciled_at", DateTime(timezone=True), nullable=False),
+)
+
+broker_fills = Table(
+    "broker_fills",
+    metadata,
+    Column("broker_fill_id", String(64), primary_key=True),
+    Column("order_id", Uuid, ForeignKey("broker_orders.order_id"), nullable=False),
+    Column("quantity", Numeric(28, 10), nullable=False),
+    Column("price", Numeric(28, 10), nullable=False),
+    Column("fee", Numeric(28, 10), nullable=False),
+    Column("filled_at", DateTime(timezone=True), nullable=False),
+)
+
 paper_fills = Table(
     "paper_fills",
     metadata,
     Column("fill_id", Uuid, primary_key=True),
     Column("order_id", Uuid, ForeignKey("paper_orders.order_id"), nullable=False),
-    Column("broker_fill_id", String(64), nullable=True, unique=True),
     Column("price", Numeric(28, 10), nullable=False),
     Column("reference_price", Numeric(28, 10), nullable=False),
     Column("quantity", BigInteger, nullable=False),

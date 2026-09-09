@@ -114,3 +114,14 @@ class AlpacaPaperAdapter:
             if e.code == "client_error":
                 return None
             raise
+
+    async def get_fills(self, order_id: str) -> list[dict[str, Any]]:
+        return await self._request("GET", "/account/activities/FILL", params={"order_id": order_id})
+
+    async def get_order_by_id(self, order_id: str) -> dict[str, Any] | None:
+        try:
+            return await self._request("GET", f"/orders/{order_id}")
+        except AlpacaPaperError as e:
+            if e.code == "client_error":
+                return None
+            raise
