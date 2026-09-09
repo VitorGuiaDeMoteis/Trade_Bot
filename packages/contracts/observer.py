@@ -189,20 +189,31 @@ class AIObserverOutput(Strict):
             ):
                 raise ValueError("observer_disallowed_content")
 
-        # Semantic domain separation checks
-        for evidence in self.regime.evidence:
-            if re.search(r"(?i)\b(backtest|paper|strategy|risk)\b", evidence):
-                raise ValueError("observer_regime_evidence_leak")
-
-        any(re.search(r"(?i)\b(paper.*pnl|pnl.*paper|paper.*profit)\b", obs) for obs in self.observations)  # noqa: E501
-        any(re.search(r"(?i)\b(backtest.*pnl|pnl.*backtest|backtest.*profit)\b", obs) for obs in self.observations)  # noqa: E501
-        if any(re.search(r"(?i)\b(backtest.*paper|paper.*backtest)\b", obs) for obs in self.observations):  # noqa: E501
-            raise ValueError("observer_domain_mix")
-
         return self
 
 
-def parse_output(payload: bytes) -> AIObserverOutput:
+def apply_v2_semantic_checks(output: AIObserverOutput) -> None:
+    for evidence in output.regime.evidence:
+        if re.search(r"(?i)\b(backtest|paper|strategy|risk)\b", evidence):
+            raise ValueError("observer_regime_evidence_leak")
+
+    any(
+        re.search(r"(?i)\b(paper.*pnl|pnl.*paper|paper.*profit)\b", obs)
+        for obs in output.observations
+    )  # noqa: E501
+    any(
+        re.search(r"(?i)\b(backtest.*pnl|pnl.*backtest|backtest.*profit)\b", obs)
+        for obs in output.observations
+    )  # noqa: E501
+    if any(
+        re.search(r"(?i)\b(backtest.*paper|paper.*backtest)\b", obs) for obs in output.observations
+    ):  # noqa: E501
+        raise ValueError("observer_domain_mix")
+
+
+def parse_output(payload: bytes, version: str = "observer-v2") -> AIObserverOutput:
+    if version not in ("observer-v1", "observer-v2"):
+        raise ValueError("invalid_prompt_version")
     if len(payload) > MAX_OUTPUT_BYTES:
         raise ValueError("observer_output_too_large")
 
@@ -216,4 +227,7 @@ def parse_output(payload: bytes) -> AIObserverOutput:
 
     # Enforce one complete UTF-8 JSON document, including duplicate-key rejection.
     json.loads(payload.decode("utf-8"), object_pairs_hook=unique)
-    return AIObserverOutput.model_validate_json(payload)
+    output = AIObserverOutput.model_validate_json(payload)
+    if version == "observer-v2":
+        apply_v2_semantic_checks(output)
+    return output

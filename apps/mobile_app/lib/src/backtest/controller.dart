@@ -6,13 +6,13 @@ enum BacktestState { loading, loaded, error }
 
 class BacktestController extends ChangeNotifier {
   BacktestController({required this.api});
-  
+
   final HttpBacktestApi api;
-  
+
   BacktestState listState = BacktestState.loading;
   List<BacktestSummary> summaries = [];
   String? errorMessage;
-  
+
   BacktestState detailState = BacktestState.loading;
   BacktestReport? currentReport;
   String? detailErrorMessage;
@@ -53,18 +53,20 @@ class BacktestController extends ChangeNotifier {
     currentReport = null;
     notifyListeners();
   }
-  
+
   void setReplayIndex(int index) {
-    if (currentReport != null && index >= 0 && index < currentReport!.equityCurve.length) {
+    if (currentReport != null &&
+        index >= 0 &&
+        index < currentReport!.equityCurve.length) {
       replayIndex = index;
       notifyListeners();
     }
   }
-  
+
   void advanceReplay() {
     setReplayIndex(replayIndex + 1);
   }
-  
+
   void rewindReplay() {
     setReplayIndex(replayIndex - 1);
   }

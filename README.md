@@ -51,7 +51,43 @@ não há Trading API ou dinheiro real.
 - JDK 17 ou 21, Android SDK 36, Build Tools 36.0.0, NDK 28.2.13676358; tablet USB autorizado.
 - O SDK desta máquina fica em `.tools/android-sdk`. O script abaixo ajusta apenas a sessão; não altera configuração global.
 
-### Executar no PowerShell
+### Executar na DevBox Linux — Quick Start
+
+Na raiz do repositório:
+
+```bash
+# 1. Configurar credenciais (nunca sobrescreva um .env existente)
+cp -n .env.example .env
+# Certifique-se de configurar MARKET_DATA_PROVIDER=simulator no .env
+
+# 2. Preparar ambiente nativo e dependências
+./scripts/install-flutter.sh
+./scripts/install-android-sdk.sh
+source ./scripts/use-android.sh
+
+uv sync --locked
+docker compose up -d --wait
+
+# 3. Aplicar schema
+uv run alembic upgrade head
+
+# 4. Iniciar API na porta 8000
+uv run uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --no-proxy-headers --no-access-log --log-config infrastructure/docker/logging.json --ws websockets-sansio
+```
+
+Outro terminal na raiz:
+
+```bash
+source ./scripts/use-android.sh
+curl -s http://127.0.0.1:8000/health
+adb reverse tcp:8000 tcp:8000
+
+cd apps/mobile_app
+flutter pub get --enforce-lockfile
+flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8000
+```
+
+### Executar no PowerShell (Windows)
 
 Na raiz:
 

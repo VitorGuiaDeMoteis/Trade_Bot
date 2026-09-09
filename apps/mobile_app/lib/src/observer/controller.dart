@@ -26,7 +26,7 @@ class ObserverController extends ChangeNotifier {
       final results = await Future.wait([statusFuture, timelineFuture]);
       currentStatus = results[0] as ObserverStatus;
       timeline = results[1] as List<ObserverAnalysisItem>;
-      
+
       state = ObserverState.loaded;
     } catch (e) {
       state = ObserverState.error;

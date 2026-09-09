@@ -66,7 +66,9 @@ def analyze(
                 if previous.input_hash != stored["input_hash"]:
                     raise ValueError("observer_audit_input_corrupt")
             if stored["validated_output"] is not None:
-                parse_output(canonical(stored["validated_output"]))
+                parse_output(
+                    canonical(stored["validated_output"]), version=stored["prompt_version"]
+                )
                 if checksum(stored["validated_output"]) != stored["output_hash"]:
                     raise ValueError("observer_audit_output_corrupt")
             return stored

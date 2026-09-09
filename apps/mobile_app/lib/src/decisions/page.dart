@@ -204,8 +204,8 @@ class _DecisionsPageState extends State<DecisionsPage> {
                               Text(item.reason),
                               const SizedBox(height: 12),
                               _Risk(item: item),
-              const SizedBox(height: 12),
-              _Paper(item: item),
+                              const SizedBox(height: 12),
+                              _Paper(item: item),
                               const SizedBox(height: 12),
                               const Text('Ver candle e detalhes →'),
                             ],
@@ -224,7 +224,6 @@ class _DecisionsPageState extends State<DecisionsPage> {
   );
 }
 
-
 class _Paper extends StatelessWidget {
   const _Paper({required this.item});
   final Decision item;
@@ -237,7 +236,9 @@ class _Paper extends StatelessWidget {
         style: TextStyle(
           color: item.paperStatus == 'FILLED'
               ? const Color(0xFF81C995)
-              : (item.paperStatus == 'WAITING' ? Colors.orange : const Color(0xFFFF9B9B)),
+              : (item.paperStatus == 'WAITING'
+                    ? Colors.orange
+                    : const Color(0xFFFF9B9B)),
           fontWeight: FontWeight.bold,
         ),
       ),

@@ -2,7 +2,22 @@
 
 Este guia permite clonar o repositório em uma DevBox nova e reproduzir o ambiente do zero.
 
-## 1. Instalação e Preparação do Ambiente (Flutter & Android)
+## 1. Configuração Inicial e Credenciais (.env)
+A configuração inicial requer a geração do ambiente local sem expor ou versionar credenciais no repositório.
+
+1. O arquivo `.env` nunca deve ser commitado.
+2. Copie o arquivo de exemplo se não existir um localmente:
+   ```bash
+   cp -n .env.example .env
+   ```
+   *(O comando `-n` garante que o `.env` existente nunca será sobrescrito).*
+3. Edite o arquivo `.env` para garantir a operação segura sem conta externa inicialmente:
+   ```env
+   MARKET_DATA_PROVIDER=simulator
+   # As chaves ALPACA_API_KEY e ALPACA_SECRET_KEY podem ficar em branco para testes locais do simulador.
+   ```
+
+## 2. Instalação e Preparação do Ambiente (Flutter & Android)
 Instale o SDK do Flutter e do Android de forma isolada e local para o projeto:
 
 ```bash

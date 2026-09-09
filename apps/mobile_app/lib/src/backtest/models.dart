@@ -107,7 +107,9 @@ class BacktestSummary {
       strategyVersion: json['strategy_version'] as String,
       riskVersion: json['risk_version'] as String,
       config: BacktestConfig.fromJson(json['config'] as Map<String, dynamic>),
-      metrics: BacktestMetrics.fromJson(json['metrics'] as Map<String, dynamic>),
+      metrics: BacktestMetrics.fromJson(
+        json['metrics'] as Map<String, dynamic>,
+      ),
     );
   }
 }

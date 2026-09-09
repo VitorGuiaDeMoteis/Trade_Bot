@@ -145,7 +145,11 @@ class _MarketPageState extends State<MarketPage> {
                               MaterialPageRoute<void>(
                                 builder: (_) => ObserverPage(
                                   controller: ObserverController(
-                                    api: HttpObserverApi(const String.fromEnvironment('API_BASE_URL')),
+                                    api: HttpObserverApi(
+                                      const String.fromEnvironment(
+                                        'API_BASE_URL',
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),

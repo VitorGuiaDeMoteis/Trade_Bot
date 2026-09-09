@@ -80,7 +80,7 @@ def _validated(row: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("image_digest")
         if (
             not known
-            or value["prompt_version"] != "observer-v1"
+            or value["prompt_version"] not in ("observer-v1", "observer-v2")
             or value["schema_version"] != "1.0"
         ):
             raise ValueError("metadata")
@@ -102,7 +102,9 @@ def _validated(row: Mapping[str, Any]) -> dict[str, Any]:
         if value["status"] == "OK":
             if value["error_code"] is not None or value["fallback"] is not None:
                 raise ValueError("status")
-            output = parse_output(canonical(value["validated_output"])).model_dump(mode="json")
+            output = parse_output(
+                canonical(value["validated_output"]), version=value["prompt_version"]
+            ).model_dump(mode="json")
             if checksum(output) != value["output_hash"]:
                 raise ValueError("output_hash")
             value["validated_output"] = output

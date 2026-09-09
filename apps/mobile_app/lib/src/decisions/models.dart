@@ -12,7 +12,9 @@ class Decision {
       risk = json['risk']['decision'] as String,
       riskReason = json['risk']['reason'] as String,
       decidedAt = DateTime.parse(json['risk']['decided_at'] as String),
-      paperStatus = json['paper'] != null ? json['paper']['status'] as String? : null {
+      paperStatus = json['paper'] != null
+          ? json['paper']['status'] as String?
+          : null {
     if (!['BUY', 'SELL', 'HOLD'].contains(type) ||
         !['APPROVED', 'REJECTED'].contains(risk) ||
         reason.trim().isEmpty ||

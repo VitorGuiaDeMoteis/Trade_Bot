@@ -6,10 +6,13 @@ class HttpObserverApi {
   final String baseUrl;
   final http.Client client;
 
-  HttpObserverApi(this.baseUrl, [http.Client? client]) : client = client ?? http.Client();
+  HttpObserverApi(this.baseUrl, [http.Client? client])
+    : client = client ?? http.Client();
 
   Future<ObserverStatus> getStatus() async {
-    final response = await client.get(Uri.parse('$baseUrl/api/v1/observer/status'));
+    final response = await client.get(
+      Uri.parse('$baseUrl/api/v1/observer/status'),
+    );
     if (response.statusCode == 200) {
       return ObserverStatus.fromJson(jsonDecode(response.body));
     }
@@ -17,7 +20,9 @@ class HttpObserverApi {
   }
 
   Future<List<ObserverAnalysisItem>> getAnalyses() async {
-    final response = await client.get(Uri.parse('$baseUrl/api/v1/observer/analyses'));
+    final response = await client.get(
+      Uri.parse('$baseUrl/api/v1/observer/analyses'),
+    );
     if (response.statusCode == 200) {
       final List list = jsonDecode(response.body);
       return list.map((item) => ObserverAnalysisItem.fromJson(item)).toList();
@@ -26,7 +31,9 @@ class HttpObserverApi {
   }
 
   Future<ObserverAnalysisDetail> getAnalysisDetail(String analysisId) async {
-    final response = await client.get(Uri.parse('$baseUrl/api/v1/observer/analyses/$analysisId'));
+    final response = await client.get(
+      Uri.parse('$baseUrl/api/v1/observer/analyses/$analysisId'),
+    );
     if (response.statusCode == 200) {
       return ObserverAnalysisDetail.fromJson(jsonDecode(response.body));
     }

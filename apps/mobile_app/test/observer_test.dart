@@ -208,7 +208,7 @@ void main() {
       provider: 'docker',
       model: 'local-observer',
       modelVersion: 'sha256:${'a' * 64}',
-      promptVersion: 'observer-v1',
+      promptVersion: 'observer-v2',
       errorCode: 'TIMEOUT',
       latencyMs: 50,
     );
@@ -246,7 +246,7 @@ void main() {
         model: 'deepseek-r1:8b',
         modelVersion: 'sha256:${'a' * 64}',
         imageDigest: 'sha256:${'b' * 64}',
-        promptVersion: 'observer-v1',
+        promptVersion: 'observer-v2',
         schemaVersion: '1.0',
         latencyMs: 0,
         status: 'DEGRADED',
