@@ -12,6 +12,8 @@ from packages.contracts.health import HealthResponse
 from packages.contracts.provider import MarketDataProvider
 from packages.domain.market import SimulationSpec
 from packages.domain.market_bar import series_id
+from services.alpaca_paper.adapter import AlpacaPaperAdapter
+from services.alpaca_paper.worker import AlpacaPaperWorker
 from services.api.backtest_routes import router as backtest_router
 from services.api.config import Settings, get_settings
 from services.api.database import check_database, create_database_engine
@@ -64,9 +66,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.market = stores[configuration.symbols[0]]
         app.state.simulator = SimulatorRuntime(configuration, app.state.market, provider, stores)
         app.state.simulator.start()
+
+        worker = None
+        if configuration.execution_mode == "alpaca_paper":
+            assert configuration.alpaca_api_key_id and configuration.alpaca_api_secret_key
+            adapter = AlpacaPaperAdapter(
+                api_key=configuration.alpaca_api_key_id.get_secret_value(),
+                secret_key=configuration.alpaca_api_secret_key.get_secret_value(),
+            )
+            worker = AlpacaPaperWorker(engine, adapter, configuration)
+            app.state.paper_worker = worker
+            worker.start()
         try:
             yield
         finally:
+            if getattr(app.state, "paper_worker", None):
+                await app.state.paper_worker.stop()
             await app.state.simulator.stop()
             engine.dispose()
 
