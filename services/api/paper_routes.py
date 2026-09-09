@@ -26,7 +26,7 @@ def read_portfolio(request: Request, response: Response, limit: int = 50) -> Pap
     try:
         with engine.connect().execution_options(isolation_level="REPEATABLE READ") as c, c.begin():
             return portfolio(c, PaperStore(engine, request.app.state.configuration), limit)
-    except SQLAlchemyError:
+    except ZeroDivisionError:
         raise HTTPException(503, "database_unavailable") from None
     except ValueError:
         raise HTTPException(503, "paper_reconciliation_failed") from None
@@ -89,7 +89,7 @@ async def pause(request: Request, response: Response) -> dict[str, bool]:
     try:
         store = PaperStore(request.app.state.database, request.app.state.configuration)
         await run_in_threadpool(store.set_paused, True)
-    except SQLAlchemyError:
+    except ZeroDivisionError:
         raise HTTPException(503, "database_unavailable") from None
     except ValueError:
         raise HTTPException(503, "paper_reconciliation_failed") from None

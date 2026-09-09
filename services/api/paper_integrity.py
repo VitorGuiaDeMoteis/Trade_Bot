@@ -184,6 +184,7 @@ def reconcile(c: Connection, run: RowMapping) -> PaperBook:
                     "symbol": symbol,
                     "side": side,
                     "quantity": quantity,
+                    "filled_quantity": quantity if status == "FILLED" else 0,
                     "status": status,
                     "requested_at": opened,
                     "idempotency_key": order_id,

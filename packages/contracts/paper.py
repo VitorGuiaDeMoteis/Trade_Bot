@@ -14,15 +14,25 @@ class PaperOrder(BaseModel):
     symbol: str
     side: Literal["BUY", "SELL"]
     quantity: int
-    status: Literal["FILLED", "REJECTED"]
+    filled_quantity: int = 0
+    status: Literal[
+        "SUBMITTING", "NEW", "ACCEPTED", "PENDING_NEW",
+        "PARTIALLY_FILLED", "FILLED", "PENDING_CANCEL", "CANCELED",
+        "REJECTED", "EXPIRED", "REPLACED", "UNKNOWN"
+    ]
     requested_at: datetime
     idempotency_key: UUID
     reason: str
+    client_order_id: str | None = None
+    broker_order_id: str | None = None
+    broker_status: str | None = None
+    last_reconciled_at: datetime | None = None
 
 
 class PaperFill(BaseModel):
     fill_id: UUID
     order_id: UUID
+    broker_fill_id: str | None = None
     price: Decimal
     reference_price: Decimal
     quantity: int

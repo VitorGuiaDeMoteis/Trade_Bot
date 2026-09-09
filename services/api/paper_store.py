@@ -281,6 +281,7 @@ class PaperStore:
                             symbol=symbol,
                             side=item.signal.signal_type,
                             quantity=result.quantity,
+                            filled_quantity=result.quantity if result.status == "FILLED" else 0,
                             status=result.status,
                             requested_at=opened,
                             idempotency_key=order_id,

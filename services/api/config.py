@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     simulator_interval_seconds: float = Field(default=2.0, ge=0.1, le=3600)
 
     market_data_provider: Literal["simulator", "alpaca"] = "simulator"
+    execution_mode: Literal["local_paper", "alpaca_paper"] = "local_paper"
     alpaca_api_key_id: SecretStr | None = None
     alpaca_api_secret_key: SecretStr | None = None
     alpaca_data_feed: Literal["iex", "sip"] = "iex"
@@ -49,10 +50,13 @@ class Settings(BaseSettings):
         return ",".join(symbols)
 
     @model_validator(mode="after")
-    def validate_simulator(self) -> "Settings":
+    def validate_alpaca_credentials(self) -> "Settings":
         SimulationSpec(self.simulator_seed, self.simulator_start)
         timeframe_duration(self.market_timeframe)
-        if self.market_data_provider == "alpaca" and not (
+        requires_alpaca = (
+            self.market_data_provider == "alpaca" or self.execution_mode == "alpaca_paper"
+        )
+        if requires_alpaca and not (
             self.alpaca_api_key_id
             and self.alpaca_api_key_id.get_secret_value().strip()
             and self.alpaca_api_secret_key
