@@ -1,15 +1,16 @@
-import logging
 from typing import Any
 
 import httpx
 
 PAPER_BASE_URL = "https://paper-api.alpaca.markets/v2"
 
+
 class AlpacaPaperError(Exception):
     def __init__(self, message: str, code: str, retryable: bool = False):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+
 
 class AlpacaPaperAdapter:
     """
@@ -64,23 +65,25 @@ class AlpacaPaperAdapter:
 
         if response.status_code >= 400:
             raise AlpacaPaperError(
-                f"Client error {response.status_code}: {response.text}", "client_error", retryable=False
+                f"Client error {response.status_code}: {response.text}",
+                "client_error",
+                retryable=False,
             )
 
         return response.json()
 
     async def get_account(self) -> dict[str, Any]:
-        return await self._request("GET", "/account")
+        return await self._request("GET", "/account")  # type: ignore[no-any-return]
 
     async def get_positions(self) -> list[dict[str, Any]]:
-        return await self._request("GET", "/positions")
+        return await self._request("GET", "/positions")  # type: ignore[no-any-return]
 
     async def get_open_orders(self) -> list[dict[str, Any]]:
-        return await self._request("GET", "/orders", params={"status": "open"})
+        return await self._request("GET", "/orders", params={"status": "open"})  # type: ignore[no-any-return]
 
     async def get_order_by_client_id(self, client_order_id: str) -> dict[str, Any] | None:
         try:
-            return await self._request(
+            return await self._request(  # type: ignore[no-any-return]
                 "GET", "/orders:by_client_order_id", params={"client_order_id": client_order_id}
             )
         except AlpacaPaperError as e:
@@ -89,7 +92,12 @@ class AlpacaPaperAdapter:
             raise
 
     async def submit_order(
-        self, symbol: str, qty: int | None, side: str, client_order_id: str, notional: str | None = None
+        self,
+        symbol: str,
+        qty: int | None,
+        side: str,
+        client_order_id: str,
+        notional: str | None = None,
     ) -> dict[str, Any]:
         if side not in ("buy", "sell"):
             raise ValueError("Side must be buy or sell")
@@ -104,8 +112,8 @@ class AlpacaPaperAdapter:
             payload["qty"] = str(qty)
         if notional is not None:
             payload["notional"] = str(notional)
-            
-        return await self._request("POST", "/orders", json=payload)
+
+        return await self._request("POST", "/orders", json=payload)  # type: ignore[no-any-return]
 
     async def cancel_order(self, order_id: str) -> None:
         try:
@@ -116,11 +124,11 @@ class AlpacaPaperAdapter:
             raise
 
     async def get_fills(self, order_id: str) -> list[dict[str, Any]]:
-        return await self._request("GET", "/account/activities/FILL", params={"order_id": order_id})
+        return await self._request("GET", "/account/activities/FILL", params={"order_id": order_id})  # type: ignore[no-any-return]
 
     async def get_order_by_id(self, order_id: str) -> dict[str, Any] | None:
         try:
-            return await self._request("GET", f"/orders/{order_id}")
+            return await self._request("GET", f"/orders/{order_id}")  # type: ignore[no-any-return]
         except AlpacaPaperError as e:
             if e.code == "client_error":
                 return None

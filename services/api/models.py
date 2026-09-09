@@ -208,7 +208,7 @@ paper_orders = Table(
     Column("reason", String(128), nullable=False),
     UniqueConstraint("run_id", "risk_decision_id", name="uq_paper_order_risk"),
     CheckConstraint(
-        "side IN ('BUY','SELL') AND status IN ('SUBMITTING', 'NEW', 'ACCEPTED', 'PENDING_NEW', 'PARTIALLY_FILLED', 'FILLED', 'PENDING_CANCEL', 'CANCELED', 'REJECTED', 'EXPIRED', 'REPLACED', 'UNKNOWN') AND quantity >= 0 AND filled_quantity >= 0 AND filled_quantity <= quantity",
+        "side IN ('BUY','SELL') AND status IN ('SUBMITTING', 'NEW', 'ACCEPTED', 'PENDING_NEW', 'PARTIALLY_FILLED', 'FILLED', 'PENDING_CANCEL', 'CANCELED', 'REJECTED', 'EXPIRED', 'REPLACED', 'UNKNOWN') AND quantity >= 0 AND filled_quantity >= 0 AND filled_quantity <= quantity",  # noqa: E501
         name="ck_paper_orders_state_m7",
     ),
 )

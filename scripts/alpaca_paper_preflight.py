@@ -8,6 +8,7 @@ from services.alpaca_paper.adapter import AlpacaPaperAdapter
 
 load_dotenv()
 
+
 async def main():
     api_key = os.getenv("ALPACA_API_KEY_ID")
     secret_key = os.getenv("ALPACA_API_SECRET_KEY")
@@ -20,8 +21,8 @@ async def main():
         try:
             account = await adapter.get_account()
             print(f"Account ID: {account.get('id')} - Status: {account.get('status')}")
-            eq = account.get('equity')
-            bp = account.get('buying_power')
+            eq = account.get("equity")
+            bp = account.get("buying_power")
             print(f"Paper Equity: {eq} - Buying Power: {bp}")
 
             positions = await adapter.get_positions()

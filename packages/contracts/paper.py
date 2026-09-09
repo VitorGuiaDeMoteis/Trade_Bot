@@ -16,9 +16,18 @@ class PaperOrder(BaseModel):
     quantity: int
     filled_quantity: int = 0
     status: Literal[
-        "SUBMITTING", "NEW", "ACCEPTED", "PENDING_NEW",
-        "PARTIALLY_FILLED", "FILLED", "PENDING_CANCEL", "CANCELED",
-        "REJECTED", "EXPIRED", "REPLACED", "UNKNOWN"
+        "SUBMITTING",
+        "NEW",
+        "ACCEPTED",
+        "PENDING_NEW",
+        "PARTIALLY_FILLED",
+        "FILLED",
+        "PENDING_CANCEL",
+        "CANCELED",
+        "REJECTED",
+        "EXPIRED",
+        "REPLACED",
+        "UNKNOWN",
     ]
     requested_at: datetime
     idempotency_key: UUID

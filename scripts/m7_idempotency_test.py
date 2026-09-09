@@ -1,12 +1,12 @@
 import asyncio
 import os
-import sys
 
 from dotenv import load_dotenv
 
 from services.alpaca_paper.adapter import AlpacaPaperAdapter
 
 load_dotenv()
+
 
 async def main():
     api_key = os.getenv("ALPACA_API_KEY_ID")
@@ -27,11 +27,12 @@ async def main():
                 qty=None,
                 notional="10.00",
                 side="buy",
-                client_order_id=client_order_id
+                client_order_id=client_order_id,
             )
             print("FAILED: Duplicated submit succeeded!")
         except Exception as e:
             print(f"Idempotency verified! Alpaca rejected duplicate: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

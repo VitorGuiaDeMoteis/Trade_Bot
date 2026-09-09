@@ -97,3 +97,10 @@ class PaperResult:
     fee: Decimal = ZERO
     slippage: Decimal = ZERO  # total monetary impact versus reference, not bps
     realized_pnl: Decimal = ZERO
+
+
+@dataclass(frozen=True)
+class AlpacaSubmitResult:
+    status: str
+    reason: str
+    quantity: int = 0

@@ -1,20 +1,22 @@
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import Connection, select
 
-from packages.domain.paper import PaperResult
+from packages.domain.paper import AlpacaSubmitResult
 from packages.domain.risk import RiskDecision
 from services.alpaca_paper.adapter import AlpacaPaperAdapter
-from services.api.models import paper_orders, broker_orders
+from services.api.models import broker_orders, paper_orders
 
 logger = logging.getLogger("trading_bot.alpaca_paper")
 
+
 class AlpacaPaperExecutor:
     """Fronteira separada do PaperExecutor local."""
+
     def __init__(self, adapter: AlpacaPaperAdapter) -> None:
         self.adapter = adapter
 
@@ -30,7 +32,7 @@ class AlpacaPaperExecutor:
             # Reconciliar estado
             broker_status = remote_order.get("status")
             status = self._map_status(broker_status)
-            
+
             connection.execute(
                 broker_orders.update()
                 .where(broker_orders.c.order_id == order_id)
@@ -38,7 +40,7 @@ class AlpacaPaperExecutor:
                     broker_order_id=remote_order.get("id"),
                     status=broker_status,
                     filled_quantity=Decimal(remote_order.get("filled_qty", "0")),
-                    last_reconciled_at=datetime.now(UTC)
+                    last_reconciled_at=datetime.now(UTC),
                 )
             )
             connection.execute(
@@ -86,11 +88,11 @@ class AlpacaPaperExecutor:
         side: Literal["BUY", "SELL"],
         quantity: int,
         order_id: UUID,
-        requested_at: datetime
-    ) -> PaperResult:
-        
+        requested_at: datetime,
+    ) -> AlpacaSubmitResult:
+
         client_order_id = f"m7_{order_id.hex}"
-        
+
         # 1. Persistir intent: SUBMITTING
         try:
             with connection.begin_nested():
@@ -107,10 +109,10 @@ class AlpacaPaperExecutor:
                         status="SUBMITTING",
                         requested_at=requested_at,
                         idempotency_key=order_id,
-                        reason="intent_persisted"
+                        reason="intent_persisted",
                     )
                 )
-                
+
                 connection.execute(
                     broker_orders.insert().values(
                         order_id=order_id,
@@ -119,78 +121,76 @@ class AlpacaPaperExecutor:
                         requested_notional=None,
                         requested_quantity=Decimal(quantity),
                         filled_quantity=Decimal("0"),
-                        last_reconciled_at=datetime.now(UTC)
+                        last_reconciled_at=datetime.now(UTC),
                     )
                 )
         except Exception as e:
             if "IntegrityError" in type(e).__name__ or "UniqueViolation" in type(e).__name__:
                 logger.error(f"IntegrityError: {e}")
                 logger.warning(f"Duplicate intent locally blocked for order {order_id}")
-                return PaperResult("UNKNOWN", "duplicate_intent", quantity)
+                return AlpacaSubmitResult("UNKNOWN", "duplicate_intent", quantity)
             raise
-        
+
         # 2. Chamar Alpaca
         try:
             alpaca_order = await self.adapter.submit_order(
-                symbol=symbol,
-                qty=quantity,
-                side=side.lower(),
-                client_order_id=client_order_id
+                symbol=symbol, qty=quantity, side=side.lower(), client_order_id=client_order_id
             )
         except Exception as e:
             logger.error(f"Error submitting order: {e}")
             await self._handle_timeout_or_disconnect(connection, order_id, client_order_id)
-            return PaperResult("REJECTED", "network_error", quantity)
-            
+            return AlpacaSubmitResult("REJECTED", "network_error", quantity)
+
         # 3. Atualizar status
         broker_status = alpaca_order.get("status")
         status = self._map_status(broker_status)
         broker_order_id = alpaca_order.get("id")
-        
+
         connection.execute(
             broker_orders.update()
             .where(broker_orders.c.order_id == order_id)
             .values(
                 broker_order_id=broker_order_id,
                 status=broker_status,
-                last_reconciled_at=datetime.now(UTC)
+                last_reconciled_at=datetime.now(UTC),
             )
         )
-        
+
         connection.execute(
-            paper_orders.update()
-            .where(paper_orders.c.order_id == order_id)
-            .values(status=status)
+            paper_orders.update().where(paper_orders.c.order_id == order_id).values(status=status)
         )
-        
-        return PaperResult(status, "submitted_to_broker", quantity)
+
+        return AlpacaSubmitResult(status, "submitted_to_broker", quantity)
 
     async def reconcile_order(self, connection: Connection, order_id: UUID) -> None:
         from services.api.models import broker_fills
-        
+
         row = connection.execute(
-            select(broker_orders.c.broker_order_id, broker_orders.c.client_order_id)
-            .where(broker_orders.c.order_id == order_id)
+            select(broker_orders.c.broker_order_id, broker_orders.c.client_order_id).where(
+                broker_orders.c.order_id == order_id
+            )
         ).first()
-        
+
         if not row:
             return
-            
+
         broker_order_id = row.broker_order_id
         client_order_id = row.client_order_id
-        
+
         if broker_order_id:
             remote_order = await self.adapter.get_order_by_id(broker_order_id)
         else:
             remote_order = await self.adapter.get_order_by_client_id(client_order_id)
-            
+
         if not remote_order:
             connection.execute(
-                paper_orders.update().where(paper_orders.c.order_id == order_id)
+                paper_orders.update()
+                .where(paper_orders.c.order_id == order_id)
                 .values(status="CANCELED", reason="not_found_on_broker")
             )
             connection.execute(
-                broker_orders.update().where(broker_orders.c.order_id == order_id)
+                broker_orders.update()
+                .where(broker_orders.c.order_id == order_id)
                 .values(status="canceled", last_reconciled_at=datetime.now(UTC))
             )
             return
@@ -198,30 +198,32 @@ class AlpacaPaperExecutor:
         new_status = remote_order.get("status")
         filled_qty = Decimal(remote_order.get("filled_qty", "0"))
         actual_broker_id = remote_order.get("id")
-        
+
         connection.execute(
-            broker_orders.update().where(broker_orders.c.order_id == order_id)
+            broker_orders.update()
+            .where(broker_orders.c.order_id == order_id)
             .values(
                 broker_order_id=actual_broker_id,
                 status=new_status,
                 filled_quantity=filled_qty,
-                last_reconciled_at=datetime.now(UTC)
+                last_reconciled_at=datetime.now(UTC),
             )
         )
-        
+
         mapped_status = self._map_status(new_status)
         connection.execute(
-            paper_orders.update().where(paper_orders.c.order_id == order_id)
+            paper_orders.update()
+            .where(paper_orders.c.order_id == order_id)
             .values(status=mapped_status, filled_quantity=int(filled_qty))
         )
-        
+
         if new_status in ("partially_filled", "filled") and actual_broker_id:
             activities = await self.adapter.get_fills(actual_broker_id)
             for act in activities:
                 fill_id = act.get("id")
                 qty = Decimal(act.get("qty", "0"))
                 price = Decimal(act.get("price", "0"))
-                
+
                 try:
                     with connection.begin_nested():
                         connection.execute(
@@ -231,11 +233,14 @@ class AlpacaPaperExecutor:
                                 quantity=qty,
                                 price=price,
                                 fee=Decimal("0"),
-                                filled_at=datetime.now(UTC)
+                                filled_at=datetime.now(UTC),
                             )
                         )
                 except Exception as e:
-                    if "IntegrityError" in type(e).__name__ or "UniqueViolation" in type(e).__name__:
+                    if (
+                        "IntegrityError" in type(e).__name__
+                        or "UniqueViolation" in type(e).__name__
+                    ):
                         pass
                     else:
                         raise

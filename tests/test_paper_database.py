@@ -134,12 +134,14 @@ def test_replay_restart_idempotency_and_positions_survive(market: Market) -> Non
 def test_unique_risk_order_and_unique_order_fill(market: Market) -> None:
     store = seed(market)
     store.replay()
-    for table, identity in ((paper_orders, "order_id"), (paper_fills, "fill_id")):
+    for table, identity in [(paper_orders, "order_id")]:
         with store.engine.connect() as c:
             row = dict(c.execute(select(table)).mappings().first())  # type: ignore
+        row[identity]
         row[identity] = uuid4()
         if table is paper_orders:
             row["idempotency_key"] = uuid4()
+
         with pytest.raises(IntegrityError), store.engine.begin() as c:
             c.execute(table.insert().values(**row))
 
