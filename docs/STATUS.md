@@ -336,4 +336,4 @@ M5 Xiaomi Real ?
 M5 Acceptance ?
 
 M1.5 streaming aberto ?
-M6 n„o iniciado
+M6 n√£o iniciado
