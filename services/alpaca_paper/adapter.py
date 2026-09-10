@@ -70,6 +70,8 @@ class AlpacaPaperAdapter:
                 retryable=False,
             )
 
+        if not response.content:
+            return {}
         return response.json()
 
     async def get_account(self) -> dict[str, Any]:

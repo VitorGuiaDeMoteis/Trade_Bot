@@ -17,7 +17,7 @@ String sourceLabel(DecisionsSnapshot? snapshot) {
   final info = snapshot?.marketData;
   if (info == null) return 'AGUARDANDO FONTE';
   if (info.provider == 'simulator') return 'SIMULADO';
-  return 'DADOS REAIS · ${info.provider?.toUpperCase()} / ${info.feed?.toUpperCase() ?? 'NÃO INFORMADO'}';
+  return 'ALPACA PAPER — DINHEIRO VIRTUAL';
 }
 
 class DecisionsPage extends StatefulWidget {

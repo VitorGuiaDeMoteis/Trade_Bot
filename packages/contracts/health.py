@@ -15,7 +15,7 @@ class HealthResponse(BaseModel):
     schema_version: Literal["1.1"] = "1.1"
     service: Literal["trading-bot-api"] = "trading-bot-api"
     version: Literal["0.1.0"] = "0.1.0"
-    mode: Literal["SIMULADO", "DADOS REAIS / EXECUÇÃO SIMULADA"] = "DADOS REAIS / EXECUÇÃO SIMULADA"
+    mode: Literal["SIMULADO", "DADOS REAIS / EXECUÇÃO SIMULADA", "ALPACA PAPER — DINHEIRO VIRTUAL"] = "SIMULADO"
     status: Literal["ok", "degraded"]
     database: Literal["up", "down", "schema_pending"]
     checked_at: datetime

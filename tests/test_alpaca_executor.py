@@ -118,7 +118,7 @@ async def test_duplicate_intent_one_post(db_connection):
     res2 = await executor.submit(
         conn, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
     )
-    assert res2.status == "UNKNOWN"
+    assert res2.status == "ACCEPTED"
     assert res2.reason == "duplicate_intent"
     assert post_count == 1
 

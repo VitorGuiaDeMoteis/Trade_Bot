@@ -220,7 +220,7 @@ void main() {
         final controller = MarketController(api: SeriesApi());
         await tester.pumpWidget(TradingBotApp(controller: controller));
         await tester.pump();
-        expect(find.text('DADOS REAIS'), findsOneWidget);
+        expect(find.text('ALPACA PAPER — DINHEIRO VIRTUAL'), findsOneWidget);
         expect(find.text('SIMULADO'), findsNothing);
         final chip = find.widgetWithText(ChoiceChip, 'AAPL');
         await tester.scrollUntilVisible(chip, 120);

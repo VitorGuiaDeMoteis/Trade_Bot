@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from decimal import Decimal
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid5
@@ -58,25 +59,26 @@ class AlpacaPaperWorker:
             return False
 
     async def _run(self) -> None:
-        if not await self.preflight():
-            self.degraded = True
+        async with self.adapter:
+            if not await self.preflight():
+                self.degraded = True
 
-        try:
-            await self._reconcile_active_orders()
-        except Exception as e:
-            logger.error(f"Initial reconciliation failed: {e}")
-            self.degraded = True
-
-        while self.running:
             try:
-                if not self.degraded:
-                    await self._process_pending_submits()
                 await self._reconcile_active_orders()
-            except asyncio.CancelledError:
-                break
             except Exception as e:
-                logger.error(f"Worker iteration error: {e}")
-            await asyncio.sleep(3.0)
+                logger.error(f"Initial reconciliation failed: {e}")
+                self.degraded = True
+
+            while self.running:
+                try:
+                    if not self.degraded:
+                        await self._process_pending_submits()
+                    await self._reconcile_active_orders()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"Worker iteration error: {e}")
+                await asyncio.sleep(3.0)
 
     async def _process_pending_submits(self) -> None:
         def fetch_pending() -> list[dict[str, Any]] | None:
@@ -105,6 +107,7 @@ class AlpacaPaperWorker:
                 return [{"run_id": run_id, **dict(row)} for row in c.execute(query).mappings()]
 
         pending = await asyncio.to_thread(fetch_pending)
+        print(f"PENDING: {pending}")
         if not pending:
             return
 
@@ -119,7 +122,8 @@ class AlpacaPaperWorker:
             )
             symbol = row["symbol"]
             side = row["signal_type"]
-            quantity = 1
+            quantity = 0
+            notional = Decimal("10.00")
             order_id = uuid5(run_id, str(risk.decision_id))
 
             try:
@@ -134,6 +138,7 @@ class AlpacaPaperWorker:
                         quantity=quantity,
                         order_id=order_id,
                         requested_at=datetime.now(UTC),
+                        notional=notional,
                     )
             except Exception as e:
                 logger.error(f"Error submitting order {order_id}: {e}")

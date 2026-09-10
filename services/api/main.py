@@ -22,6 +22,7 @@ from services.api.market_routes import router as market_router
 from services.api.market_store import MarketStore
 from services.api.observer_routes import router as observer_router
 from services.api.paper_routes import router as paper_router
+from services.api.broker_routes import router as broker_router
 from services.api.simulator_runtime import SimulatorRuntime
 from services.market_data.alpaca_provider import AlpacaMarketDataProvider
 from services.market_data.simulator import SimulatorMarketDataProvider
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(paper_router)
     app.include_router(backtest_router)
     app.include_router(observer_router)
+    app.include_router(broker_router)
 
     @app.middleware("http")
     async def request_context(
@@ -127,11 +129,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.status_code = 200 if ready else 503
         response.headers["Cache-Control"] = "no-store"
 
-        mode = (
-            "DADOS REAIS / EXECUÇÃO SIMULADA"
-            if provider_status.provider != "simulator"
-            else "SIMULADO"
-        )
+        execution_mode = getattr(request.app.state.configuration, "execution_mode", "")
+        if execution_mode == "alpaca_paper":
+            mode = "ALPACA PAPER — DINHEIRO VIRTUAL"
+        else:
+            mode = (
+                "DADOS REAIS / EXECUÇÃO SIMULADA"
+                if provider_status.provider != "simulator"
+                else "SIMULADO"
+            )
 
         return HealthResponse(
             status="ok" if ready else "degraded",

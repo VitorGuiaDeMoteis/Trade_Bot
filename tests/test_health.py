@@ -33,6 +33,8 @@ def test_health_contract(settings, database, code, status):  # type: ignore
         with TestClient(create_app(settings)) as client:
             client.app.state.simulator.state = "connected"  # type: ignore
             response = client.get("/health", headers={"X-Correlation-ID": correlation_id})
+            response = client.get("/health", headers={"X-Correlation-ID": correlation_id})
+            response = client.get("/health", headers={"X-Correlation-ID": correlation_id})
     assert response.status_code == code
     body = response.json()
     assert body["database"] == database
@@ -91,6 +93,8 @@ def test_no_control_or_trading_routes(settings):  # type: ignore
         paths = client.get("/openapi.json").json()["paths"]
         assert set(paths) == {
             "/health",
+            "/api/v1/broker/portfolio",
+            "/api/v1/broker/portfolio",
             "/api/v1/market/candles",
             "/api/v1/decisions",
             "/api/v1/paper/portfolio",

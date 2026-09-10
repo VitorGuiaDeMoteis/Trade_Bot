@@ -41,7 +41,15 @@ class PaperController extends ChangeNotifier {
   }
 
   Future<void> _fetchPortfolio() async {
-    final res = await _client.get(_url('portfolio')).timeout(timeout);
+    http.Response res;
+    try {
+      res = await _client.get(_url('../broker/portfolio')).timeout(timeout);
+      if (res.statusCode != 200) {
+        res = await _client.get(_url('portfolio')).timeout(timeout);
+      }
+    } catch (_) {
+      res = await _client.get(_url('portfolio')).timeout(timeout);
+    }
     if (res.statusCode != 200) throw StateError('portfolio unavailable');
     final result = PaperPortfolio.fromJson(jsonDecode(res.body) as Json);
     if (_disposed) return;

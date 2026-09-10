@@ -171,7 +171,7 @@ class _MarketPageState extends State<MarketPage> {
                       children: [
                         _Badge(
                           label: switch (info?.provider) {
-                            'alpaca' => 'DADOS REAIS',
+                            'alpaca' => 'ALPACA PAPER — DINHEIRO VIRTUAL',
                             'simulator' => 'SIMULADO',
                             _ => 'AGUARDANDO FONTE',
                           },

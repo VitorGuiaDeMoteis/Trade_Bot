@@ -13,8 +13,8 @@ class PaperOrder(BaseModel):
     risk_decision_id: UUID
     symbol: str
     side: Literal["BUY", "SELL"]
-    quantity: int
-    filled_quantity: int = 0
+    quantity: Decimal
+    filled_quantity: Decimal = 0
     status: Literal[
         "SUBMITTING",
         "NEW",
@@ -44,7 +44,7 @@ class PaperFill(BaseModel):
     broker_fill_id: str | None = None
     price: Decimal
     reference_price: Decimal
-    quantity: int
+    quantity: Decimal
     fee: Decimal
     slippage: Decimal
     realized_pnl: Decimal
@@ -53,7 +53,7 @@ class PaperFill(BaseModel):
 
 class PaperPositionResponse(BaseModel):
     symbol: str
-    quantity: int
+    quantity: Decimal
     average_price: Decimal
     current_price: Decimal
     market_value: Decimal

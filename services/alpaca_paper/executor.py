@@ -89,6 +89,7 @@ class AlpacaPaperExecutor:
         quantity: int,
         order_id: UUID,
         requested_at: datetime,
+        notional: Decimal | None = None,
     ) -> AlpacaSubmitResult:
 
         client_order_id = f"m7_{order_id.hex}"
@@ -118,23 +119,34 @@ class AlpacaPaperExecutor:
                         order_id=order_id,
                         client_order_id=client_order_id,
                         status="submitting",
-                        requested_notional=None,
-                        requested_quantity=Decimal(quantity),
+                        requested_notional=notional,
+                        requested_quantity=quantity if notional is None else None,
                         filled_quantity=Decimal("0"),
                         last_reconciled_at=datetime.now(UTC),
                     )
                 )
         except Exception as e:
             if "IntegrityError" in type(e).__name__ or "UniqueViolation" in type(e).__name__:
-                logger.error(f"IntegrityError: {e}")
                 logger.warning(f"Duplicate intent locally blocked for order {order_id}")
-                return AlpacaSubmitResult("UNKNOWN", "duplicate_intent", quantity)
+                # IDEMPOTENCY: Do not POST. Reconcile existing intent instead.
+                await self.reconcile_order(connection, order_id)
+                # Fetch recovered status
+                from sqlalchemy import select
+                row = connection.execute(
+                    select(paper_orders.c.status).where(paper_orders.c.order_id == order_id)
+                ).first()
+                status = row.status if row else "UNKNOWN"
+                return AlpacaSubmitResult(status, "duplicate_intent", quantity)
             raise
 
         # 2. Chamar Alpaca
         try:
             alpaca_order = await self.adapter.submit_order(
-                symbol=symbol, qty=quantity, side=side.lower(), client_order_id=client_order_id
+                symbol=symbol,
+                qty=quantity if notional is None else None,
+                side=side.lower(),
+                client_order_id=client_order_id,
+                notional=str(notional) if notional else None,
             )
         except Exception as e:
             logger.error(f"Error submitting order: {e}")
