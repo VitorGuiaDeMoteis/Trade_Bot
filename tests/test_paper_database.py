@@ -108,14 +108,14 @@ def fingerprint(engine: Engine) -> list[str]:
 def test_replay_restart_idempotency_and_positions_survive(market: Market) -> None:
     store = seed(market)
     store.replay(max_steps=2)
-    assert state(store)["positions"][0]["quantity"] == 9
+    assert state(store)["positions"][0]["quantity"] == "9"
     new = PaperStore(store.engine, store.settings)
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: new.replay(), range(2)))
     final = state(new)
     assert final["status"] == "COMPLETED" and final["reconciled"]
     assert final["orders_count"] == final["fills_count"] == 3
-    assert len(final["positions"]) == 1 and final["positions"][0]["quantity"] > 0
+    assert len(final["positions"]) == 1 and float(final["positions"][0]["quantity"]) > 0
     assert D(final["equity"]) == D(final["cash"]) + D(final["market_value"])
     assert D(final["total_pnl"]) == D(final["realized_pnl"]) + D(final["unrealized_pnl"]) - D(
         final["fees"]
@@ -248,7 +248,7 @@ def test_no_cross_asset_lookahead_and_frozen_dataset(market: Market) -> None:
     store.replay()
     current = state(store)
     assert current["dataset_count"] == 4
-    assert [p["quantity"] for p in current["positions"]] == [9, 9]
+    assert [p["quantity"] for p in current["positions"]] == ["9", "9"]
     assert {f["reference_price"] for f in current["fills"]} == {"100.0000000000"}
     with store.engine.begin() as c:
         c.execute(candles.update().where(candles.c.symbol == "AAPL").values(volume=999))

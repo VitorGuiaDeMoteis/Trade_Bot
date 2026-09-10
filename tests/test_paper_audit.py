@@ -172,7 +172,7 @@ def test_insufficient_capital_persists_rejections_without_financial_mutation(
     assert result["positions"] == []
     assert Decimal(result["cash"]) == Decimal(result["equity"]) == Decimal("50")
     assert Decimal(result["fees"]) == Decimal(result["total_pnl"]) == 0
-    assert all(o["status"] == "REJECTED" and o["quantity"] == 0 for o in result["orders"])
+    assert all(o["status"] == "REJECTED" and o["quantity"] == "0" for o in result["orders"])
     assert all(o["reason"] == "position_size_below_one_share" for o in result["orders"])
 
 
