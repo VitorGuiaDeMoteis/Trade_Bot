@@ -186,6 +186,31 @@ function drawCandles(candles) {
   candles.forEach((c,i)=>{const x=20+i*width,color=Number(c.close)>=Number(c.open)?'#69edb0':'#ff8e99';shape('line',{x1:x,x2:x,y1:y(c.high),y2:y(c.low),stroke:color});const bar=shape('rect',{x:x-width*.3,y:Math.min(y(c.open),y(c.close)),width:Math.max(2,width*.6),height:Math.max(1,Math.abs(y(c.close)-y(c.open))),fill:color});const title=document.createElementNS('http://www.w3.org/2000/svg','title');title.textContent=`${c.symbol} ${c.open_time} O ${c.open} H ${c.high} L ${c.low} C ${c.close}`;bar.append(title);});
 }
 function renderReplay(data) {
+
+  if (data.ai_status) {
+    let aiBox = document.getElementById('ai-status');
+    if (!aiBox) {
+        let metrics = document.getElementById('metrics');
+        let div = document.createElement('div');
+        div.className = 'metric';
+        div.innerHTML = '<div class="label">AI Observer</div><div id="ai-status" class="value" style="font-size: 14px;">—</div><small id="ai-desc">Aguardando inferência</small>';
+        metrics.appendChild(div);
+        aiBox = document.getElementById('ai-status');
+    }
+    
+    if (data.ai_status !== "OK") {
+        aiBox.textContent = data.ai_status;
+        aiBox.className = "value bad";
+        document.getElementById('ai-desc').textContent = "Inativo ou Degraded";
+    } else if (data.last_ai_observation) {
+        let obs = data.last_ai_observation;
+        let agreement = (data.strategy_signal === obs.regime) ? "AGREEMENT" : "DIVERGENCE";
+        aiBox.textContent = `${obs.regime} (${(obs.confidence * 100).toFixed(0)}%)`;
+        aiBox.className = "value " + (agreement === "AGREEMENT" ? "good" : "warn");
+        document.getElementById('ai-desc').textContent = `Strategy: ${data.strategy_signal} | ${agreement}`;
+    }
+  }
+
   renderPortfolio(data.portfolio);
   $('replay-speed').textContent=`${data.speed}x · ${data.speed} CANDLE/S`;
   $('replay-progress').textContent=`${data.step} / ${data.total_steps} CANDLES`;
