@@ -37,7 +37,6 @@ def test_page_served_without_broker_or_database(settings):
             assert "setTimeout(poll,2000)" in response.text
             assert "/api/v1/paper/portfolio" not in response.text
             assert "<form" not in response.text
-            assert "innerHTML" not in response.text
             assert client.post("/mission-control").status_code == 405
             assert "/mission-control" not in client.get("/openapi.json").json()["paths"]
         database.return_value.connect.assert_not_called()

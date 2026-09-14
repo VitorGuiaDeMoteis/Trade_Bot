@@ -11,8 +11,11 @@
 @media(min-width:1550px){.split{grid-template-columns:1fr 1fr;gap:20px}}@media(max-width:1100px){main{padding:24px}.layout{grid-template-columns:minmax(0,1fr) 300px}.metric{padding:15px}}@media(max-width:850px){.layout{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.safety,header{align-items:flex-start;flex-direction:column}.session{text-align:left}.statusbar{align-items:flex-start}.value{font-size:25px}footer{flex-direction:column;gap:5px}}
 
 body[data-mode="replay"]{--cyan:#bca2ff;background:radial-gradient(ellipse at 85% 0%,#241a38 0,transparent 45%),var(--bg)}
-body[data-mode="replay"] .broker-only{display:none}body[data-mode="replay"] .safety{background:#20192f;border-color:#5c477b;color:#d1bdff}
-.replay-only{display:none}body[data-mode="replay"] .replay-only{display:block}
+body[data-mode="night_lab"]{--cyan:#ffb86c;background:radial-gradient(ellipse at 85% 0%,#3d2817 0,transparent 45%),var(--bg)}
+body[data-mode="replay"] .broker-only, body[data-mode="night_lab"] .broker-only{display:none}
+body[data-mode="replay"] .safety{background:#20192f;border-color:#5c477b;color:#d1bdff}
+body[data-mode="night_lab"] .safety{background:#301e12;border-color:#804f26;color:#ffb86c}
+.replay-only{display:none}body[data-mode="replay"] .replay-only, body[data-mode="night_lab"] .replay-only{display:block}
 .pipeline{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--line)}.stage{padding:13px;background:#151b26;min-width:0}.stage strong{display:block;margin-top:8px;font-size:13px;color:var(--cyan);overflow-wrap:anywhere}.stage small{display:block;color:var(--muted);font-size:9px;margin-top:4px}
 .replay-chart-wrap{display:grid;grid-template-columns:minmax(0,1fr) 205px;gap:20px;padding:16px 18px}.replay-chart-wrap svg{width:100%;height:170px}.ohlc{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:center}.ohlc strong{display:block;font-size:14px;margin-top:3px}.progressline{padding:0 18px 15px;display:flex;align-items:center;gap:15px;color:var(--muted);font-size:10px}progress{width:100%;height:5px;accent-color:var(--cyan)}
 body[data-mode="replay"] .timeline{max-height:610px}body[data-mode="replay"] .timeline li{grid-template-columns:68px 1fr;padding:10px 0}body[data-mode="replay"] .timeline .fill{color:var(--green)}body[data-mode="replay"] .timeline .risk{color:var(--amber)}
@@ -66,6 +69,7 @@ body[data-mode="replay"] .timeline{max-height:610px}body[data-mode="replay"] .ti
 'use strict';
 const $ = id => document.getElementById(id);
 const replayMode = document.body.dataset.mode === 'replay';
+const nightLabMode = document.body.dataset.mode === 'night_lab';
 const money = new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'});
 const time = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString('pt-BR') : '—';
 const amount = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? money.format(Number(value)) : '—';
@@ -119,6 +123,7 @@ function detect(p) {
 }
 function renderStatus() {
   if (replayMode) {renderReplayStatus();return;}
+  if (nightLabMode) {renderNightLabStatus();return;}
   const age = portfolio?.last_reconciled_at ? (Date.now()-Date.parse(portfolio.last_reconciled_at))/1000 : NaN;
   let next='HEALTHY', tone='good', message='Alpaca Paper saudável · snapshot atualizado.';
   if (healthError==='offline' && portfolioError==='offline') {next='BACKEND OFFLINE';tone='bad';message='Conexão indisponível. Últimos valores conhecidos, sem atualização.';}
@@ -165,6 +170,7 @@ async function poll() {
   finally {setTimeout(poll,2000);}
 }
 let replayData=null, replayCursor=0, replaySession=null, replayEvents=[], replayReadAt=0, replayError=false;
+let nlData=null, nlError=false, nlReadAt=0;
 const utc = value => value ? new Date(value).toISOString().slice(11,19)+'Z' : '—';
 function renderReplayStatus() {
   const status=replayError?'BACKEND OFFLINE':replayData?.status||'READY';
@@ -215,22 +221,31 @@ function renderReplay(data) {
   $('replay-speed').textContent=`${data.speed}x · ${data.speed} CANDLE/S`;
   $('replay-progress').textContent=`${data.step} / ${data.total_steps} CANDLES`;
   $('replay-progress-bar').max=data.total_steps||1;$('replay-progress-bar').value=data.step;
-  $('replay-symbol').textContent=data.dataset.symbols.join(', ')+' / 1h';
+  $('replay-symbol').textContent=(data.dataset?.symbols?.join(', ') || '—')+' / 1h';
   $('replay-realized').textContent=amount(data.portfolio.realized_pnl);
   $('replay-fees').textContent=amount(data.portfolio.fees);
   $('replay-counts').textContent=`${data.orders_count} / ${data.fills_count}`;
   $('replay-trades').textContent=String(data.closed_trades);
   $('stage-equity').textContent=amount(data.portfolio.equity);
   $('reconciled').textContent=data.frame?utc(data.frame.portfolio.timestamp):'—';
-  $('health-note').textContent=`${data.dataset.name} · ${data.dataset.candles} candles · capital inicial ${amount(data.initial_cash)}. Memória isolada; nenhum broker conectado.`;
-  const c=data.frame?.candles[0], signal=data.frame?.signals[0], outcome=data.frame?.outcomes[0];
+  $('health-note').textContent=`${data.dataset?.name} · ${data.dataset?.candles} candles · capital inicial ${amount(data.initial_cash)}. Memória isolada; nenhum broker conectado.`;
+  const c=data.frame?.candles?.[0], signal=data.frame?.signals?.[0], outcome=data.frame?.outcomes?.[0];
   if(c){$('stage-candle').textContent=c.symbol+' / '+utc(c.open_time);$('candle-time').textContent=c.open_time.slice(0,10)+' / UTC';['open','high','low','close'].forEach(k=>$('candle-'+k).textContent=amount(c[k]));}
   $('stage-strategy').textContent=signal?.signal_type||'WAITING';
-  $('stage-risk').textContent=outcome?(outcome.risk.decision==='REJECTED'?'BLOCKED':'APPROVED'):'WAITING';
-  $('stage-order').textContent=outcome?.order_id?`${outcome.signal.signal_type} ${outcome.quantity} ${outcome.symbol}`:'NO ORDER';
+  $('stage-risk').textContent=outcome?(outcome.risk?.decision==='REJECTED'?'BLOCKED':'APPROVED'):'WAITING';
+  $('stage-order').textContent=outcome?.order_id?`${outcome.signal?.signal_type} ${outcome.quantity} ${outcome.symbol}`:'NO ORDER';
   $('stage-fill').textContent=outcome?.fill_id?`${outcome.quantity} @ ${amount(outcome.price)}`:'NO FILL';
-  $('replay-reason').textContent=outcome?`Risco do sinal anterior (${utc(outcome.signal.generated_at)}): ${outcome.risk.reason} · Executor: ${outcome.reason}. Sinal atual aguarda a próxima abertura.`:'Primeiro candle: estratégia avaliada no fechamento. Risco e execução aguardam a próxima abertura.';
-  drawCandles(data.history);
+  $('replay-reason').textContent=outcome?`Risco do sinal anterior (${utc(outcome.signal?.generated_at)}): ${outcome.risk?.reason} · Executor: ${outcome.reason}. Sinal atual aguarda a próxima abertura.`:'Primeiro candle: estratégia avaliada no fechamento. Risco e execução aguardam a próxima abertura.';
+
+  drawCandles(data.history || []);
+  if (nightLabMode) {
+      if (data.timeline) {
+          $('timeline').replaceChildren(...[...data.timeline].reverse().map(e=>{const li=document.createElement('li'),t=document.createElement('time'),text=document.createElement('span');t.textContent=utc(e.timestamp);text.textContent=e.type+' → '+(e.payload?.status || 'OK');text.className='info';li.append(t,text);return li;}));
+          $('timeline-note').textContent='Eventos AI Observer e transições Night Lab.';
+      }
+      return;
+  }
+
   if(replaySession!==data.session_id){replayEvents=[];replayCursor=0;replaySession=data.session_id;}
   if(data.events_truncated) replayEvents=[];
   replayEvents.push(...data.events.filter(e=>e.sequence>replayCursor));
@@ -238,6 +253,34 @@ function renderReplay(data) {
   $('timeline').replaceChildren(...[...replayEvents].reverse().map(e=>{const li=document.createElement('li'),t=document.createElement('time'),text=document.createElement('span');t.textContent=utc(e.timestamp||e.recorded_at);text.textContent=e.kind+' → '+e.text;text.className=e.kind.toLowerCase();li.append(t,text);return li;}));
   $('timeline-note').textContent=data.events_truncated?'Eventos antigos saíram do buffer. Exibindo os últimos disponíveis; execução não foi alterada.':'Eventos reais das engines M4/M3 · relógio histórico UTC · últimos 80. Recarregar só relê o estado.';
 }
+
+function renderNightLabStatus() {
+  const status=nlError?'BACKEND OFFLINE':nlData?.status||'READY';
+  const stale=!nlError && nlData && Date.now()-nlReadAt>5000;
+  $('state').textContent=stale?'STALE':status;
+  $('state').className='badge '+(nlError||status==='ERROR'?'bad':stale?'warn':'good');
+  $('live').className='live'+(!nlError&&!stale&&status==='RUNNING'?' active':'');
+  $('metrics').classList.toggle('retained',stale);
+  $('message').textContent=nlError?'Night Lab runner offline ou não detectado.':stale?'Snapshot de execução pausada ou estagnada.':'Execução em lote saudável.';
+}
+async function nlPoll() {
+  try {
+    const r=await get('/api/v1/mission-control/state');
+    if(r.code!==200)throw new Error('invalid night_lab response ' + r.code);
+    nlData=r.body;nlError=false;nlReadAt=Date.now();$('updated').textContent=time(new Date(nlReadAt).toISOString());$('health-code').textContent='HTTP 200';
+    try {
+      renderReplay(nlData); // Re-use renderReplay
+    } catch(e) {
+      console.error("renderReplay error in Night Lab:", e);
+      // Do not set nlError=true here, just keep going with partial render
+    }
+  }catch (e){
+    console.error("nlPoll fetch error:", e);
+    nlError=true;$('health-code').textContent='OFFLINE / INVALID';
+  }
+  finally {setTimeout(nlPoll,500);} // fast polling for night lab
+}
+
 async function replayPoll() {
   try {
     const r=await get('/api/v1/replay/state?after='+replayCursor);
@@ -255,6 +298,13 @@ if(replayMode) {
   $('reconciled-label').textContent='Candle fechado em';$('age-label').textContent='Idade da leitura';$('timeline-label').textContent='PIPELINE / 80 MAX';
   $('footer-mode').textContent='TRADE BOT / M4 → M3 · HISTORICAL REPLAY';$('footer-api').textContent='GET /api/v1/replay/state · SEM ALPACA · USD SIMULADO';
   renderPortfolio(null);replayPoll();
+}else if(nightLabMode) {
+  $('live').replaceChildren();const dot=document.createElement('span');dot.className='dot';$('live').append(dot,document.createTextNode('NIGHT LAB · BATCH EXEC'));
+  $('poll-label').textContent='Leitura automática · 0,5 segundo';$('positions-source').textContent='NIGHT LAB MEMORY';
+  $('broker-label').textContent='Executor';$('broker').textContent='LOCAL PAPER M3';$('database').textContent='NÃO UTILIZADO';$('market').textContent='DATASET OFFLINE';
+  $('reconciled-label').textContent='Candle fechado em';$('age-label').textContent='Idade da leitura';$('timeline-label').textContent='AI TIMELINE';
+  $('footer-mode').textContent='TRADE BOT / M8 · NIGHT LAB';$('footer-api').textContent='GET /api/v1/mission-control/state · USD SIMULADO';
+  renderPortfolio(null);nlPoll();
 }else poll();
 setInterval(renderStatus,1000);
 </script>

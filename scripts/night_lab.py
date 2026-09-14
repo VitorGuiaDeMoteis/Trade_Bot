@@ -14,6 +14,7 @@ from decimal import Decimal
 from collections import deque
 
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
@@ -51,6 +52,9 @@ class NightLabState:
         self.ai_status = "OK"
         self.last_ai_observation = None
         self.strategy_signal = "HOLD"
+        self.peak_equity: Decimal = Decimal("0")
+        self.max_drawdown: Decimal = Decimal("0")
+        self.initial_cash: str = "0"
         self.timeline = []
         self.start_time = None
         self.initial_cash = "10000.00"
@@ -74,7 +78,7 @@ app.include_router(mc_router)
 
 @app.get("/api/v1/mission-control/state")
 def get_state():
-    return JSONResponse({
+    return JSONResponse(jsonable_encoder({
         "status": lab_state.status,
         "run_id": lab_state.run_id,
         "portfolio": lab_state.portfolio or {"equity":"0","cash":"0","market_value":"0","unrealized_pnl":"0","realized_pnl":"0","fees":"0","positions":[],"orders":[],"fills":[]},
@@ -87,8 +91,13 @@ def get_state():
         "closed_trades": 0,
         "frame": lab_state.frame,
         "initial_cash": lab_state.initial_cash,
-        "history": lab_state.history
-    })
+        "history": lab_state.history,
+        "ai_status": lab_state.ai_status,
+        "strategy_signal": lab_state.strategy_signal,
+        "last_ai_observation": lab_state.last_ai_observation,
+        "uptime": str(datetime.now(timezone.utc) - lab_state.start_time).split('.')[0] if lab_state.start_time else "0:00:00",
+        "timeline": list(lab_state.timeline)
+    }))
 
 
 @app.get("/api/v1/mission-control/timeline")
@@ -133,12 +142,19 @@ async def run_lab(args, dataset, base_config):
         events_file = open(run_dir / "events.jsonl", "a", encoding="utf-8")
         ai_file = open(run_dir / "ai_observations.jsonl", "a", encoding="utf-8")
         trades_file = open(run_dir / "trades.csv", "a", encoding="utf-8")
+        trades_file.write("symbol,quantity,entry_fill_id,exit_fill_id,opened_at,closed_at,gross_pnl,fees,net_pnl\n")
         
         step_iter = replay_steps(sym_dataset, base_config)
         step_count = 0
         equity_list = []
         initial_cash = base_config.initial_cash
         final_equity = initial_cash
+        
+        entries: dict[str, dict] = {}
+        trades: list[dict] = []
+        wins: list[Decimal] = []
+        losses: list[Decimal] = []
+        total_fees = Decimal("0")
         
         for frame in step_iter:
             if lab_state.status == "STOPPING":
@@ -152,6 +168,39 @@ async def run_lab(args, dataset, base_config):
             c_signals = frame["signals"]
             c_outcomes = frame["outcomes"]
             c_candles = frame["candles"]
+            
+            for outcome in c_outcomes:
+                if outcome.get("status") == "FILLED":
+                    c_symbol = outcome["symbol"]
+                    if c_symbol not in entries:
+                        entries[c_symbol] = outcome
+                    else:
+                        entry = entries.pop(c_symbol)
+                        fee_entry = Decimal(str(entry.get("fee", 0)))
+                        fee_exit = Decimal(str(outcome.get("fee", 0)))
+                        fees = fee_entry + fee_exit
+                        total_fees += fees
+                        realized = Decimal(str(outcome.get("realized_pnl", 0)))
+                        net = realized - fees
+                        
+                        trade_record = {
+                            "symbol": c_symbol,
+                            "quantity": outcome["quantity"],
+                            "entry_fill_id": entry.get("fill_id", ""),
+                            "exit_fill_id": outcome.get("fill_id", ""),
+                            "opened_at": entry.get("executed_at", ""),
+                            "closed_at": outcome.get("executed_at", ""),
+                            "gross_pnl": realized,
+                            "fees": fees,
+                            "net_pnl": net
+                        }
+                        trades.append(trade_record)
+                        if net > 0:
+                            wins.append(net)
+                        else:
+                            losses.append(net)
+                            
+                        trades_file.write(f"{c_symbol},{outcome['quantity']},{trade_record['entry_fill_id']},{trade_record['exit_fill_id']},{trade_record['opened_at']},{trade_record['closed_at']},{realized},{fees},{net}\n")
             
             final_equity = Decimal(portfolio["equity"])
             equity_list.append(f"{portfolio['timestamp']},{final_equity}")
@@ -218,11 +267,8 @@ async def run_lab(args, dataset, base_config):
                 obs_positions = [
                     ObserverPosition(
                         symbol=p["symbol"],
-                        quantity=str(p["quantity"]),
-                        average_price=str(p["average_price"]),
-                        current_price=str(p["current_price"]),
-                        market_value=str(p["market_value"]),
-                        unrealized_pnl=str(p["unrealized_pnl"])
+                        quantity=int(p["quantity"]),
+                        average_price=str(p["average_price"])
                     ) for p in frame.get("positions", [])
                 ]
                 
@@ -250,7 +296,7 @@ async def run_lab(args, dataset, base_config):
                         accepted_backtest=None
                     )
                     
-                    res = await evaluate(snapshot, provider, enabled=True, timeout=15)
+                    res = await evaluate(snapshot, provider, enabled=True, timeout=30)
                     lab_state.ai_status = res["status"]
                     if res["status"] == "OK":
                         val = res["validated_output"]
@@ -295,19 +341,41 @@ async def run_lab(args, dataset, base_config):
         
         (run_dir / "equity_curve.csv").write_text("timestamp,equity\n" + "\n".join(equity_list))
         
+        trade_count = len(trades)
+        win_rate = (len(wins) / trade_count * 100) if trade_count > 0 else 0
+        avg_win = (sum(wins) / len(wins)) if wins else Decimal("0")
+        avg_loss = (sum(losses) / len(losses)) if losses else Decimal("0")
+        profit_factor = (sum(wins) / abs(sum(losses))) if losses and sum(losses) != 0 else (Decimal("999") if wins else Decimal("0"))
+        
+        best_trade = str(max(wins)) if wins else "0"
+        worst_trade = str(min(losses)) if losses else "0"
+        
         summary = {
             "run_id": run_id,
             "symbol": sym,
+            "status": "INTERRUPTED" if lab_state.status == "STOPPING" else "FINISHED",
             "candles": step_count,
             "initial_capital": str(initial_cash),
             "final_equity": str(final_equity),
             "return_pct": str((final_equity / initial_cash - 1) * 100) + "%",
-            "max_drawdown_pct": str(lab_state.max_drawdown)
+            "max_drawdown_pct": str(lab_state.max_drawdown),
+            "trade_count": trade_count,
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate": f"{win_rate:.2f}%",
+            "average_win": str(avg_win),
+            "average_loss": str(avg_loss),
+            "profit_factor": str(profit_factor),
+            "fees": str(total_fees),
+            "realized_pnl": str(sum(wins) + sum(losses)),
+            "best_trade": best_trade,
+            "worst_trade": worst_trade
         }
         (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
         logging.info(f"Completed run {run_id} for {sym}. Saved summary.")
         
-    lab_state.status = "FINISHED"
+    if lab_state.status != "STOPPING":
+        lab_state.status = "FINISHED" 
     await provider.close()
     logging.info("Night Lab finished.")
 

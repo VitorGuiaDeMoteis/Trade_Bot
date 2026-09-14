@@ -263,9 +263,9 @@ def test_real_only_timeout_extension(monkeypatch):
 
     monkeypatch.setattr(provider, "generate", immediate)
     snapshot = project(raw_snapshot())
-    assert asyncio.run(evaluate(snapshot, provider, enabled=True, timeout=31))["status"] == "OK"
+    assert asyncio.run(evaluate(snapshot, provider, enabled=True, timeout=121))["status"] == "OK"
     assert (
-        asyncio.run(evaluate(snapshot, FakeProvider(), enabled=True, timeout=31))["error_code"]
+        asyncio.run(evaluate(snapshot, FakeProvider(), enabled=True, timeout=121))["error_code"]
         == "INVALID_TIMEOUT"
     )
     assert (

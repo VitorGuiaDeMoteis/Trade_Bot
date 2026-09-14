@@ -53,7 +53,7 @@ async def evaluate(
         for s in snapshot.symbols
     ):
         error = "STALE_DATA"
-    elif not 0 < timeout <= (REAL_TIMEOUT if isinstance(provider, RealIsolatedProvider) else 30):
+    elif not 0 < timeout <= (REAL_TIMEOUT if isinstance(provider, RealIsolatedProvider) else 120):
         error = "INVALID_TIMEOUT"
     else:
         try:
@@ -67,7 +67,9 @@ async def evaluate(
             error = "TIMEOUT"
         except FileNotFoundError:
             error = "MODEL_UNAVAILABLE"
-        except (ValueError, UnicodeError, TypeError):
+        except (ValueError, UnicodeError, TypeError) as e:
+            import logging
+            logging.error(f"Failed to parse AI output: {output!r} Error: {e}")
             error = "INVALID_OUTPUT"
         except Exception:
             error = "MODEL_ERROR"
