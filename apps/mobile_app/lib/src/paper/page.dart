@@ -91,6 +91,19 @@ class _PaperPageState extends State<PaperPage> {
                             ),
                             const SizedBox(height: 8),
                             Text(
+                              'Provider: ${p.provider == 'alpaca' ? (p.degraded ? 'ALPACA PAPER DEGRADED/STALE' : 'ALPACA PAPER') : 'LOCAL PAPER'}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: p.degraded ? Colors.red : Colors.blue,
+                              ),
+                            ),
+                            if (p.lastReconciledAt != null)
+                              Text(
+                                'Last Reconciled: ${p.lastReconciledAt}',
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                            const SizedBox(height: 8),
+                            Text(
                               'Equity: \$${p.equity.toStringAsFixed(2)}',
                               style: const TextStyle(fontSize: 24),
                             ),

@@ -23,7 +23,11 @@ class PaperPortfolio {
           .toList(),
       fills = (json['fills'] as List)
           .map((item) => PaperFill.fromJson(item as Json))
-          .toList();
+          .toList(),
+      degraded = (json['degraded'] as bool?) ?? false,
+      lastReconciledAt = json['last_reconciled_at'] != null
+          ? DateTime.parse(json['last_reconciled_at'] as String)
+          : null;
 
   final String? runId;
   final String status;
@@ -41,6 +45,8 @@ class PaperPortfolio {
   final List<PaperPosition> positions;
   final List<PaperOrder> orders;
   final List<PaperFill> fills;
+  final bool degraded;
+  final DateTime? lastReconciledAt;
 }
 
 class PaperPosition {
