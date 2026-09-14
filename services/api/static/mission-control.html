@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Bot // Mission Control</title>
+<style>
+:root{color-scheme:dark;--bg:#090e13;--panel:#101820;--line:#23323e;--muted:#8c9fab;--text:#e6edf2;--green:#69edb0;--cyan:#67d4ef;--amber:#ffd184;--red:#ff8e99;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 85% 0%,#112831 0,transparent 45%),var(--bg);color:var(--text);font-size:12px;line-height:1.5}main{max-width:1760px;margin:auto;padding:30px 36px 24px}header{display:flex;justify-content:space-between;gap:24px;align-items:center;margin-bottom:26px}.eyebrow{font-size:10px;letter-spacing:2px;color:var(--cyan);margin-bottom:8px}h1{font-size:clamp(20px,2.2vw,32px);font-weight:600;letter-spacing:-1px;margin:0}h1 span{color:var(--muted);font-weight:400}.session{text-align:right;color:var(--muted);font-size:11px}.live{color:var(--muted);font-weight:bold;letter-spacing:1px;margin-bottom:8px}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px}.live.active{color:var(--green)}.active .dot{animation:pulse 2s infinite}@keyframes pulse{50%{box-shadow:0 0 0 5px #69edb016;opacity:.5}}@media(prefers-reduced-motion:reduce){.active .dot{animation:none}}
+.safety{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 18px;border:1px solid #295046;background:#10231e;border-radius:5px;margin-bottom:20px;color:var(--green)}.safety strong{letter-spacing:.6px}.safety span{font-size:11px}.statusbar{display:flex;align-items:center;gap:12px;margin-bottom:22px;min-height:28px}.badge{padding:4px 9px;border:1px solid currentColor;border-radius:3px;white-space:nowrap;font-size:10px;letter-spacing:1px}.muted{color:var(--muted)}.good{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}.metric{background:linear-gradient(130deg,#14212a,#101820);border:1px solid var(--line);border-radius:6px;padding:20px;min-height:124px}.metric:first-child{border-top:2px solid var(--cyan)}.label{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}.value{font-size:clamp(20px,2.2vw,32px);letter-spacing:-1px;font-weight:600;margin:13px 0 4px;font-variant-numeric:tabular-nums}.metric small{color:var(--muted);font-size:10px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:20px}.left{min-width:0}.panel{border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden;margin-bottom:20px}.panelhead{padding:16px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}h2{margin:0;font-size:12px;font-weight:500;letter-spacing:.4px}.panelhead small{color:var(--muted);font-size:10px}.count{font-size:10px;color:var(--cyan);margin-left:8px}.tablewrap{overflow-x:auto;max-height:330px;overflow-y:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:11px}th{font-weight:400;color:var(--muted);text-align:right;font-size:9px;letter-spacing:.7px;text-transform:uppercase;background:#0e161d;position:sticky;top:0}th,td{padding:12px 16px;border-bottom:1px solid #1b2832;text-align:right}th:first-child,td:first-child{text-align:left}tbody tr:last-child td{border-bottom:0}tbody tr:hover{background:#16232c}.empty{text-align:center!important;white-space:normal;color:var(--muted);padding:40px 18px!important}.split{display:grid;grid-template-columns:1fr;gap:0}dl{padding:5px 18px;margin:0}dl>div{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #1b2832;padding:10px 0}dl>div:last-child{border:0}dt{color:var(--muted)}dd{margin:0;text-align:right;overflow-wrap:anywhere}.note{padding:0 18px 16px;color:var(--muted);font-size:10px;margin:8px 0 0}.timeline{list-style:none;margin:0;padding:0 18px;max-height:418px;overflow-y:auto}.timeline li{padding:13px 0;border-bottom:1px solid #1b2832;display:grid;grid-template-columns:58px 1fr;gap:10px;overflow-wrap:anywhere}.timeline time{color:var(--muted);font-size:10px}.timeline span{font-size:11px}.timeline li:first-child span{color:var(--cyan)}footer{display:flex;justify-content:space-between;gap:20px;color:var(--muted);font-size:10px;border-top:1px solid var(--line);padding-top:16px}.retained .value{opacity:.55}[hidden]{display:none!important}
+@media(min-width:1550px){.split{grid-template-columns:1fr 1fr;gap:20px}}@media(max-width:1100px){main{padding:24px}.layout{grid-template-columns:minmax(0,1fr) 300px}.metric{padding:15px}}@media(max-width:850px){.layout{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.safety,header{align-items:flex-start;flex-direction:column}.session{text-align:left}.statusbar{align-items:flex-start}.value{font-size:25px}footer{flex-direction:column;gap:5px}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="eyebrow">M7 / BROKER OBSERVABILITY / LOCAL DESK</div><h1>TRADE BOT <span>//</span> MISSION CONTROL</h1></div><div class="session"><div id="live" class="live"><span class="dot"></span>LIVE · TELEMETRIA</div><div>Última atualização <span id="updated">—</span></div><div>Leitura automática · 2 segundos</div></div></header>
+<div class="safety"><strong>ALPACA PAPER — DINHEIRO VIRTUAL</strong><span>READ ONLY — SEM AUTORIDADE DE EXECUÇÃO</span></div>
+<div class="statusbar" role="status" aria-live="polite"><span id="state" class="badge warn">CONECTANDO</span><span id="message" class="muted">Aguardando health e snapshot do broker.</span></div>
+<section id="metrics" class="metrics" aria-label="Portfolio em USD">
+<div class="metric"><div class="label">Equity</div><div id="equity" class="value">—</div><small>ACCOUNT VALUE / USD</small></div>
+<div class="metric"><div class="label">Cash</div><div id="cash" class="value">—</div><small>DISPONÍVEL EM CONTA / USD</small></div>
+<div class="metric"><div class="label">Market Value</div><div id="market_value" class="value">—</div><small>POSIÇÕES DO BROKER / USD</small></div>
+<div class="metric"><div class="label">Unrealized P&amp;L</div><div id="unrealized_pnl" class="value">—</div><small>VALOR INFORMADO PELA API / USD</small></div>
+</section>
+<div class="layout"><div class="left">
+<section class="panel"><div class="panelhead"><h2>Positions <span class="count" id="positions-count">—</span></h2><small>ALPACA / SNAPSHOT</small></div><div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Quantity</th><th>Avg. price</th><th>Current</th><th>Market value</th><th>Unrealized P&amp;L</th></tr></thead><tbody id="positions"><tr><td class="empty" colspan="6">Aguardando snapshot do Alpaca Paper.</td></tr></tbody></table></div></section>
+<div class="split">
+<section class="panel"><div class="panelhead"><h2>Recent Orders <span class="count" id="orders-count">—</span></h2><small>ÚLTIMAS 20</small></div><div class="tablewrap"><table><thead><tr><th>Symbol / ID</th><th>Side</th><th>Quantity</th><th>Filled</th><th>Status</th><th>Updated</th></tr></thead><tbody id="orders"><tr><td class="empty" colspan="6">Aguardando snapshot do Alpaca Paper.</td></tr></tbody></table></div></section>
+<section class="panel"><div class="panelhead"><h2>Recent Fills <span class="count" id="fills-count">—</span></h2><small>ÚLTIMOS 20</small></div><div class="tablewrap"><table><thead><tr><th>Order ID</th><th>Quantity</th><th>Price</th><th>Time</th></tr></thead><tbody id="fills"><tr><td class="empty" colspan="4">Aguardando snapshot do Alpaca Paper.</td></tr></tbody></table></div></section>
+</div><p class="muted">Orders e fills refletem os registros persistidos pelo M7. Nenhuma operação pode ser iniciada nesta tela.</p>
+<p class="muted">Limite atual do M7: o snapshot publica P&amp;L agregado como zero; o P&amp;L por posição vem do broker.</p>
+</div><aside>
+<section class="panel"><div class="panelhead"><h2>Status / Health</h2><small id="health-code">AGUARDANDO</small></div><dl>
+<div><dt>Backend</dt><dd id="backend">—</dd></div><div><dt>Database</dt><dd id="database">—</dd></div><div><dt>Market data</dt><dd id="market">—</dd></div><div><dt>Broker</dt><dd id="broker">—</dd></div><div><dt>Reconciliado em</dt><dd id="reconciled">—</dd></div><div><dt>Idade do snapshot</dt><dd id="age">—</dd></div><div id="buying-power-row" hidden><dt>Buying power</dt><dd id="buying_power">—</dd></div>
+</dl><p class="note">STALE após 15 s sem reconciliação. LIVE indica atualização da telemetria, nunca execução em conta real. O health também inclui a ingestão de mercado.</p></section>
+<section class="panel"><div class="panelhead"><h2>Event Timeline</h2><small>SESSÃO LOCAL / 40 MAX</small></div><ul id="timeline" class="timeline"><li><time>—</time><span>Conectando ao backend…</span></li></ul><p class="note">Eventos detectados entre snapshots nesta aba. O histórico é reiniciado ao recarregar.</p></section>
+</aside></div>
+<footer><span>TRADE BOT / M7 · OBSERVATION TERMINAL</span><span>GET /health &nbsp;·&nbsp; GET /api/v1/broker/portfolio &nbsp;·&nbsp; USD</span></footer>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const money = new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'});
+const time = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString('pt-BR') : '—';
+const amount = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? money.format(Number(value)) : '—';
+let portfolio = null, health = null, previous = null, events = [], state = '', received = 0;
+let portfolioError = '', healthError = '', healthCode = '—';
+function event(message) {
+  events.unshift({at: new Date().toISOString(), message});
+  events = events.slice(0,40);
+  $('timeline').replaceChildren(...events.map(item => {
+    const li = document.createElement('li'), stamp = document.createElement('time'), text = document.createElement('span');
+    stamp.textContent = time(item.at); text.textContent = item.message; li.append(stamp,text); return li;
+  }));
+}
+function table(id, rows, columns, empty) {
+  $(id+'-count').textContent = String(rows.length);
+  const nodes = rows.slice(0,id==='positions'?100:20).map(row => {
+    const tr = document.createElement('tr');
+    columns.forEach(column => {const td = document.createElement('td'); const value = column(row); td.textContent = value ?? '—'; tr.append(td);});
+    return tr;
+  });
+  if (!nodes.length) {const tr = document.createElement('tr'), td = document.createElement('td');td.colSpan = columns.length;td.className = 'empty';td.textContent = empty;tr.append(td);nodes.push(tr);}
+  $(id).replaceChildren(...nodes);
+}
+const id = value => value ? String(value).slice(0,12) : '—';
+function renderPortfolio(p) {
+  ['equity','cash','market_value','unrealized_pnl'].forEach(key => $(key).textContent = amount(p?.[key]));
+  $('unrealized_pnl').className = 'value'+(p ? (Number(p.unrealized_pnl)<0?' bad':Number(p.unrealized_pnl)>0?' good':'') : '');
+  $('buying-power-row').hidden = p?.buying_power == null;
+  $('buying_power').textContent = amount(p?.buying_power);
+  const empty = p ? 'Nenhum registro no snapshot do broker.' : 'Sem snapshot disponível do Alpaca Paper.';
+  table('positions',p?.positions||[],[r=>r.symbol,r=>r.quantity,r=>amount(r.average_price),r=>amount(r.current_price),r=>amount(r.market_value),r=>amount(r.unrealized_pnl)],empty);
+  table('orders',p?.orders||[],[r=>`${r.symbol} / ${id(r.broker_order_id||r.order_id)}`,r=>r.side,r=>r.quantity,r=>r.filled_quantity,r=>r.broker_status||r.status,r=>time(r.last_reconciled_at||r.requested_at)],empty);
+  table('fills',p?.fills||[],[r=>id(r.order_id),r=>r.quantity,r=>amount(r.price),r=>time(r.filled_at)],empty);
+}
+function detect(p) {
+  if (!previous) {event('Snapshot inicial recebido do Alpaca Paper.');previous=p;return;}
+  if (p.last_reconciled_at !== previous.last_reconciled_at) event('Snapshot reconciled · '+time(p.last_reconciled_at));
+  if (p.equity !== previous.equity) event(`Equity changed · ${amount(previous.equity)} → ${amount(p.equity)}`);
+  const oldPositions = new Map(previous.positions.map(r=>[r.symbol,r]));
+  for (const row of p.positions) {
+    const old = oldPositions.get(row.symbol);
+    if (!old || ['quantity','average_price','current_price','market_value','unrealized_pnl'].some(k=>row[k]!==old[k])) event(`Posição mudou · ${row.symbol} · qty ${row.quantity}`);
+    oldPositions.delete(row.symbol);
+  }
+  for (const symbol of oldPositions.keys()) event('Posição removida · '+symbol);
+  const oldOrders = new Map(previous.orders.map(r=>[r.order_id,r]));
+  for (const row of p.orders) {const old=oldOrders.get(row.order_id);if (!old || old.status!==row.status || old.broker_status!==row.broker_status) event(`Ordem · ${row.symbol} · ${row.broker_status||row.status}`);}
+  const oldFills = new Set(previous.fills.map(r=>r.broker_fill_id||r.fill_id));
+  for (const row of p.fills) if (!oldFills.has(row.broker_fill_id||row.fill_id)) event(`Novo fill · ${id(row.order_id)} · qty ${row.quantity} @ ${amount(row.price)}`);
+  previous=p;
+}
+function renderStatus() {
+  const age = portfolio?.last_reconciled_at ? (Date.now()-Date.parse(portfolio.last_reconciled_at))/1000 : NaN;
+  let next='HEALTHY', tone='good', message='Alpaca Paper saudável · snapshot atualizado.';
+  if (healthError==='offline' && portfolioError==='offline') {next='BACKEND OFFLINE';tone='bad';message='Conexão indisponível. Últimos valores conhecidos, sem atualização.';}
+  else if (portfolioError==='mode') {next='MODO INCOMPATÍVEL';tone='bad';message='A API não está em Alpaca Paper. Nenhum fallback para Local Paper.';}
+  else if (portfolioError==='empty') {next='SEM SNAPSHOT';tone='warn';message='Backend acessível. Aguardando a primeira reconciliação do broker.';}
+  else if (portfolioError || healthError || !portfolio || !health) {next='DEGRADED';tone='warn';message='Falha ao atualizar as APIs. Últimos valores conhecidos, quando disponíveis.';}
+  else if (!Number.isFinite(age) || age>15 || portfolio.status==='STALE' || Date.now()-received>15000) {next='STALE';tone='warn';message='Snapshot antigo ou sem horário válido. Valores retidos; aguardando reconciliação.';}
+  else if (portfolio.degraded || health.status!=='ok' || portfolio.status!=='ACTIVE') {next='DEGRADED';tone='warn';message='Broker ou health degradado. Consulte os estados ao lado.';}
+  if (state!==next) {event(`Sistema · ${state||'CONECTANDO'} → ${next}`);state=next;}
+  $('state').textContent=next; $('state').className='badge '+tone; $('message').textContent=message;
+  $('live').className='live'+(next==='HEALTHY'?' active':'');
+  $('metrics').classList.toggle('retained',next!=='HEALTHY');
+  $('backend').textContent=healthError ? (healthError==='offline'?'OFFLINE':'RESPOSTA INVÁLIDA') : health?.status?.toUpperCase()||'—';
+  $('health-code').textContent='HTTP '+healthCode;
+  $('database').textContent=healthError?'—':health?.database||'—';
+  $('market').textContent=healthError?'—':health?.market_data?.state||'—';
+  $('broker').textContent=portfolio?.status||'SEM SNAPSHOT';
+  $('reconciled').textContent=time(portfolio?.last_reconciled_at);
+  $('age').textContent=Number.isFinite(age)?Math.max(0,Math.floor(age))+' s':'—';
+}
+async function get(path) {
+  const controller = new AbortController(), timer=setTimeout(()=>controller.abort(),5000);
+  try {const response=await fetch(path,{method:'GET',cache:'no-store',signal:controller.signal,redirect:'error'});let body=null;try{body=await response.json();}catch{}return {code:response.status,body};}
+  finally {clearTimeout(timer);}
+}
+function validPortfolio(p) {
+  return p && p.provider==='alpaca' && typeof p.status==='string' &&
+    ['equity','cash','market_value','unrealized_pnl'].every(k=>p[k]!==null && p[k]!=='' && Number.isFinite(Number(p[k]))) &&
+    ['positions','orders','fills'].every(k=>Array.isArray(p[k]) && p[k].every(r=>r && typeof r==='object'));
+}
+async function poll() {
+  try {
+    const [h,p]=await Promise.allSettled([get('/health'),get('/api/v1/broker/portfolio')]);
+    healthError='';portfolioError='';
+    if (h.status==='fulfilled') {healthCode=h.value.code;const b=h.value.body;if ([200,503].includes(healthCode) && b && ['ok','degraded'].includes(b.status)) health=b;else {health=null;healthError='invalid';}}
+    else {healthError='offline';health=null;healthCode='—';}
+    if (p.status==='rejected') portfolioError='offline';
+    else if (p.value.code===404) {portfolioError='empty';portfolio=null;previous=null;renderPortfolio(null);}
+    else if (p.value.code===400 || (p.value.code===200 && p.value.body?.provider!=='alpaca')) {portfolioError='mode';portfolio=null;previous=null;renderPortfolio(null);}
+    else if (p.value.code===200 && validPortfolio(p.value.body)) {portfolio=p.value.body;received=Date.now();$('updated').textContent=time(new Date(received).toISOString());detect(portfolio);renderPortfolio(portfolio);}
+    else portfolioError='invalid';
+    renderStatus();
+  } catch {portfolioError='invalid';renderStatus();}
+  finally {setTimeout(poll,2000);}
+}
+poll();
+setInterval(renderStatus,1000);
+</script>
+</body>
+</html>

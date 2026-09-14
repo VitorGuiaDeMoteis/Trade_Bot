@@ -13,6 +13,7 @@ from packages.contracts.provider import MarketDataProvider
 from packages.domain.market import SimulationSpec
 from packages.domain.market_bar import series_id
 from services.alpaca_paper.adapter import AlpacaPaperAdapter
+from services.alpaca_paper.observation import ObservationAdapter, ObservationWorker
 from services.alpaca_paper.worker import AlpacaPaperWorker
 from services.api.backtest_routes import router as backtest_router
 from services.api.broker_routes import router as broker_router
@@ -21,6 +22,7 @@ from services.api.database import check_database, create_database_engine
 from services.api.decisions_routes import router as decisions_router
 from services.api.market_routes import router as market_router
 from services.api.market_store import MarketStore
+from services.api.mission_control import router as mission_control_router
 from services.api.observer_routes import router as observer_router
 from services.api.paper_routes import router as paper_router
 from services.api.simulator_runtime import SimulatorRuntime
@@ -32,7 +34,7 @@ from services.strategy_engine.engine import BaseStrategy
 logger = logging.getLogger("trading_bot.api")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, observation_only: bool = False) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configuration = settings or get_settings()
@@ -71,11 +73,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         worker = None
         if configuration.execution_mode == "alpaca_paper":
             assert configuration.alpaca_api_key_id and configuration.alpaca_api_secret_key
-            adapter = AlpacaPaperAdapter(
+            adapter_type = ObservationAdapter if observation_only else AlpacaPaperAdapter
+            adapter = adapter_type(
                 api_key=configuration.alpaca_api_key_id.get_secret_value(),
                 secret_key=configuration.alpaca_api_secret_key.get_secret_value(),
             )
-            worker = AlpacaPaperWorker(engine, adapter, configuration)
+            worker_type = ObservationWorker if observation_only else AlpacaPaperWorker
+            worker = worker_type(engine, adapter, configuration)
             app.state.paper_worker = worker
             worker.start()
         try:
@@ -93,11 +97,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(backtest_router)
     app.include_router(observer_router)
     app.include_router(broker_router)
+    app.include_router(mission_control_router)
 
     @app.middleware("http")
     async def request_context(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        if observation_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            return Response(status_code=405, headers={"Allow": "GET, HEAD, OPTIONS"})
         try:
             correlation_id = UUID(request.headers.get("X-Correlation-ID", ""))
         except ValueError:
