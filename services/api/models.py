@@ -213,6 +213,33 @@ paper_orders = Table(
     ),
 )
 
+
+broker_portfolio_snapshots = Table(
+    "broker_portfolio_snapshots",
+    metadata,
+    Column("provider", String(32), primary_key=True),
+    Column("status", String(32), nullable=False),
+    Column("cash", Numeric(28, 10), nullable=False),
+    Column("market_value", Numeric(28, 10), nullable=False),
+    Column("equity", Numeric(28, 10), nullable=False),
+    Column("unrealized_pnl", Numeric(28, 10), nullable=False),
+    Column("buying_power", Numeric(28, 10), nullable=False),
+    Column("last_reconciled_at", DateTime(timezone=True), nullable=False),
+)
+
+broker_positions = Table(
+    "broker_positions",
+    metadata,
+    Column("provider", String(32), primary_key=True),
+    Column("symbol", String(16), primary_key=True),
+    Column("quantity", Numeric(28, 10), nullable=False),
+    Column("average_price", Numeric(28, 10), nullable=False),
+    Column("current_price", Numeric(28, 10), nullable=False),
+    Column("market_value", Numeric(28, 10), nullable=False),
+    Column("unrealized_pnl", Numeric(28, 10), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 broker_orders = Table(
     "broker_orders",
     metadata,

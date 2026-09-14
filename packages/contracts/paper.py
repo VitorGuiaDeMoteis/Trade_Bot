@@ -14,7 +14,7 @@ class PaperOrder(BaseModel):
     symbol: str
     side: Literal["BUY", "SELL"]
     quantity: Decimal
-    filled_quantity: Decimal = 0
+    filled_quantity: Decimal = Decimal(0)
     status: Literal[
         "SUBMITTING",
         "NEW",
@@ -95,6 +95,8 @@ class PaperPortfolio(BaseModel):
     slippage_bps: Decimal
     pnl_basis: Literal["gross_components_net_total"] = "gross_components_net_total"
     reconciled: bool = True
+    last_reconciled_at: datetime | None = None
+    degraded: bool = False
     orders_count: int = 0
     fills_count: int = 0
     positions: list[PaperPositionResponse] = []

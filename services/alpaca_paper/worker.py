@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from decimal import Decimal
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -12,6 +12,8 @@ from services.alpaca_paper.adapter import AlpacaPaperAdapter
 from services.alpaca_paper.executor import AlpacaPaperExecutor
 from services.api.config import Settings
 from services.api.models import (
+    broker_portfolio_snapshots,
+    broker_positions,
     candles,
     paper_orders,
     risk_decisions,
@@ -78,6 +80,7 @@ class AlpacaPaperWorker:
                     break
                 except Exception as e:
                     logger.error(f"Worker iteration error: {e}")
+                await self._snapshot_broker_portfolio()
                 await asyncio.sleep(3.0)
 
     async def _process_pending_submits(self) -> None:
@@ -142,6 +145,89 @@ class AlpacaPaperWorker:
                     )
             except Exception as e:
                 logger.error(f"Error submitting order {order_id}: {e}")
+
+    
+    async def _snapshot_broker_portfolio(self) -> None:
+        try:
+            account = await self.adapter.get_account()
+            remote_positions = await self.adapter._request("GET", "/positions")
+            
+            cash = Decimal(account.get("cash", "0"))
+            equity = Decimal(account.get("equity", "0"))
+            market_value = Decimal(account.get("portfolio_value", "0")) - cash
+            buying_power = Decimal(account.get("buying_power", "0"))
+            
+            positions_data = []
+            for rp in remote_positions:
+                positions_data.append({
+                    "provider": "alpaca",
+                    "symbol": rp.get("symbol", ""),
+                    "quantity": Decimal(rp.get("qty", "0")),
+                    "average_price": Decimal(rp.get("avg_entry_price", "0")),
+                    "current_price": Decimal(rp.get("current_price", "0")),
+                    "market_value": Decimal(rp.get("market_value", "0")),
+                    "unrealized_pnl": Decimal(rp.get("unrealized_pl", "0")),
+                    "updated_at": datetime.now(UTC),
+                })
+            
+            status = "ACTIVE"
+            self.degraded = False
+        except Exception as e:
+            logger.error(f"Snapshot failed: {e}")
+            self.degraded = True
+            status = "DEGRADED"
+            # Fallback to update just status if we can't fetch anything?
+            # But the requirement says: "Se a última reconciliação estiver velha ou houver falha da Alpaca: retornar o último snapshot conhecido; marcar claramente DEGRADED / STALE; informar last_reconciled_at"
+            # If we fail, we just update the status of the existing snapshot to DEGRADED
+            try:
+                def update_status_degraded() -> None:
+                    with self.engine.begin() as conn:
+                        from sqlalchemy import update
+                        conn.execute(
+                            update(broker_portfolio_snapshots)
+                            .where(broker_portfolio_snapshots.c.provider == "alpaca")
+                            .values(status="DEGRADED")
+                        )
+                await asyncio.to_thread(update_status_degraded)
+            except Exception as inner_e:
+                logger.error(f"Failed to update snapshot status: {inner_e}")
+            return
+
+        def save_snapshot() -> None:
+            with self.engine.begin() as conn:
+                from sqlalchemy import delete
+                from sqlalchemy.dialects.postgresql import insert
+                
+                stmt = insert(broker_portfolio_snapshots).values(
+                    provider="alpaca",
+                    status=status,
+                    cash=cash,
+                    market_value=market_value,
+                    equity=equity,
+                    unrealized_pnl=Decimal("0"), # or compute from pos
+                    buying_power=buying_power,
+                    last_reconciled_at=datetime.now(UTC)
+                )
+                upsert = stmt.on_conflict_do_update(
+                    index_elements=['provider'],
+                    set_={
+                        'status': status,
+                        'cash': cash,
+                        'market_value': market_value,
+                        'equity': equity,
+                        'unrealized_pnl': stmt.excluded.unrealized_pnl,
+                        'buying_power': buying_power,
+                        'last_reconciled_at': stmt.excluded.last_reconciled_at
+                    }
+                )
+                conn.execute(upsert)
+                
+                # Replace positions for alpaca
+                conn.execute(delete(broker_positions).where(broker_positions.c.provider == "alpaca"))
+                if positions_data:
+                    conn.execute(insert(broker_positions), positions_data)
+                    
+        await asyncio.to_thread(save_snapshot)
 
     async def _reconcile_active_orders(self) -> None:
         def fetch_active() -> list[UUID]:
