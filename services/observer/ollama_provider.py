@@ -9,12 +9,27 @@ class OllamaProvider(ModelProvider):
         self.identity = Identity("ollama", model, "latest")
         self.base_url = base_url
         self.client = httpx.AsyncClient(timeout=60.0)
+        self.cache_file = "evaluations/.cache.json"
+        self._cache = {}
+        import os, json
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, "r") as f:
+                    self._cache = json.load(f)
+            except:
+                pass
+        else:
+            os.makedirs("evaluations", exist_ok=True)
 
     async def generate(self, snapshot: bytes, prompt: str) -> bytes:
         # prompt and snapshot usually combined?
         # Let's check how the M5 engine sends it.
         # usually snapshot + "\n" + prompt.
         content = snapshot.decode("utf-8") + "\n\n" + prompt
+        import hashlib
+        cache_key = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if cache_key in self._cache:
+            return self._cache[cache_key].encode("utf-8")
         
         request_data = {
             "model": self.identity.model,
@@ -74,6 +89,9 @@ class OllamaProvider(ModelProvider):
                 if isinstance(mapped["observations"], dict):
                     mapped["observations"] = [f"{k}: {v}" for k, v in mapped["observations"].items()][:5]
                 res_text = json.dumps(mapped)
+                self._cache[cache_key] = res_text
+                with open(self.cache_file, "w") as f:
+                    json.dump(self._cache, f)
             except Exception:
                 pass
             # -----------------------------------
