@@ -94,7 +94,6 @@ def test_no_control_or_trading_routes(settings):  # type: ignore
         assert set(paths) == {
             "/health",
             "/api/v1/broker/portfolio",
-            "/api/v1/broker/portfolio",
             "/api/v1/market/candles",
             "/api/v1/decisions",
             "/api/v1/paper/portfolio",

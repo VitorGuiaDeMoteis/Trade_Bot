@@ -15,6 +15,7 @@ from packages.domain.market_bar import series_id
 from services.alpaca_paper.adapter import AlpacaPaperAdapter
 from services.alpaca_paper.worker import AlpacaPaperWorker
 from services.api.backtest_routes import router as backtest_router
+from services.api.broker_routes import router as broker_router
 from services.api.config import Settings, get_settings
 from services.api.database import check_database, create_database_engine
 from services.api.decisions_routes import router as decisions_router
@@ -22,7 +23,6 @@ from services.api.market_routes import router as market_router
 from services.api.market_store import MarketStore
 from services.api.observer_routes import router as observer_router
 from services.api.paper_routes import router as paper_router
-from services.api.broker_routes import router as broker_router
 from services.api.simulator_runtime import SimulatorRuntime
 from services.market_data.alpaca_provider import AlpacaMarketDataProvider
 from services.market_data.simulator import SimulatorMarketDataProvider
