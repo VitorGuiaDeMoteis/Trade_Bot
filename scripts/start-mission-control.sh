@@ -4,6 +4,11 @@ set -euo pipefail
 MC_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$MC_ROOT"
 
+if [[ "${1:-}" == "--replay" ]]; then
+    shift
+    exec .venv/bin/python -m scripts.replay_live "$@"
+fi
+
 if [[ "${1:-}" == "--isolated" ]]; then
     MC_DIR="$MC_ROOT/.tools/mission-control"
     MC_PG="$MC_DIR/postgres/usr/lib/postgresql/18/bin"
@@ -37,7 +42,7 @@ if [[ "${1:-}" == "--isolated" ]]; then
     # Migrations only touch this isolated demo database, never the M7 database.
     .venv/bin/alembic upgrade head
 elif [[ $# -ne 0 ]]; then
-    echo "Usage: $0 [--isolated]" >&2
+    echo "Usage: $0 [--isolated | --replay [--speed 0.5|1|5|20] [--port 8000]]" >&2
     exit 1
 fi
 

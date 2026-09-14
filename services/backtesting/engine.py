@@ -1,5 +1,6 @@
 """Deterministic historical orchestration. PaperExecutor alone mutates financial state."""
 
+from collections.abc import Generator
 from dataclasses import asdict, replace
 from decimal import Context, Decimal, localcontext
 from itertools import groupby
@@ -24,6 +25,34 @@ def run(dataset: Dataset, config: PaperConfig | None = None) -> dict[str, Any]:
 
 
 def _run(dataset: Dataset, config: PaperConfig) -> dict[str, Any]:
+    steps = _steps(dataset, config)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as finished:
+            return finished.value  # type: ignore[no-any-return]
+
+
+def replay_steps(
+    dataset: Dataset, config: PaperConfig | None = None
+) -> Generator[dict[str, Any], None, dict[str, Any]]:
+    """Advance the M4 engine one timestamp at a time, without leaking Decimal context."""
+    with localcontext(Context(prec=28)):
+        chosen = config or PaperConfig()
+        normalized = PaperConfig(**{k: money(v) for k, v in asdict(chosen).items()})
+    steps = _steps(dataset, normalized)
+    while True:
+        with localcontext(Context(prec=28)):
+            try:
+                frame = next(steps)
+            except StopIteration as finished:
+                return finished.value  # type: ignore[no-any-return]
+        yield frame
+
+
+def _steps(
+    dataset: Dataset, config: PaperConfig
+) -> Generator[dict[str, Any], None, dict[str, Any]]:
     inputs = manifest(dataset, config)
     run_id = uuid5(NAMESPACE_URL, inputs["manifest_hash"])
     book = PaperBook(config.initial_cash, config.initial_cash)
@@ -50,6 +79,7 @@ def _run(dataset: Dataset, config: PaperConfig) -> dict[str, Any]:
     )
     for step, (opened, source) in enumerate(groupby(dataset.candles, key=lambda c: c.open_time), 1):
         group = list(source)
+        outcomes_start, signals_start = len(outcomes), len(signals)
         # All current OPENs, then fills in symbol order. No current CLOSE is exposed.
         book.marks.update({c.symbol: c.open for c in group})
         for candle in group:
@@ -127,6 +157,33 @@ def _run(dataset: Dataset, config: PaperConfig) -> dict[str, Any]:
                 "timestamp": group[0].close_time,
                 **{f: getattr(book, f) for f in fields},
             }
+        )
+        # Observation only: detached frame; the exact same engine powers batch and paced replay.
+        import json
+
+        yield json.loads(
+            encode(
+                {
+                    "run_id": run_id,
+                    "candles": [asdict(c) for c in group],
+                    "signals": signals[signals_start:],
+                    "outcomes": outcomes[outcomes_start:],
+                    "portfolio": frames[-1],
+                    "positions": [
+                        asdict(p)
+                        | {
+                            "current_price": book.marks[p.symbol],
+                            "market_value": money(book.marks[p.symbol] * p.quantity),
+                            "unrealized_pnl": money(
+                                (book.marks[p.symbol] - p.average_price) * p.quantity
+                            ),
+                        }
+                        for p in sorted(book.positions.values(), key=lambda p: p.symbol)
+                        if p.quantity
+                    ],
+                    "closed_trades": len(trades),
+                }
+            )
         )
 
     # No forced last-bar liquidation. Entry fees for open positions remain allocated.

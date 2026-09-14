@@ -32,6 +32,7 @@ include = ["services*", "packages*", "scripts*"]
 
 [tool.setuptools.package-data]
 "services.api" = ["static/*.html"]
+"services.replay" = ["data/*.json"]
 
 [tool.ruff]
 target-version = "py312"
