@@ -140,7 +140,7 @@ async def run_evaluation() -> None:
                         )
                         
                         obs_candles = []
-                        for c in c_candles[-1:]:
+                        for c in c_candles[-30:]:
                             if isinstance(c, dict):
                                 c_dict = c.copy()
                             else:
@@ -170,9 +170,9 @@ async def run_evaluation() -> None:
                             session_state="connected",
                             symbols=tuple([sym]),
                             candles=tuple(obs_candles),
-                            signals=tuple(obs_signals),
+                            signals=tuple([]),
                             risk_decisions=tuple([]),
-                            paper=paper,
+                            paper=None,
                             accepted_backtest=None
                         )
                         
@@ -209,12 +209,7 @@ async def run_evaluation() -> None:
                             flags = [f["code"] for f in vo["risk_flags"]] if vo.get("risk_flags") else []
                             latest_ai_flags = flags
                             
-                            if latest_ai_regime == "BULL":
-                                latest_ai_bias = "BUY"
-                            elif latest_ai_regime == "BEAR":
-                                latest_ai_bias = "SELL"
-                            else:
-                                latest_ai_bias = "HOLD"
+                            latest_ai_bias = vo.get("bias", "UNCERTAIN")
                         else:
                             latest_ai_regime = "UNCERTAIN"
                             latest_ai_confidence = 0.0
@@ -244,9 +239,12 @@ async def run_evaluation() -> None:
                                 # Agreement is ONLY valid if AI is OK
                                 agreement = "INVALID"
                                 if entry["ai_status"] == "OK":
-                                    agreement = "AGREEMENT" if entry["ai_bias"] == entry["strategy_signal"] else "DIVERGENCE"
-                                    if entry["ai_bias"] == "HOLD":
+                                    if (entry["ai_bias"] == "BULLISH" and entry["strategy_signal"] == "BUY") or (entry["ai_bias"] == "BEARISH" and entry["strategy_signal"] == "SELL"):
+                                        agreement = "AGREEMENT"
+                                    elif entry["ai_bias"] in ["UNCERTAIN", "NEUTRAL"] or entry["strategy_signal"] == "HOLD":
                                         agreement = "NEUTRAL"
+                                    else:
+                                        agreement = "DIVERGENCE"
                                 
                                 ret_pct = (net / (Decimal(str(entry.get("price", 1))) * Decimal(str(entry.get("quantity", 1))))) * 100
                                 

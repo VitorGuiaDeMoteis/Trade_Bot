@@ -110,7 +110,7 @@ class ObserverBacktest(Strict):
 
 
 class AIObserverSnapshot(Strict):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     as_of_utc: datetime
     provider: Literal["alpaca", "simulator"]
     session_state: Literal["connected", "market_closed", "delayed", "degraded", "offline"]
@@ -172,8 +172,9 @@ class RiskFlag(Strict):
 
 
 class AIObserverOutput(Strict):
-    schema_version: Literal["1.0"]
+    schema_version: Literal["1.0", "1.1"]
     regime: Regime
+    bias: Literal["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"] = "UNCERTAIN"
     risk_flags: tuple[RiskFlag, ...] = Field(max_length=8)
     observations: tuple[Text, ...] = Field(max_length=12)
 

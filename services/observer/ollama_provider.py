@@ -28,7 +28,7 @@ class OllamaProvider(ModelProvider):
         # Let's check how the M5 engine sends it.
         # usually snapshot + "\n" + prompt.
         content = snapshot.decode("utf-8") + "\n\n" + prompt
-        cache_version = "v4" # Explicitly bumping cache to invalidate older hallucinations
+        cache_version = "v6" # Explicitly bumping cache to invalidate older hallucinations
         import hashlib
         # We include cache_version, model, prompt_version implicitly (as prompt string changed)
         # to ensure any previous errors are bypassed.
@@ -43,7 +43,7 @@ class OllamaProvider(ModelProvider):
             "model": self.identity.model,
             "prompt": content,
             "stream": False,
-            "format": {"type": "object", "properties": {"schema_version": {"type": "string", "enum": ["1.0"]}, "regime": {"type": "object", "properties": {"label": {"type": "string", "enum": ["BULL", "BEAR", "RANGE", "UNCERTAIN"]}, "confidence": {"type": "number"}, "evidence": {"type": "array", "items": {"type": "string"}}}, "required": ["label", "confidence", "evidence"]}, "risk_flags": {"type": "array", "items": {"type": "string"}}, "observations": {"type": "array", "items": {"type": "string"}}}, "required": ["schema_version", "regime", "risk_flags", "observations"]},
+            "format": {"type": "object", "properties": {"schema_version": {"type": "string", "enum": ["1.0", "1.1"]}, "regime": {"type": "object", "properties": {"label": {"type": "string", "enum": ["TRENDING", "RANGING", "VOLATILE", "UNCERTAIN"]}, "confidence": {"type": "number"}, "evidence": {"type": "array", "items": {"type": "string"}}}, "required": ["label", "confidence", "evidence"]}, "bias": {"type": "string", "enum": ["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"]}, "risk_flags": {"type": "array", "items": {"type": "string"}}, "observations": {"type": "array", "items": {"type": "string"}}}, "required": ["schema_version", "regime", "bias", "risk_flags", "observations"]},
             "options": {
                 "temperature": 0.0
             }
@@ -85,14 +85,15 @@ class OllamaProvider(ModelProvider):
                         })
 
                 mapped = {
-                    "schema_version": "1.0",
+                    "schema_version": "1.1",
                     "regime": {
-                        "label": parsed.get("regime", "UNCERTAIN") if isinstance(parsed.get("regime"), str) else "UNCERTAIN",
-                        "confidence": 0.5,
-                        "evidence": parsed.get("evidence", [])[:5]
+                        "label": parsed.get("regime", {}).get("label", "UNCERTAIN") if isinstance(parsed.get("regime"), dict) else "UNCERTAIN",
+                        "confidence": float(parsed.get("regime", {}).get("confidence", 0.5)) if isinstance(parsed.get("regime"), dict) else 0.5,
+                        "evidence": [str(e)[:230] for e in parsed.get("regime", {}).get("evidence", [])[:5]] if isinstance(parsed.get("regime"), dict) else []
                     },
+                    "bias": parsed.get("bias", "UNCERTAIN") if parsed.get("bias") in ["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"] else "UNCERTAIN",
                     "risk_flags": mapped_risks,
-                    "observations": parsed.get("observations", [])[:5]
+                    "observations": [str(o)[:230] for o in parsed.get("observations", [])[:5]]
                 }
                 if isinstance(mapped["observations"], dict):
                     mapped["observations"] = [f"{k}: {v}" for k, v in mapped["observations"].items()][:5]
