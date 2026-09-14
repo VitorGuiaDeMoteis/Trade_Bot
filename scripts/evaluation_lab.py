@@ -1,30 +1,22 @@
-import asyncio
-import csv
-import dataclasses
 import json
+import uuid
+import asyncio
+import dataclasses
+from pathlib import Path
+from decimal import Decimal
+import pandas as pd  # type: ignore
+from datetime import datetime
 import sys
 import time
+import csv
 import typing
-import uuid
-from collections import defaultdict
-from datetime import datetime
-from decimal import Decimal
-from pathlib import Path
 
-import pandas as pd  # type: ignore
-
-from packages.contracts.observer import (
-    AIObserverSnapshot,
-    ObserverCandle,
-    ObserverPaper,
-    ObserverPosition,
-    ObserverSignal,
-)
-from services.backtesting.artifacts import Dataset, load_manifest
+from services.replay.runtime import replay_steps  # type: ignore
+from services.backtesting.artifacts import Dataset, Candle, load_manifest  # type: ignore
+from packages.domain.paper import PaperConfig
 from services.observer.engine import evaluate
 from services.observer.ollama_provider import OllamaProvider
-from services.replay.runtime import replay_steps  # type: ignore
-
+from packages.contracts.observer import AIObserverSnapshot, ObserverPaper, ObserverCandle, ObserverSignal, ObserverPosition
 
 async def run_evaluation() -> None:
     eval_id = str(uuid.uuid4())
@@ -33,6 +25,8 @@ async def run_evaluation() -> None:
     
     print("Loading large-history.json...")
     dataset_full, base_config = load_manifest(Path("services/replay/data/large-history.json"))
+    
+    from collections import defaultdict
     symbol_candles = defaultdict(list)
     for c in dataset_full.candles:
         symbol_candles[c.symbol].append(c)
@@ -44,31 +38,31 @@ async def run_evaluation() -> None:
     
     labeled_trades = []
     
-    # Setup progressive files
     trades_path = out_dir / "labeled_trades.csv"
     obs_path = out_dir / "observations.jsonl"
     progress_path = out_dir / "progress.json"
     
-    # Write header
     with open(trades_path, "w", newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
-            "symbol", "split", "timestamp", "strategy_signal", "ai_regime", 
+            "symbol", "split", "timestamp", "strategy_signal", "ai_status", "error_code", "ai_regime", 
             "ai_bias", "ai_confidence", "ai_risk_flags", "agreement", 
             "entry_price", "exit_price", "net_pnl", "return_pct", "win"
         ])
         
-    total_obs = 0
-    total_trades = 0
-    total_processed = 0
-    
-    progress = {
+    progress: dict[str, typing.Any] = {
         "status": "RUNNING",
         "symbol": None,
         "split": None,
         "current_candle": 0,
         "total_processed": 0,
-        "ai_observations": 0,
+        "ai_requests": 0,
+        "ai_valid": 0,
+        "ai_invalid": 0,
+        "ai_timeouts": 0,
+        "ai_degraded": 0,
+        "cache_hits": 0,
+        "cache_misses": 0,
         "trades": 0,
         "timestamp": datetime.now().isoformat()
     }
@@ -83,7 +77,7 @@ async def run_evaluation() -> None:
     
     try:
         for sym, candles in symbol_candles.items():
-            n = len(candles)
+            n = min(len(candles), 200)
             splits = {
                 "DEV": candles[:int(n*0.6)],
                 "VAL": candles[int(n*0.6):int(n*0.8)],
@@ -104,6 +98,8 @@ async def run_evaluation() -> None:
                 entries = {}
                 step_count = 0
                 
+                latest_ai_status = "INVALID"
+                latest_ai_error = "NO_DATA"
                 latest_ai_regime = "UNCERTAIN"
                 latest_ai_confidence = 0.0
                 latest_ai_bias = "HOLD"
@@ -111,16 +107,15 @@ async def run_evaluation() -> None:
                 
                 for frame in replay_steps(dataset, config):
                     step_count += 1
-                    total_processed += 1
+                    progress["total_processed"] += 1
                     progress["current_candle"] = step_count
-                    progress["total_processed"] = total_processed
                     
                     c_outcomes = frame["outcomes"]
                     c_signals = frame["signals"]
                     c_candles = frame["candles"]
                     portfolio = frame["portfolio"]
                     
-                    current_signal = c_signals[-1].signal_type if c_signals else "HOLD"
+                    current_signal = c_signals[-1]["signal_type"] if c_signals else "HOLD"
                     should_observe = (current_signal in ["BUY", "SELL"]) or (step_count % 50 == 0) or (step_count == 1)
                     
                     if should_observe and c_candles:
@@ -162,7 +157,7 @@ async def run_evaluation() -> None:
                             ObserverSignal(
                                 symbol=sym,
                                 strategy_version="v1-deterministic",
-                                signal_type=s.signal_type if not isinstance(s, dict) else s["signal_type"],
+                                signal_type=s["signal_type"] if isinstance(s, dict) else s.signal_type,
                                 generated_at=datetime.fromisoformat(portfolio["timestamp"])
                             ) for s in c_signals
                         ]
@@ -183,15 +178,31 @@ async def run_evaluation() -> None:
                         
                         res = await evaluate(snapshot, provider, enabled=True, timeout=120.0)
                         
-                        # Append observation
                         obs_line = json.dumps({"sym": sym, "split": split_name, "step": step_count, "res": res}, default=str)
                         with open(obs_path, "a") as f:
                             f.write(obs_line + "\n")
                         
-                        total_obs += 1
-                        progress["ai_observations"] = total_obs
+                        progress["ai_requests"] += 1
                         
+                        # Determine AI Status precisely
                         if res["status"] == "OK" and res.get("validated_output"):
+                            latest_ai_status = "OK"
+                            latest_ai_error = ""
+                            progress["ai_valid"] += 1
+                        else:
+                            latest_ai_error = res.get("error_code", "UNKNOWN")
+                            if latest_ai_error == "TIMEOUT":
+                                latest_ai_status = "TIMEOUT"
+                                progress["ai_timeouts"] += 1
+                            elif latest_ai_error in ["PROVIDER_DEGRADED", "MODEL_UNAVAILABLE"]:
+                                latest_ai_status = "DEGRADED"
+                                progress["ai_degraded"] += 1
+                            else:
+                                latest_ai_status = "INVALID"
+                                progress["ai_invalid"] += 1
+                        
+                        # Update latest AI metrics
+                        if latest_ai_status == "OK":
                             vo = res["validated_output"]
                             latest_ai_regime = vo["regime"]["label"]
                             latest_ai_confidence = float(vo["regime"]["confidence"])
@@ -204,12 +215,19 @@ async def run_evaluation() -> None:
                                 latest_ai_bias = "SELL"
                             else:
                                 latest_ai_bias = "HOLD"
+                        else:
+                            latest_ai_regime = "UNCERTAIN"
+                            latest_ai_confidence = 0.0
+                            latest_ai_bias = "HOLD"
+                            latest_ai_flags = []
 
                     for outcome in c_outcomes:
                         if outcome.get("status") == "FILLED":
                             c_symbol = outcome["symbol"]
                             if c_symbol not in entries:
                                 entries[c_symbol] = outcome
+                                entries[c_symbol]["ai_status"] = latest_ai_status
+                                entries[c_symbol]["ai_error"] = latest_ai_error
                                 entries[c_symbol]["ai_regime"] = latest_ai_regime
                                 entries[c_symbol]["ai_confidence"] = latest_ai_confidence
                                 entries[c_symbol]["ai_bias"] = latest_ai_bias
@@ -223,15 +241,18 @@ async def run_evaluation() -> None:
                                 realized = Decimal(str(outcome.get("realized_pnl", 0)))
                                 net = realized - fees
                                 
-                                agreement = "AGREEMENT" if entry["ai_bias"] == entry["strategy_signal"] else "DIVERGENCE"
-                                if entry["ai_bias"] == "HOLD":
-                                    agreement = "NEUTRAL"
-                                    
+                                # Agreement is ONLY valid if AI is OK
+                                agreement = "INVALID"
+                                if entry["ai_status"] == "OK":
+                                    agreement = "AGREEMENT" if entry["ai_bias"] == entry["strategy_signal"] else "DIVERGENCE"
+                                    if entry["ai_bias"] == "HOLD":
+                                        agreement = "NEUTRAL"
+                                
                                 ret_pct = (net / (Decimal(str(entry.get("price", 1))) * Decimal(str(entry.get("quantity", 1))))) * 100
                                 
                                 t_row = [
                                     sym, split_name, entry.get("executed_at", ""), entry["strategy_signal"],
-                                    entry["ai_regime"], entry["ai_bias"], entry["ai_confidence"],
+                                    entry["ai_status"], entry["ai_error"], entry["ai_regime"], entry["ai_bias"], entry["ai_confidence"],
                                     ",".join(entry["ai_flags"]), agreement, float(entry.get("price", 0)),
                                     float(outcome.get("price", 0)), float(net), float(ret_pct),
                                     1 if net > 0 else 0
@@ -242,22 +263,27 @@ async def run_evaluation() -> None:
                                     writer.writerow(t_row)
                                     
                                 labeled_trades.append(t_row)
-                                total_trades += 1
-                                progress["trades"] = total_trades
+                                progress["trades"] += 1
 
                     if time.time() - last_flush_time > 1.0:
                         save_progress()
                         
                         hits = provider.cache_hits
                         misses = provider.cache_misses
-                        total = hits + misses
-                        cache_pct = (hits / total * 100) if total > 0 else 0
+                        total_cache = hits + misses
+                        progress["cache_hits"] = hits
+                        progress["cache_misses"] = misses
+                        cache_pct = (hits / total_cache * 100) if total_cache > 0 else 0
                         
-                        sys.stdout.write(f"\r{sym} {split_name} {step_count}/{len(split_candles)} | AI {total_obs} | Trades {total_trades} | cache {cache_pct:.0f}%  ")
+                        req = progress["ai_requests"]
+                        valid = progress["ai_valid"]
+                        v_pct = (valid / req * 100) if req > 0 else 0
+                        
+                        sys.stdout.write(f"\r{sym} {split_name} {step_count}/{len(split_candles)} | Trades {progress['trades']} | AI OK {valid}/{req} ({v_pct:.1f}%) | Cache {cache_pct:.0f}%  ")
                         sys.stdout.flush()
                         last_flush_time = time.time()
                         
-            print() # new line after split
+            print()
 
         progress["status"] = "COMPLETED"
     except KeyboardInterrupt:
@@ -270,9 +296,8 @@ async def run_evaluation() -> None:
         save_progress()
         await provider.close()
         
-        # Analyze what we have
         df = pd.DataFrame(labeled_trades, columns=[
-            "symbol", "split", "timestamp", "strategy_signal", "ai_regime", 
+            "symbol", "split", "timestamp", "strategy_signal", "ai_status", "error_code", "ai_regime", 
             "ai_bias", "ai_confidence", "ai_risk_flags", "agreement", 
             "entry_price", "exit_price", "net_pnl", "return_pct", "win"
         ])
@@ -308,6 +333,7 @@ async def run_evaluation() -> None:
             res_df.to_csv(out_dir / "policy_comparison.csv", index=False)
             
             report = f"# AI Evaluation Lab Report\n\nTotal trades: {len(df)}\nStatus: {progress['status']}\n\n"
+            report += f"**AI Stats:**\nRequests: {progress['ai_requests']}\nOK: {progress['ai_valid']}\nINVALID: {progress['ai_invalid']}\nTIMEOUT: {progress['ai_timeouts']}\nDEGRADED: {progress['ai_degraded']}\n\n"
             report += res_df.to_markdown()
             
             with open(out_dir / "report.md", "w") as f:

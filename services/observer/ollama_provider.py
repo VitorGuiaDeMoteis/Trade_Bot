@@ -28,8 +28,12 @@ class OllamaProvider(ModelProvider):
         # Let's check how the M5 engine sends it.
         # usually snapshot + "\n" + prompt.
         content = snapshot.decode("utf-8") + "\n\n" + prompt
+        cache_version = "v4" # Explicitly bumping cache to invalidate older hallucinations
         import hashlib
-        cache_key = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        # We include cache_version, model, prompt_version implicitly (as prompt string changed)
+        # to ensure any previous errors are bypassed.
+        raw_key = f"{cache_version}:{self.identity.model}:{content}"
+        cache_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
         if cache_key in self._cache:
             self.cache_hits += 1
             return bytes(self._cache[cache_key].encode("utf-8"))
