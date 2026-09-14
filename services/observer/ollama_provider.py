@@ -11,6 +11,8 @@ class OllamaProvider(ModelProvider):
         self.client = httpx.AsyncClient(timeout=60.0)
         self.cache_file = "evaluations/.cache.json"
         self._cache = {}
+        self.cache_hits = 0
+        self.cache_misses = 0
         import os, json
         if os.path.exists(self.cache_file):
             try:
@@ -29,7 +31,9 @@ class OllamaProvider(ModelProvider):
         import hashlib
         cache_key = hashlib.sha256(content.encode("utf-8")).hexdigest()
         if cache_key in self._cache:
-            return self._cache[cache_key].encode("utf-8")
+            self.cache_hits += 1
+            return bytes(self._cache[cache_key].encode("utf-8"))
+        self.cache_misses += 1
         
         request_data = {
             "model": self.identity.model,
