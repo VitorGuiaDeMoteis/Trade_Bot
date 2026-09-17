@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    ForeignKeyConstraint,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -80,11 +81,18 @@ risk_decisions = Table(
     "risk_decisions",
     metadata,
     Column("decision_id", Uuid, primary_key=True),
-    Column("signal_id", Uuid, ForeignKey("signals.signal_id"), nullable=False, unique=True),
+    Column("run_id", Uuid, nullable=True),
+    Column("signal_id", Uuid, nullable=False, unique=True),
     Column("decision", String(16), nullable=False),
     Column("reason", String(255), nullable=False),
     Column("decided_at", DateTime(timezone=True), nullable=False),
     CheckConstraint("decision IN ('APPROVED', 'REJECTED')", name="ck_risk_decisions_type"),
+    ForeignKeyConstraint(
+        ["signal_id"], ["signals.signal_id"], name="fk_risk_decisions_signal_id"
+    ),
+    ForeignKeyConstraint(
+        ["run_id"], ["paper_runs.run_id"], name="fk_risk_decisions_run_id"
+    ),
 )
 
 # Immutable evidence from the pre-validation provider. Never exposed as market data.
@@ -117,7 +125,8 @@ paper_runs = Table(
     Column("as_of", DateTime(timezone=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     CheckConstraint(
-        "mode = 'REPLAY' AND status IN ('READY','RUNNING','COMPLETED')", name="ck_paper_run_mode"
+        "mode IN ('REPLAY','ALPACA_PAPER') AND status IN ('READY','RUNNING','COMPLETED')",
+        name="ck_paper_run_mode",
     ),
     CheckConstraint(
         "cash >= 0 AND initial_cash > 0 AND fees >= 0 AND step >= 0", name="ck_paper_run_money"
@@ -174,7 +183,7 @@ positions = Table(
     metadata,
     Column("run_id", Uuid, ForeignKey("paper_runs.run_id"), primary_key=True),
     Column("symbol", String(16), primary_key=True),
-    Column("quantity", BigInteger, nullable=False),
+    Column("quantity", Numeric(28, 10), nullable=False),
     Column("average_price", Numeric(28, 10), nullable=False),
     Column("realized_pnl", Numeric(28, 10), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
@@ -200,15 +209,15 @@ paper_orders = Table(
     Column("risk_decision_id", Uuid, ForeignKey("risk_decisions.decision_id"), nullable=False),
     Column("symbol", String(16), nullable=False),
     Column("side", String(8), nullable=False),
-    Column("quantity", BigInteger, nullable=False),
-    Column("filled_quantity", BigInteger, nullable=False, default=0, server_default="0"),
+    Column("quantity", Numeric(28, 10), nullable=False),
+    Column("filled_quantity", Numeric(28, 10), nullable=False, default=0, server_default="0"),
     Column("status", String(32), nullable=False),
     Column("requested_at", DateTime(timezone=True), nullable=False),
     Column("idempotency_key", Uuid, nullable=False, unique=True),
     Column("reason", String(128), nullable=False),
     UniqueConstraint("run_id", "risk_decision_id", name="uq_paper_order_risk"),
     CheckConstraint(
-        "side IN ('BUY','SELL') AND status IN ('SUBMITTING', 'NEW', 'ACCEPTED', 'PENDING_NEW', 'PARTIALLY_FILLED', 'FILLED', 'PENDING_CANCEL', 'CANCELED', 'REJECTED', 'EXPIRED', 'REPLACED', 'UNKNOWN') AND quantity >= 0 AND filled_quantity >= 0 AND filled_quantity <= quantity",  # noqa: E501
+        "side IN ('BUY','SELL') AND status IN ('SUBMITTING', 'NEW', 'ACCEPTED', 'PENDING_NEW', 'PARTIALLY_FILLED', 'FILLED', 'PENDING_CANCEL', 'CANCELED', 'REJECTED', 'EXPIRED', 'REPLACED', 'UNKNOWN') AND quantity >= 0 AND filled_quantity >= 0 AND ((quantity > 0 AND filled_quantity <= quantity) OR (quantity = 0))",  # noqa: E501
         name="ck_paper_orders_state_m7",
     ),
 )
@@ -260,7 +269,7 @@ broker_fills = Table(
     Column("order_id", Uuid, ForeignKey("broker_orders.order_id"), nullable=False),
     Column("quantity", Numeric(28, 10), nullable=False),
     Column("price", Numeric(28, 10), nullable=False),
-    Column("fee", Numeric(28, 10), nullable=False),
+    Column("fee", Numeric(28, 10), nullable=True),
     Column("filled_at", DateTime(timezone=True), nullable=False),
 )
 
@@ -271,8 +280,8 @@ paper_fills = Table(
     Column("order_id", Uuid, ForeignKey("paper_orders.order_id"), nullable=False),
     Column("price", Numeric(28, 10), nullable=False),
     Column("reference_price", Numeric(28, 10), nullable=False),
-    Column("quantity", BigInteger, nullable=False),
-    Column("fee", Numeric(28, 10), nullable=False),
+    Column("quantity", Numeric(28, 10), nullable=False),
+    Column("fee", Numeric(28, 10), nullable=True),
     Column("slippage", Numeric(28, 10), nullable=False),
     Column("realized_pnl", Numeric(28, 10), nullable=False),
     Column("filled_at", DateTime(timezone=True), nullable=False),

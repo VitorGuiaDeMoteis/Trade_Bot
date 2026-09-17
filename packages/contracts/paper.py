@@ -45,9 +45,9 @@ class PaperFill(BaseModel):
     price: Decimal
     reference_price: Decimal
     quantity: Decimal
-    fee: Decimal
-    slippage: Decimal
-    realized_pnl: Decimal
+    fee: Decimal | None = None
+    slippage: Decimal | None = None
+    realized_pnl: Decimal | None = None
     filled_at: datetime
 
 
@@ -57,8 +57,8 @@ class PaperPositionResponse(BaseModel):
     average_price: Decimal
     current_price: Decimal
     market_value: Decimal
-    realized_pnl: Decimal
-    unrealized_pnl: Decimal
+    realized_pnl: Decimal | None = None
+    unrealized_pnl: Decimal | None = None
     updated_at: datetime
 
 
@@ -73,7 +73,7 @@ class PaperLink(BaseModel):
 
 class PaperPortfolio(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
-    mode: Literal["REPLAY"] = "REPLAY"
+    mode: Literal["REPLAY", "ALPACA_PAPER"] = "REPLAY"
     currency: Literal["USD"] = "USD"
     run_id: UUID | None = None
     status: str = "EMPTY"
@@ -83,16 +83,16 @@ class PaperPortfolio(BaseModel):
     step: int = 0
     dataset_hash: str | None = None
     dataset_count: int = 0
-    initial_cash: Decimal
+    initial_cash: Decimal | None = None
     cash: Decimal
     market_value: Decimal
     equity: Decimal
-    realized_pnl: Decimal
-    unrealized_pnl: Decimal
-    total_pnl: Decimal
-    fees: Decimal
-    fee_bps: Decimal
-    slippage_bps: Decimal
+    realized_pnl: Decimal | None = None
+    unrealized_pnl: Decimal | None = None
+    total_pnl: Decimal | None = None
+    fees: Decimal | None = None
+    fee_bps: Decimal | None = None
+    slippage_bps: Decimal | None = None
     pnl_basis: Literal["gross_components_net_total"] = "gross_components_net_total"
     reconciled: bool = True
     last_reconciled_at: datetime | None = None

@@ -21,7 +21,7 @@ pytestmark = [
 
 @pytest.fixture
 def client(market, audit):
-    assert market[0].postgres_port == 5433 and market[0].postgres_db == "trading_bot_test"
+    assert market[0].postgres_port == 55432 and market[0].postgres_db == "trading_bot_test"
     with TestClient(create_app(market[0].model_copy(update={"simulator_enabled": False}))) as value:
         yield value
 

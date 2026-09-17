@@ -1,4 +1,4 @@
-"""Executar explicitamente no PostgreSQL descartavel da porta 5433."""
+"""Executar explicitamente no PostgreSQL descartavel da porta 55432."""
 
 import os
 
@@ -26,7 +26,7 @@ def test_postgres_migration_round_trip_and_health(monkeypatch):  # type: ignore
     values = {
         "APP_ENV": "test",
         "POSTGRES_HOST": "127.0.0.1",
-        "POSTGRES_PORT": "5433",
+        "POSTGRES_PORT": "55432",
         "POSTGRES_DB": "trading_bot_test",
         "POSTGRES_USER": "test_only",
         "POSTGRES_PASSWORD": "test_only",
@@ -72,9 +72,28 @@ def test_postgres_migration_round_trip_and_health(monkeypatch):  # type: ignore
             "broker_portfolio_snapshots",
             "broker_positions",
         }
+        
+        # CENÁRIO B - Banco contendo Paper data
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO paper_runs (run_id, mode, provider, status, initial_cash, cash, step, fee_bps, slippage_bps, fees, realized_pnl, dataset, dataset_hash, created_at) VALUES ('00000000-0000-0000-0000-000000000000', 'REPLAY', 'alpaca', 'RUNNING', 100, 100, 1, 0, 0, 0, 0, '{}', 'hash', now()) ON CONFLICT DO NOTHING"))
+            
+        with pytest.raises(Exception) as excinfo:
+            command.downgrade(config, "base")
+        assert "paper_data_present" in str(excinfo.value)
+        
+        with engine.begin() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM paper_runs")).scalar()
+            assert count >= 1
+            
+        # CENÁRIO A - Banco de teste vazio
+        with engine.begin() as conn:
+            conn.execute(text("TRUNCATE paper_runs, candles CASCADE"))
+
+            
         with TestClient(create_app(settings)) as client:
             client.app.state.simulator.state = "connected"  # type: ignore
             assert client.get("/health").status_code == 200
+            
             command.downgrade(config, "base")
             degraded = client.get("/health")
             assert degraded.status_code == 503
@@ -84,3 +103,4 @@ def test_postgres_migration_round_trip_and_health(monkeypatch):  # type: ignore
     finally:
         engine.dispose()
         get_settings.cache_clear()
+

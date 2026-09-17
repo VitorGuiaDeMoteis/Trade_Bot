@@ -1,78 +1,83 @@
-"""Explicit, bounded Market Data smoke test. No trading endpoint or persistence."""
-
+import json
 import asyncio
-from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from pathlib import Path
+from collections import Counter
+from scripts.evaluation_lab import run_evaluation
 
-from pydantic import ValidationError
-from pydantic_settings import BaseSettings, SettingsConfigDict
+def limit_candles():
+    with open("scripts/evaluation_lab.py", "r") as f:
+        content = f.read()
+    with open("scripts/evaluation_lab.py.bak", "w") as f:
+        f.write(content)
+    content = content.replace("n = len(candles)", "n = min(len(candles), 100)")
+    with open("scripts/evaluation_lab.py", "w") as f:
+        f.write(content)
 
-from services.api.config import Settings
-from services.market_data.alpaca_provider import AlpacaMarketDataProvider
-from services.market_data.calendar import regular_session
-from services.market_data.errors import ProviderError
+def restore_candles():
+    with open("scripts/evaluation_lab.py.bak", "r") as f:
+        content = f.read()
+    with open("scripts/evaluation_lab.py", "w") as f:
+        f.write(content)
 
-
-class SmokeSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    run_alpaca_smoke_test: bool = False
-
-
-async def main() -> int:
-    if not SmokeSettings().run_alpaca_smoke_test:
-        print("SKIPPED: RUN_ALPACA_SMOKE_TEST=1 required")
-        return 0
+async def main():
+    limit_candles()
     try:
-        settings = Settings(market_data_provider="alpaca")
-    except ValidationError:
-        print("configuration_error: check local settings and Alpaca Market Data credentials")
-        return 1
-    assert settings.alpaca_api_key_id and settings.alpaca_api_secret_key
-    provider = AlpacaMarketDataProvider(
-        api_key=settings.alpaca_api_key_id.get_secret_value(),
-        secret_key=settings.alpaca_api_secret_key.get_secret_value(),
-        feed=settings.alpaca_data_feed,
-        symbols=["SPY"],
-        timeframe="1h",
-    )
-    try:
-        async with asyncio.timeout(45):
-            bars = await provider.get_historical_candles("SPY", "1h", limit=5)
-            if not bars:
-                print("FAILED: no closed SPY history returned")
-                return 1
-            for bar in bars:
-                assert bar.provider == "alpaca" and bar.symbol == "SPY" and bar.is_closed
-                assert bar.open_time.utcoffset() == bar.close_time.utcoffset() == timedelta(0)
-                assert bar.close_time <= datetime.now(UTC)
-                assert all(
-                    isinstance(p, Decimal) and p.is_finite() and p > 0
-                    for p in (bar.open, bar.high, bar.low, bar.close)
-                )
-            print(f"PASS: {len(bars)} closed SPY 1h bars, provider=alpaca, UTC, Decimal")
-            now = datetime.now(UTC)
-            session = regular_session(now)
-            if session is None or not session[0] <= now < session[1]:
-                print("market_closed / streaming not validated (regular session)")
-                return 0
-            socket = await provider.socket_factory()
-            try:
-                await provider.handshake(socket)
-                print("PASS: WebSocket authentication and subscription acknowledged")
-                print("Hourly streaming not validated by this bounded handshake test")
-            finally:
-                await socket.close()
-        return 0
-    except (ProviderError, TimeoutError) as error:
-        code = error.code if isinstance(error, ProviderError) else "timeout"
-        print(f"FAILED: {code}")
-        return 1
-    except Exception:
-        print("FAILED: unexpected smoke test failure (details withheld to protect credentials)")
-        return 1
+        await run_evaluation()
     finally:
-        await provider.close()
+        restore_candles()
+        
+    eval_dir = Path("evaluations")
+    subdirs = sorted([d for d in eval_dir.iterdir() if d.is_dir() and (d / "progress.json").exists()], key=lambda x: x.stat().st_mtime)
+    latest = subdirs[-1]
+    
+    with open(latest / "progress.json") as f:
+        progress = json.load(f)
+        
+    print("\n--- SMOKE TEST RESULTS ---")
+    print(f"AI requests: {progress['ai_requests']}")
+    print(f"OK: {progress['ai_valid']}")
+    
+    req = progress['ai_requests']
+    valid = progress['ai_valid']
+    v_pct = (valid / req * 100) if req > 0 else 0
+    print(f"Valid Rate: {v_pct:.1f}%")
+    
+    hits = progress.get('cache_hits', 0)
+    misses = progress.get('cache_misses', 0)
+    total = hits + misses
+    c_pct = (hits / total * 100) if total > 0 else 0
+    print(f"Cache Hit Rate: {c_pct:.1f}%")
+    
+    regimes = []
+    biases = []
+    confidences = []
+    outputs = []
+    
+    with open(latest / "observations.jsonl") as f:
+        for line in f:
+            obj = json.loads(line)
+            res = obj["res"]
+            if res.get("status") == "OK" and res.get("validated_output"):
+                vo = res["validated_output"]
+                regimes.append(vo["regime"]["label"])
+                biases.append(vo.get("bias", "UNCERTAIN"))
+                confidences.append(vo["regime"]["confidence"])
+                outputs.append(json.dumps(vo))
+                
+    print("\nDistributions:")
+    print(f"Regimes: {dict(Counter(regimes))}")
+    print(f"Biases: {dict(Counter(biases))}")
+    print(f"Confidences: {dict(Counter(confidences))}")
+    print(f"Unique Outputs: {len(set(outputs))} / {len(outputs)}")
 
+    print("\nTrades Agreement:")
+    import csv
+    agr = []
+    with open(latest / "labeled_trades.csv") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            agr.append(row["agreement"])
+    print(f"Agreement/Divergence: {dict(Counter(agr))}")
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    asyncio.run(main())

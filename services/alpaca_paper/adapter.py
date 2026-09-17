@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -6,10 +7,13 @@ PAPER_BASE_URL = "https://paper-api.alpaca.markets/v2"
 
 
 class AlpacaPaperError(Exception):
-    def __init__(self, message: str, code: str, retryable: bool = False):
+    def __init__(
+        self, message: str, code: str, retryable: bool = False, status_code: int | None = None
+    ):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+        self.status_code = status_code
 
 
 class AlpacaPaperAdapter:
@@ -68,6 +72,7 @@ class AlpacaPaperAdapter:
                 f"Client error {response.status_code}: {response.text}",
                 "client_error",
                 retryable=False,
+                status_code=response.status_code,
             )
 
         if not response.content:
@@ -89,14 +94,14 @@ class AlpacaPaperAdapter:
                 "GET", "/orders:by_client_order_id", params={"client_order_id": client_order_id}
             )
         except AlpacaPaperError as e:
-            if e.code == "client_error":
+            if e.status_code == 404:
                 return None
             raise
 
     async def submit_order(
         self,
         symbol: str,
-        qty: int | None,
+        qty: Decimal | None,
         side: str,
         client_order_id: str,
         notional: str | None = None,
@@ -121,7 +126,7 @@ class AlpacaPaperAdapter:
         try:
             await self._request("DELETE", f"/orders/{order_id}")
         except AlpacaPaperError as e:
-            if e.code == "client_error":
+            if e.status_code == 404:
                 return None
             raise
 
@@ -132,6 +137,6 @@ class AlpacaPaperAdapter:
         try:
             return await self._request("GET", f"/orders/{order_id}")  # type: ignore[no-any-return]
         except AlpacaPaperError as e:
-            if e.code == "client_error":
+            if e.status_code == 404:
                 return None
             raise

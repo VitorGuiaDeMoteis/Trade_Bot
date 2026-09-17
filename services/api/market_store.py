@@ -153,7 +153,18 @@ class MarketStore:
             connection.execute(signals.insert().values(**asdict(signal)))
             if self.risk is not None:
                 decision = self.risk.evaluate(signal, event.occurred_at)
-                connection.execute(risk_decisions.insert().values(**asdict(decision)))
+                
+                # Fetch active run_id if it exists
+                
+                from services.api.models import system_controls
+                run_id = None
+                control = connection.execute(select(system_controls)).mappings().first()
+                if control and control.get("active_run_id"):
+                    run_id = control["active_run_id"]
+                    
+                dec_dict = asdict(decision)
+                dec_dict["run_id"] = run_id
+                connection.execute(risk_decisions.insert().values(**dec_dict))
         return event
 
     def append(self, candle: Candle | MarketBar) -> CandleEvent:

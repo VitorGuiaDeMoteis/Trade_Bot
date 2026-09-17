@@ -120,6 +120,7 @@ class AIObserverSnapshot(Strict):
     signals: tuple[ObserverSignal, ...] = Field(max_length=MAX_SYMBOLS)
     risk_decisions: tuple[ObserverRisk, ...] = Field(max_length=MAX_SYMBOLS)
     paper: ObserverPaper | None
+    features: dict[str, float] | None = None
     accepted_backtest: ObserverBacktest | None
     _utc = field_validator("as_of_utc")(utc)
 

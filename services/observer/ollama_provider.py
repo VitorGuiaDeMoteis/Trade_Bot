@@ -8,7 +8,7 @@ class OllamaProvider(ModelProvider):
     def __init__(self, model: str = "qwen2.5-coder:7b", base_url: str = "http://127.0.0.1:11434") -> None:
         self.identity = Identity("ollama", model, "latest")
         self.base_url = base_url
-        self.client = httpx.AsyncClient(timeout=60.0)
+        self.client = httpx.AsyncClient(timeout=600.0)
         self.cache_file = "evaluations/.cache.json"
         self._cache = {}
         self.cache_hits = 0
@@ -28,7 +28,7 @@ class OllamaProvider(ModelProvider):
         # Let's check how the M5 engine sends it.
         # usually snapshot + "\n" + prompt.
         content = snapshot.decode("utf-8") + "\n\n" + prompt
-        cache_version = "v6" # Explicitly bumping cache to invalidate older hallucinations
+        cache_version = "v7" # Explicitly bumping cache to invalidate older hallucinations
         import hashlib
         # We include cache_version, model, prompt_version implicitly (as prompt string changed)
         # to ensure any previous errors are bypassed.

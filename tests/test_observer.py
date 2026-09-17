@@ -84,7 +84,7 @@ def test_fake_ok_and_deterministic_snapshot():
     assert first["status"] == "OK" and first["fallback"] is None
     assert first["output_hash"] == second["output_hash"]
     assert first["input_hash"] == snapshot.input_hash
-    assert first["prompt_version"] == "observer-v2" and first["model_version"] == "1"
+    assert first["prompt_version"] == "observer-v5-features" and first["model_version"] == "1"
 
 
 def test_explicit_projection_excludes_secrets_at_every_source_boundary():
@@ -292,10 +292,16 @@ def test_observer_database_configuration_excludes_market_credentials(monkeypatch
     monkeypatch.setenv("MARKET_DATA_PROVIDER", "invalid_provider_for_global_settings")
     config = ObserverDatabaseSettings(_env_file=None, postgres_password="test_only")
     assert set(type(config).model_fields) == {
+        "app_env",
+        "database_role",
         "postgres_host",
         "postgres_port",
         "postgres_db",
         "postgres_user",
         "postgres_password",
+        "runtime_postgres_host",
+        "runtime_postgres_port",
+        "runtime_postgres_db",
+        "test_postgres_db",
     }
     assert "PLANTED" not in config.model_dump_json()

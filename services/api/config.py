@@ -17,11 +17,16 @@ class Settings(BaseSettings):
     )
 
     app_env: Literal["local", "test"] = "local"
+    database_role: Literal["runtime", "test"] = "runtime"
     postgres_host: str = "127.0.0.1"
     postgres_port: int = Field(default=5432, ge=1, le=65535)
     postgres_db: str = "trading_bot_dev"
     postgres_user: str = "trading_bot_dev"
     postgres_password: SecretStr
+    runtime_postgres_host: str = "127.0.0.1"
+    runtime_postgres_port: int = Field(default=5432, ge=1, le=65535)
+    runtime_postgres_db: str = "trading_bot_dev"
+    test_postgres_db: str = "trading_bot_test"
     simulator_enabled: bool = True
     paper_initial_cash: Decimal = Field(default=Decimal("10000.00"), ge=0)
     paper_fee_bps: Decimal = Field(default=Decimal("1.0"), ge=0)
@@ -63,6 +68,9 @@ class Settings(BaseSettings):
             and self.alpaca_api_secret_key.get_secret_value().strip()
         ):
             raise ValueError("configuration_error: missing_alpaca_credentials")
+
+        validate_database_target(self)
+
         return self
 
     @property
@@ -86,3 +94,34 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_database_target(settings: Settings) -> None:
+    """Validate the declared database role before an engine can be created.
+
+    The explicit role and exact configured database names are the source of truth.
+    We deliberately do not infer safety from a substring such as ``"test"``.
+    ``DATABASE_URL`` is not a supported fallback anywhere in this application.
+    """
+
+    if settings.runtime_postgres_db == settings.test_postgres_db:
+        raise ValueError("configuration_error: runtime and test database names must differ")
+
+    target = (settings.postgres_host, settings.postgres_port, settings.postgres_db)
+    runtime_target = (
+        settings.runtime_postgres_host,
+        settings.runtime_postgres_port,
+        settings.runtime_postgres_db,
+    )
+
+    if settings.app_env == "test":
+        if (
+            settings.database_role != "test"
+            or settings.postgres_db != settings.test_postgres_db
+            or target == runtime_target
+        ):
+            raise ValueError("REFUSING TO RUN TESTS AGAINST RUNTIME DATABASE")
+        return
+
+    if settings.database_role != "runtime" or settings.postgres_db != settings.runtime_postgres_db:
+        raise ValueError("configuration_error: runtime cannot connect to test database")

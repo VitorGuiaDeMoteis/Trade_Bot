@@ -103,4 +103,4 @@ class PaperResult:
 class AlpacaSubmitResult:
     status: str
     reason: str
-    quantity: int = 0
+    quantity: Decimal = ZERO

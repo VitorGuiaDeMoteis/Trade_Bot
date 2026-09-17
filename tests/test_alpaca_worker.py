@@ -25,7 +25,10 @@ from services.api.models import (
 @pytest.fixture
 def engine():
     settings = Settings(
-        postgres_db="trading_bot_dev",
+        postgres_db="trading_bot_test",
+            postgres_port=55432,
+            postgres_user="test_only",
+            postgres_password="test_only",
         market_data_provider="alpaca",
         execution_mode="alpaca_paper",
         alpaca_api_key_id="test",
@@ -48,7 +51,10 @@ def adapter_mock():
 @pytest.fixture
 def settings():
     return Settings(
-        postgres_db="trading_bot_dev",
+        postgres_db="trading_bot_test",
+            postgres_port=55432,
+            postgres_user="test_only",
+            postgres_password="test_only",
         market_data_provider="alpaca",
         execution_mode="alpaca_paper",
         alpaca_api_key_id="test",
@@ -130,7 +136,7 @@ async def test_worker_startup_reconciliation(engine, adapter_mock, settings):
         decision_id = uuid4()
         c.execute(
             risk_decisions.insert().values(
-                decision_id=decision_id,
+                decision_id=decision_id, run_id=run_id,
                 signal_id=signal_id,
                 decision="APPROVED",
                 reason="test",
@@ -251,7 +257,7 @@ async def test_worker_process_pending_submits_idempotency(engine, adapter_mock, 
         )
         c.execute(
             risk_decisions.insert().values(
-                decision_id=decision_id,
+                decision_id=decision_id, run_id=run_id,
                 signal_id=signal_id,
                 decision="APPROVED",
                 reason="test",
@@ -262,9 +268,23 @@ async def test_worker_process_pending_submits_idempotency(engine, adapter_mock, 
     worker1 = AlpacaPaperWorker(engine, adapter_mock, settings)
     worker2 = AlpacaPaperWorker(engine, adapter_mock, settings)
 
-    adapter_mock.submit_order.return_value = {"id": "broker_order_123", "status": "accepted"}
 
-    await asyncio.gather(worker1._process_pending_submits(), worker2._process_pending_submits())
+    adapter_mock.submit_order.return_value = {"id": "broker_order_123", "status": "accepted"}
+    adapter_mock.get_account.return_value = {"equity": "1000"}
+    adapter_mock.get_positions.return_value = []
+
+    for worker in (worker1, worker2):
+        worker.degraded = False
+        worker.reconciliation_ready = True
+
+    await asyncio.gather(
+        worker1._process_pending_submits(
+            account={"equity": "1000"}, positions=[]
+        ),
+        worker2._process_pending_submits(
+            account={"equity": "1000"}, positions=[]
+        ),
+    )
 
     assert adapter_mock.submit_order.call_count == 1
 

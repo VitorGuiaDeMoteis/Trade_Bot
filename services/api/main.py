@@ -7,6 +7,7 @@ from time import perf_counter
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Request, Response
+from sqlalchemy import update
 
 from packages.contracts.health import HealthResponse
 from packages.contracts.provider import MarketDataProvider
@@ -18,11 +19,17 @@ from services.alpaca_paper.worker import AlpacaPaperWorker
 from services.api.backtest_routes import router as backtest_router
 from services.api.broker_routes import router as broker_router
 from services.api.config import Settings, get_settings
-from services.api.database import check_database, create_database_engine
+from services.api.database import (
+    acquire_paper_runtime_lock,
+    check_database,
+    create_database_engine,
+    release_paper_runtime_lock,
+)
 from services.api.decisions_routes import router as decisions_router
 from services.api.market_routes import router as market_router
 from services.api.market_store import MarketStore
 from services.api.mission_control import router as mission_control_router
+from services.api.models import system_controls
 from services.api.observer_routes import router as observer_router
 from services.api.paper_routes import router as paper_router
 from services.api.simulator_runtime import SimulatorRuntime
@@ -40,6 +47,9 @@ def create_app(settings: Settings | None = None, *, observation_only: bool = Fal
         configuration = settings or get_settings()
         engine = create_database_engine(configuration)
         app.state.database = engine
+        if configuration.execution_mode == "alpaca_paper" and check_database(engine) != "up":
+            engine.dispose()
+            raise RuntimeError("alpaca_paper_startup_refused_schema_not_at_head")
         spec = SimulationSpec(configuration.simulator_seed, configuration.simulator_start)
         provider: MarketDataProvider
         if configuration.market_data_provider == "alpaca":
@@ -71,6 +81,7 @@ def create_app(settings: Settings | None = None, *, observation_only: bool = Fal
         app.state.simulator.start()
 
         worker = None
+        runtime_lock = None
         if configuration.execution_mode == "alpaca_paper":
             assert configuration.alpaca_api_key_id and configuration.alpaca_api_secret_key
             adapter_type = ObservationAdapter if observation_only else AlpacaPaperAdapter
@@ -79,15 +90,46 @@ def create_app(settings: Settings | None = None, *, observation_only: bool = Fal
                 secret_key=configuration.alpaca_api_secret_key.get_secret_value(),
             )
             worker_type = ObservationWorker if observation_only else AlpacaPaperWorker
-            worker = worker_type(engine, adapter, configuration)
+            worker = worker_type(
+                engine,
+                adapter,
+                configuration,
+                release_on_ready=not observation_only,
+            )
             app.state.paper_worker = worker
-            worker.start()
+            if not observation_only:
+                try:
+                    runtime_lock = acquire_paper_runtime_lock(engine)
+                except Exception:
+                    await app.state.simulator.stop()
+                    engine.dispose()
+                    raise
+            try:
+                worker.start()
+            except Exception:
+                if runtime_lock is not None:
+                    release_paper_runtime_lock(runtime_lock)
+                await app.state.simulator.stop()
+                engine.dispose()
+                raise
         try:
             yield
         finally:
+            if configuration.execution_mode == "alpaca_paper" and not observation_only:
+                try:
+                    with engine.begin() as connection:
+                        connection.execute(
+                            update(system_controls).values(
+                                paused=True, updated_at=datetime.now(UTC)
+                            )
+                        )
+                except Exception:
+                    logger.exception("Failed to persist PAUSE during Paper shutdown")
             if getattr(app.state, "paper_worker", None):
                 await app.state.paper_worker.stop()
             await app.state.simulator.stop()
+            if runtime_lock is not None:
+                release_paper_runtime_lock(runtime_lock)
             engine.dispose()
 
     app = FastAPI(title="Trading Bot Dashboard", version="0.1.0", lifespan=lifespan)
@@ -139,6 +181,8 @@ def create_app(settings: Settings | None = None, *, observation_only: bool = Fal
         execution_mode = getattr(request.app.state.configuration, "execution_mode", "")
         if execution_mode == "alpaca_paper":
             mode = "ALPACA PAPER — DINHEIRO VIRTUAL"
+            worker = getattr(request.app.state, "paper_worker", None)
+            ready = ready and bool(worker and worker.reconciliation_ready and not worker.degraded)
         else:
             mode = (
                 "DADOS REAIS / EXECUÇÃO SIMULADA"

@@ -4,7 +4,8 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Engine, select
+from sqlalchemy.dialects.postgresql import insert
 
 from packages.domain.paper import AlpacaSubmitResult
 from packages.domain.risk import RiskDecision
@@ -21,7 +22,7 @@ class AlpacaPaperExecutor:
         self.adapter = adapter
 
     async def _handle_timeout_or_disconnect(
-        self, connection: Connection, order_id: UUID, client_order_id: str
+        self, engine: Engine, order_id: UUID, client_order_id: str
     ) -> None:
         """
         Idempotência: Se houver timeout, nunca reenviar cegamente.
@@ -33,33 +34,36 @@ class AlpacaPaperExecutor:
             broker_status = remote_order.get("status")
             status = self._map_status(broker_status)
 
-            connection.execute(
-                broker_orders.update()
-                .where(broker_orders.c.order_id == order_id)
-                .values(
-                    broker_order_id=remote_order.get("id"),
-                    status=broker_status,
-                    filled_quantity=Decimal(remote_order.get("filled_qty", "0")),
-                    last_reconciled_at=datetime.now(UTC),
+            with engine.begin() as connection:
+                connection.execute(
+                    broker_orders.update()
+                    .where(broker_orders.c.order_id == order_id)
+                    .values(
+                        broker_order_id=remote_order.get("id"),
+                        status=broker_status,
+                        filled_quantity=Decimal(str(remote_order.get("filled_qty", "0"))),
+                        last_reconciled_at=datetime.now(UTC),
+                    )
                 )
-            )
-            connection.execute(
-                paper_orders.update()
-                .where(paper_orders.c.order_id == order_id)
-                .values(status=status)
-            )
+                connection.execute(
+                    paper_orders.update()
+                    .where(paper_orders.c.order_id == order_id)
+                    .values(status=status)
+                )
         else:
             # Prova de ausência da ordem original -> podemos reenviar
-            connection.execute(
-                paper_orders.update()
-                .where(paper_orders.c.order_id == order_id)
-                .values(status="CANCELED", reason="timeout_not_found_on_broker")
-            )
-            connection.execute(
-                broker_orders.update()
-                .where(broker_orders.c.order_id == order_id)
-                .values(status="CANCELED", last_reconciled_at=datetime.now(UTC))
-            )
+            # Após timeout, cancelar localmente só quando o broker provar ausência (404).
+            with engine.begin() as connection:
+                connection.execute(
+                    paper_orders.update()
+                    .where(paper_orders.c.order_id == order_id)
+                    .values(status="CANCELED", reason="not_found_on_broker")
+                )
+                connection.execute(
+                    broker_orders.update()
+                    .where(broker_orders.c.order_id == order_id)
+                    .values(status="CANCELED", last_reconciled_at=datetime.now(UTC))
+                )
 
     def _map_status(self, alpaca_status: str | None) -> str:
         if not alpaca_status:
@@ -80,13 +84,13 @@ class AlpacaPaperExecutor:
 
     async def submit(
         self,
-        connection: Connection,
+        engine: Engine,
         run_id: UUID,
         signal_id: UUID,
         risk: RiskDecision,
         symbol: str,
         side: Literal["BUY", "SELL"],
-        quantity: int,
+        quantity: Decimal,
         order_id: UUID,
         requested_at: datetime,
         notional: Decimal | None = None,
@@ -96,7 +100,7 @@ class AlpacaPaperExecutor:
 
         # 1. Persistir intent: SUBMITTING
         try:
-            with connection.begin_nested():
+            with engine.begin() as connection:
                 connection.execute(
                     paper_orders.insert().values(
                         order_id=order_id,
@@ -129,12 +133,12 @@ class AlpacaPaperExecutor:
             if "IntegrityError" in type(e).__name__ or "UniqueViolation" in type(e).__name__:
                 logger.warning(f"Duplicate intent locally blocked for order {order_id}")
                 # IDEMPOTENCY: Do not POST. Reconcile existing intent instead.
-                await self.reconcile_order(connection, order_id)
+                await self.reconcile_order(engine, order_id)
                 # Fetch recovered status
-                from sqlalchemy import select
-                row = connection.execute(
-                    select(paper_orders.c.status).where(paper_orders.c.order_id == order_id)
-                ).first()
+                with engine.begin() as conn:
+                    row = conn.execute(
+                        select(paper_orders.c.status).where(paper_orders.c.order_id == order_id)
+                    ).first()
                 status = row.status if row else "UNKNOWN"
                 return AlpacaSubmitResult(status, "duplicate_intent", quantity)
             raise
@@ -150,7 +154,26 @@ class AlpacaPaperExecutor:
             )
         except Exception as e:
             logger.error(f"Error submitting order: {e}")
-            await self._handle_timeout_or_disconnect(connection, order_id, client_order_id)
+            from services.alpaca_paper.adapter import AlpacaPaperError
+
+            if isinstance(e, AlpacaPaperError) and e.status_code in (403, 422):
+                with engine.begin() as connection:
+                    connection.execute(
+                        paper_orders.update()
+                        .where(paper_orders.c.order_id == order_id)
+                        .values(status="REJECTED", reason=str(e))
+                    )
+                    connection.execute(
+                        broker_orders.update()
+                        .where(broker_orders.c.order_id == order_id)
+                        .values(
+                            status="rejected",
+                            last_reconciled_at=datetime.now(UTC),
+                        )
+                    )
+                return AlpacaSubmitResult("REJECTED", "broker_rejected", quantity)
+
+            await self._handle_timeout_or_disconnect(engine, order_id, client_order_id)
             return AlpacaSubmitResult("REJECTED", "network_error", quantity)
 
         # 3. Atualizar status
@@ -158,30 +181,37 @@ class AlpacaPaperExecutor:
         status = self._map_status(broker_status)
         broker_order_id = alpaca_order.get("id")
 
-        connection.execute(
-            broker_orders.update()
-            .where(broker_orders.c.order_id == order_id)
-            .values(
-                broker_order_id=broker_order_id,
-                status=broker_status,
-                last_reconciled_at=datetime.now(UTC),
+        with engine.begin() as connection:
+            connection.execute(
+                broker_orders.update()
+                .where(broker_orders.c.order_id == order_id)
+                .values(
+                    broker_order_id=broker_order_id,
+                    status=broker_status,
+                    last_reconciled_at=datetime.now(UTC),
+                )
             )
-        )
 
-        connection.execute(
-            paper_orders.update().where(paper_orders.c.order_id == order_id).values(status=status)
-        )
+            connection.execute(
+                paper_orders.update()
+                .where(paper_orders.c.order_id == order_id)
+                .values(status=status)
+            )
+
+        if status in ("PARTIALLY_FILLED", "FILLED"):
+            await self.reconcile_order(engine, order_id)
 
         return AlpacaSubmitResult(status, "submitted_to_broker", quantity)
 
-    async def reconcile_order(self, connection: Connection, order_id: UUID) -> None:
+    async def reconcile_order(self, engine: Engine, order_id: UUID) -> None:
         from services.api.models import broker_fills
 
-        row = connection.execute(
-            select(broker_orders.c.broker_order_id, broker_orders.c.client_order_id).where(
-                broker_orders.c.order_id == order_id
-            )
-        ).first()
+        with engine.begin() as connection:
+            row = connection.execute(
+                select(broker_orders.c.broker_order_id, broker_orders.c.client_order_id).where(
+                    broker_orders.c.order_id == order_id
+                )
+            ).first()
 
         if not row:
             return
@@ -195,64 +225,80 @@ class AlpacaPaperExecutor:
             remote_order = await self.adapter.get_order_by_client_id(client_order_id)
 
         if not remote_order:
-            connection.execute(
-                paper_orders.update()
-                .where(paper_orders.c.order_id == order_id)
-                .values(status="CANCELED", reason="not_found_on_broker")
-            )
-            connection.execute(
-                broker_orders.update()
-                .where(broker_orders.c.order_id == order_id)
-                .values(status="canceled", last_reconciled_at=datetime.now(UTC))
-            )
+            with engine.begin() as connection:
+                connection.execute(
+                    paper_orders.update()
+                    .where(paper_orders.c.order_id == order_id)
+                    .values(status="CANCELED", reason="not_found_on_broker")
+                )
+                connection.execute(
+                    broker_orders.update()
+                    .where(broker_orders.c.order_id == order_id)
+                    .values(status="canceled", last_reconciled_at=datetime.now(UTC))
+                )
             return
 
         new_status = remote_order.get("status")
-        filled_qty = Decimal(remote_order.get("filled_qty", "0"))
+        filled_qty = Decimal(str(remote_order.get("filled_qty", "0")))
         actual_broker_id = remote_order.get("id")
 
-        connection.execute(
-            broker_orders.update()
-            .where(broker_orders.c.order_id == order_id)
-            .values(
-                broker_order_id=actual_broker_id,
-                status=new_status,
-                filled_quantity=filled_qty,
-                last_reconciled_at=datetime.now(UTC),
-            )
-        )
-
         mapped_status = self._map_status(new_status)
-        connection.execute(
-            paper_orders.update()
-            .where(paper_orders.c.order_id == order_id)
-            .values(status=mapped_status, filled_quantity=int(filled_qty))
-        )
 
-        if new_status in ("partially_filled", "filled") and actual_broker_id:
+        with engine.begin() as connection:
+            connection.execute(
+                broker_orders.update()
+                .where(broker_orders.c.order_id == order_id)
+                .values(
+                    broker_order_id=actual_broker_id,
+                    status=new_status,
+                    filled_quantity=filled_qty,
+                    last_reconciled_at=datetime.now(UTC),
+                )
+            )
+
+            connection.execute(
+                paper_orders.update()
+                .where(paper_orders.c.order_id == order_id)
+                .values(status=mapped_status, filled_quantity=filled_qty)
+            )
+
+        # "se filled_qty > 0, os fills precisam ser persistidos independentemente do status final"
+        if filled_qty > 0 and actual_broker_id:
             activities = await self.adapter.get_fills(actual_broker_id)
             for act in activities:
                 fill_id = act.get("id")
-                qty = Decimal(act.get("qty", "0"))
-                price = Decimal(act.get("price", "0"))
+                qty = Decimal(str(act.get("qty", "0")))
+                price = Decimal(str(act.get("price", "0")))
 
-                try:
-                    with connection.begin_nested():
-                        connection.execute(
-                            broker_fills.insert().values(
-                                broker_fill_id=fill_id,
-                                order_id=order_id,
-                                quantity=qty,
-                                price=price,
-                                fee=Decimal("0"),
-                                filled_at=datetime.now(UTC),
-                            )
-                        )
-                except Exception as e:
-                    if (
-                        "IntegrityError" in type(e).__name__
-                        or "UniqueViolation" in type(e).__name__
-                    ):
+                # Fetch transaction_time and fee properly
+                t_time = act.get("transaction_time")
+                if t_time:
+                    try:
+                        filled_at_val = datetime.fromisoformat(t_time.replace("Z", "+00:00"))
+                    except Exception:
+                        filled_at_val = datetime.now(UTC)
+                else:
+                    filled_at_val = datetime.now(UTC)
+
+                fee_val = None
+                # Represent unavailable as None explicitly
+                # If they provide fee, parse it
+                if "fee" in act and act["fee"] is not None:
+                    try:
+                        fee_val = Decimal(str(act["fee"]))
+                    except (ArithmeticError, TypeError, ValueError):
                         pass
-                    else:
-                        raise
+
+                with engine.begin() as connection:
+                    connection.execute(
+                        insert(broker_fills)
+                        .values(
+                            broker_fill_id=fill_id,
+                            order_id=order_id,
+                            quantity=qty,
+                            price=price,
+                            fee=fee_val,
+                            filled_at=filled_at_val,
+                        )
+                        .on_conflict_do_nothing(index_elements=["broker_fill_id"])
+                    )

@@ -23,8 +23,7 @@ class ObservationWorker(AlpacaPaperWorker):
             logger.info("Observation worker started: Paper GET only; submission disabled")
             while self.running:
                 try:
-                    await self._reconcile_active_orders()
-                    await self._snapshot_broker_portfolio()
+                    await self.reconcile_once()
                     logger.info(
                         "Observation reconciliation: %s",
                         "degraded" if self.degraded else "snapshot refreshed",
@@ -32,6 +31,6 @@ class ObservationWorker(AlpacaPaperWorker):
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    self.degraded = True
+                    await self._enter_degraded("observation_reconciliation_failed")
                     logger.warning("Observation reconciliation failed; keeping last snapshot")
                 await asyncio.sleep(3)

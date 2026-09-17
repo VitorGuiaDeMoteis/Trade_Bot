@@ -1,4 +1,4 @@
-"""Real PostgreSQL tests for M1.5, always on disposable localhost:5433."""
+"""Real PostgreSQL tests for M1.5, always on disposable localhost:55432."""
 
 import asyncio
 import os

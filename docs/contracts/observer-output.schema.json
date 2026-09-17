@@ -80,12 +80,26 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "1.0",
+      "enum": [
+        "1.0",
+        "1.1"
+      ],
       "title": "Schema Version",
       "type": "string"
     },
     "regime": {
       "$ref": "#/$defs/Regime"
+    },
+    "bias": {
+      "default": "UNCERTAIN",
+      "enum": [
+        "BULLISH",
+        "BEARISH",
+        "NEUTRAL",
+        "UNCERTAIN"
+      ],
+      "title": "Bias",
+      "type": "string"
     },
     "risk_flags": {
       "items": {

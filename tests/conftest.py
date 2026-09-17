@@ -1,10 +1,47 @@
 """All automated tests are offline by default; integration uses only localhost."""
 
+import os
+
 import httpx
 import pytest
 
 import services.market_data.alpaca_provider as alpaca
-from services.api.config import get_settings
+from services.api.config import Settings, get_settings
+
+TEST_DATABASE_ENV = {
+    "APP_ENV": "test",
+    "DATABASE_ROLE": "test",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "55432",
+    "POSTGRES_DB": "trading_bot_test",
+    "POSTGRES_USER": "test_only",
+    "POSTGRES_PASSWORD": "test_only",
+    "RUNTIME_POSTGRES_HOST": "127.0.0.1",
+    "RUNTIME_POSTGRES_PORT": "5432",
+    "RUNTIME_POSTGRES_DB": "trading_bot_dev",
+    "TEST_POSTGRES_DB": "trading_bot_test",
+}
+
+
+def pytest_configure(config):
+    supplied_database = os.environ.get("POSTGRES_DB")
+    supplied_role = os.environ.get("DATABASE_ROLE")
+    supplied_url = os.environ.get("DATABASE_URL")
+    if (
+        supplied_database is not None and supplied_database != TEST_DATABASE_ENV["POSTGRES_DB"]
+    ) or (supplied_role is not None and supplied_role != "test"):
+        pytest.exit("REFUSING TO RUN TESTS AGAINST RUNTIME DATABASE")
+    if supplied_url:
+        pytest.exit(
+            "REFUSING TO RUN TESTS AGAINST RUNTIME DATABASE: "
+            "DATABASE_URL is unsupported; use the explicit test database variables"
+        )
+    for name, value in TEST_DATABASE_ENV.items():
+        os.environ[name] = value
+    try:
+        Settings(_env_file=None)
+    except ValueError as error:
+        pytest.exit(f"REFUSING TO RUN TESTS AGAINST RUNTIME DATABASE: {error}")
 
 
 @pytest.fixture(autouse=True)

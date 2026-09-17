@@ -242,7 +242,7 @@ def reconcile(c: Connection, run: RowMapping) -> PaperBook:
             raise ValueError("paper_snapshot_mismatch")
         previous.update({i.candle.symbol: i for i in group})
     if set(orders) != seen_orders or set(outcomes) != seen_outcomes:
-        raise ValueError("paper_unaccounted_orders_or_outcomes")
+        raise ValueError(f"orders: {set(orders)} vs {seen_orders}, outcomes: {set(outcomes)} vs {seen_outcomes}")
     saved_positions = {
         r["symbol"]: PaperPosition(
             r["symbol"], r["quantity"], r["average_price"], r["realized_pnl"]

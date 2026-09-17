@@ -34,7 +34,7 @@ def market(monkeypatch):  # type: ignore
     for key, value in {
         "APP_ENV": "test",
         "POSTGRES_HOST": "127.0.0.1",
-        "POSTGRES_PORT": "5433",
+        "POSTGRES_PORT": "55432",
         "POSTGRES_DB": "trading_bot_test",
         "POSTGRES_USER": "test_only",
         "POSTGRES_PASSWORD": "test_only",
