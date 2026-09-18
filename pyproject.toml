@@ -19,6 +19,9 @@ dependencies = [
   "exchange-calendars>=4.11,<5",
 ]
 
+[project.scripts]
+research = "research.momentum_v1.cli:app"
+
 [dependency-groups]
 dev = [
     "pytest>=8,<10",
@@ -26,9 +29,19 @@ dev = [
     "mypy>=1.15,<2",
     "httpx2>=2.12.0",
 ]
+research = [
+    "numpy>=2.5.2",
+    "pandas>=3.0.5",
+    "pandas-stubs>=3.0.5.260914",
+    "pyarrow>=25.0.1",
+    "python-dotenv>=1.2.3",
+    "typer>=0.27.2",
+    "types-requests>=2.33.0.20260906",
+    "yfinance>=1.7.0",
+]
 
 [tool.setuptools.packages.find]
-include = ["services*", "packages*", "scripts*"]
+include = ["services*", "packages*", "scripts*", "research*"]
 
 [tool.setuptools.package-data]
 "services.api" = ["static/*.html"]
@@ -36,13 +49,14 @@ include = ["services*", "packages*", "scripts*"]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 150
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "research/momentum_v1/tests"]
+pythonpath = ["."]
 addopts = "-ra --strict-markers"
 markers = ["integration: requer PostgreSQL dedicado do Docker Compose"]
 
@@ -50,5 +64,5 @@ markers = ["integration: requer PostgreSQL dedicado do Docker Compose"]
 mypy_path = "stubs"
 python_version = "3.12"
 strict = true
-files = ["services", "packages", "infrastructure/docker/migrations"]
+files = ["services", "packages", "infrastructure/docker/migrations", "research/momentum_v1"]
 plugins = ["pydantic.mypy"]
