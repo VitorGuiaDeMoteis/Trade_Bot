@@ -17,6 +17,11 @@ dependencies = [
   "websockets>=15,<17",
   "httpx>=0.28.1",
   "exchange-calendars>=4.11,<5",
+  "pandas>=3.0.5",
+  "numpy>=2.5.2",
+  "yfinance>=1.7.0",
+  "typer>=0.27.2",
+  "requests>=2.34.2",
 ]
 
 [dependency-groups]
@@ -25,6 +30,8 @@ dev = [
     "ruff>=0.11,<1",
     "mypy>=1.15,<2",
     "httpx2>=2.12.0",
+    "pandas-stubs>=3.0.5.260914",
+    "types-requests>=2.33.0.20260906",
 ]
 
 [tool.setuptools.packages.find]

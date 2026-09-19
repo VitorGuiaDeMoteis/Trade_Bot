@@ -1,0 +1,19 @@
+{
+  "universe": ["SPY", "IWM", "EFA", "EEM"],
+  "data": {
+    "start_date": "2003-01-01",
+    "first_valid_signal": "2003-05-01",
+    "end_date": "2025-12-31"
+  },
+  "parameters": {
+    "N": 5,
+    "L": 60,
+    "Z_entry": -2.0,
+    "Z_exit": 0.0,
+    "M": 10,
+    "slots": 4
+  },
+  "costs": {
+    "base_bps": 10
+  }
+}
