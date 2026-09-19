@@ -11,12 +11,12 @@ def test_package_imports() -> None:
     from research.mean_reversion_v1.gates import evaluate_gates
     from research.mean_reversion_v1.historical import DiagnosticFirewallError
     from research.mean_reversion_v1.strategies import MeanReversionParams, compute_z_scores
-    
+
     # Assert existence and callability of core components
     assert callable(run_backtest)
     assert callable(compute_z_scores)
     assert callable(evaluate_gates)
-    
+
     # Assert class instantiation works
     assert MeanReversionParams is not None
     assert BacktestResult is not None

@@ -110,28 +110,48 @@ def fetch_fred_dtb3(start: str, end: str) -> pd.DataFrame:
     return output
 
 
-def validate_primary_history(
-    data: pd.DataFrame, universe: list[str], first_valid_signal: str
-) -> None:
-    signal = pd.Timestamp(first_valid_signal)
-    required_start = signal - pd.DateOffset(months=12)
+def discover_first_valid_signal(
+    data: pd.DataFrame, universe: list[str], L: int, N: int
+) -> pd.Timestamp:
     index = pd.DatetimeIndex(data.index).tz_localize(None)
+    required_sessions = L + N
+
+    # Check if all assets have the required number of non-NaN sessions
+    for i in range(required_sessions, len(index)):
+        date = index[i]
+        valid_date = True
+
+        for symbol in universe:
+            closes = data[("Close", symbol)].iloc[: i + 1]
+            # we need the last required_sessions to be non-NaN
+            last_window = closes.iloc[-required_sessions:]
+            if last_window.isna().any() or len(last_window) < required_sessions:
+                valid_date = False
+                break
+
+        if valid_date:
+            return date
+
+    raise ValueError("INSUFFICIENT_PRIMARY_HISTORY: Could not discover a valid signal date")
+
+
+def validate_primary_history(
+    data: pd.DataFrame, universe: list[str], L: int, N: int
+) -> pd.Timestamp:
+
     for symbol in universe:
         for field in ("Open", "Close"):
             if (field, symbol) not in data.columns:
                 raise ValueError(f"PRIMARY_DATA_MISSING: {field}/{symbol}")
-        closes = data[("Close", symbol)].dropna()
-        if closes.empty or pd.Timestamp(closes.index[0]) > required_start:
-            raise ValueError(f"INSUFFICIENT_PRIMARY_HISTORY: {symbol}")
-        if closes.loc[:signal].empty or index[index <= signal].empty:
-            raise ValueError(f"INSUFFICIENT_PRIMARY_HISTORY: {symbol} at first signal")
+
+    first_signal = discover_first_valid_signal(data, universe, L, N)
+    return first_signal
 
 
 def validate_artifacts(artifacts_dir: Path, config: dict[str, object]) -> dict[str, str]:
     expected = {
         "primary_dataset_hash": artifacts_dir / "primary.parquet",
         "fred_hash": artifacts_dir / "fred_dtb3.parquet",
-        "alpaca_crosscheck_hash": artifacts_dir / "alpaca_crosscheck.parquet",
         "substitution_yahoo_hash": artifacts_dir / "substitutes.parquet",
     }
     for path in expected.values():
@@ -146,7 +166,13 @@ def validate_artifacts(artifacts_dir: Path, config: dict[str, object]) -> dict[s
     data_config = config["data"]
     if not isinstance(data_config, dict):
         raise TypeError("config.data must be an object")
-    validate_primary_history(primary, universe, str(data_config["first_valid_signal"]))
+    params_config = config.get("parameters", {})
+    if not isinstance(params_config, dict):
+        raise TypeError("config.parameters must be an object")
+    
+    _ = validate_primary_history(
+        primary, universe, int(params_config["L"]), int(params_config["N"])
+    )
     return {name: get_file_hash(path) for name, path in expected.items()}
 
 
@@ -173,7 +199,9 @@ def fetch_data(config_path: Path, artifacts_dir: Path = DEFAULT_ARTIFACTS_DIR) -
     start, end = str(data_config["start_date"]), str(data_config["end_date"])
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     primary = fetch_yahoo(universe, start, end)
-    validate_primary_history(primary, universe, str(data_config["first_valid_signal"]))
+    first_signal = validate_primary_history(
+        primary, universe, int(config["parameters"]["L"]), int(config["parameters"]["N"])
+    )
     primary.to_parquet(artifacts_dir / "primary.parquet")
     fetch_fred_dtb3(start, end).to_parquet(artifacts_dir / "fred_dtb3.parquet")
     fetch_yahoo(list(SUBSTITUTIONS.values()), start, end).to_parquet(
@@ -183,5 +211,11 @@ def fetch_data(config_path: Path, artifacts_dir: Path = DEFAULT_ARTIFACTS_DIR) -
     if crosscheck is not None:
         crosscheck.to_parquet(artifacts_dir / "alpaca_crosscheck.parquet")
     hashes = validate_artifacts(artifacts_dir, config)
-    metadata = {**hashes, "symbols": universe, "start_date": start, "end_date": end}
+    metadata = {
+        **hashes,
+        "symbols": universe,
+        "start_date": start,
+        "end_date": end,
+        "first_valid_signal": str(first_signal.date()),
+    }
     (artifacts_dir / "data_meta.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")

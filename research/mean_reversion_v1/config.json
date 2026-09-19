@@ -1,8 +1,7 @@
 {
   "universe": ["SPY", "IWM", "EFA", "EEM"],
   "data": {
-    "start_date": "2003-01-01",
-    "first_valid_signal": "2003-05-01",
+    "start_date": "2004-01-01",
     "end_date": "2025-12-31"
   },
   "parameters": {
