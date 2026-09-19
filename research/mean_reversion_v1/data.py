@@ -153,10 +153,13 @@ def validate_artifacts(artifacts_dir: Path, config: dict[str, object]) -> dict[s
         "primary_dataset_hash": artifacts_dir / "primary.parquet",
         "fred_hash": artifacts_dir / "fred_dtb3.parquet",
         "substitution_yahoo_hash": artifacts_dir / "substitutes.parquet",
+        "qqq_hash": artifacts_dir / "qqq.parquet",
     }
     for path in expected.values():
         if not path.is_file():
             raise FileNotFoundError(f"Required research artifact is missing: {path}")
+
+    for path in expected.values():
         enforce_date_range(pd.read_parquet(path))
     primary = pd.read_parquet(expected["primary_dataset_hash"])
     universe_value = config["universe"]
@@ -169,7 +172,7 @@ def validate_artifacts(artifacts_dir: Path, config: dict[str, object]) -> dict[s
     params_config = config.get("parameters", {})
     if not isinstance(params_config, dict):
         raise TypeError("config.parameters must be an object")
-    
+
     _ = validate_primary_history(
         primary, universe, int(params_config["L"]), int(params_config["N"])
     )
@@ -207,14 +210,17 @@ def fetch_data(config_path: Path, artifacts_dir: Path = DEFAULT_ARTIFACTS_DIR) -
     fetch_yahoo(list(SUBSTITUTIONS.values()), start, end).to_parquet(
         artifacts_dir / "substitutes.parquet"
     )
+    fetch_yahoo(["QQQ"], start, end).to_parquet(artifacts_dir / "qqq.parquet")
     crosscheck = fetch_alpaca_crosscheck(universe, start, end)
     if crosscheck is not None:
         crosscheck.to_parquet(artifacts_dir / "alpaca_crosscheck.parquet")
     hashes = validate_artifacts(artifacts_dir, config)
+    raw_data_start = primary.index[primary.index >= pd.Timestamp(start)][0]
     metadata = {
         **hashes,
         "symbols": universe,
         "start_date": start,
+        "raw_data_start": str(raw_data_start.date()),
         "end_date": end,
         "first_valid_signal": str(first_signal.date()),
     }
