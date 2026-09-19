@@ -56,6 +56,9 @@ def run_backtest(
     # We need to look at signal at previous close, execute at current open.
     pending_entry = {sym: False for sym in universe}
     pending_exit = {sym: False for sym in universe}
+    signal_entry_date: dict[str, pd.Timestamp | None] = {sym: None for sym in universe}
+    signal_exit_date: dict[str, pd.Timestamp | None] = {sym: None for sym in universe}
+    active_trade: dict[str, dict[str, object]] = {sym: {} for sym in universe}
 
     portfolio_values = []
     turnover = []
@@ -84,7 +87,6 @@ def run_backtest(
             if pending_entry[sym]:
                 open_price = float(data.at[current_date, ("Open", sym)])  # type: ignore[arg-type]
                 fill_price = open_price * (1.0 + entry_fee_rate)
-                # Buy as much as possible with the slot's cash
                 qty = cash[sym] / fill_price
                 shares[sym] += qty
                 cash[sym] = 0.0
@@ -93,9 +95,15 @@ def run_backtest(
 
                 trade_notional = qty * open_price
                 daily_turnover += trade_notional
-                trades_list.append(
-                    {"date": current_date, "symbol": sym, "side": "BUY", "notional": trade_notional}
-                )
+
+                active_trade[sym] = {
+                    "symbol": sym,
+                    "signal_entry_date": signal_entry_date[sym],
+                    "entry_execution_date": current_date,
+                    "entry_price": fill_price,
+                    "notional_in": trade_notional,
+                    "shares": qty,
+                }
                 pending_entry[sym] = False
 
             elif pending_exit[sym]:
@@ -107,18 +115,23 @@ def run_backtest(
 
                 proceeds = shares[sym] * fill_price
                 cash[sym] += proceeds
+
+                t = active_trade[sym]
+                t["signal_exit_date"] = signal_exit_date[sym]
+                t["exit_execution_date"] = current_date
+                t["exit_price"] = fill_price
+                t["holding_sessions"] = days_held[sym]
+                t["notional_out"] = proceeds
+                notional_in = float(t["notional_in"])  # type: ignore
+                t["pnl"] = proceeds - notional_in
+                t["return"] = proceeds / notional_in - 1.0 if notional_in > 0 else 0.0
+
+                trades_list.append(t.copy())
+                active_trade[sym] = {}
+
                 shares[sym] = 0.0
                 in_position[sym] = False
                 days_held[sym] = 0
-
-                trades_list.append(
-                    {
-                        "date": current_date,
-                        "symbol": sym,
-                        "side": "SELL",
-                        "notional": trade_notional,
-                    }
-                )
                 pending_exit[sym] = False
 
         # Evaluate portfolio value at CLOSE
@@ -145,18 +158,18 @@ def run_backtest(
         for sym in universe:
             if in_position[sym]:
                 days_held[sym] += 1
-
-                # Check exit
                 z = z_scores[sym].loc[current_date]
                 if pd.notna(z) and z >= params.Z_exit:
                     pending_exit[sym] = True
+                    signal_exit_date[sym] = current_date
                 elif days_held[sym] >= params.M:
                     pending_exit[sym] = True
+                    signal_exit_date[sym] = current_date
             else:
-                # Check entry
                 z = z_scores[sym].loc[current_date]
                 if pd.notna(z) and z < params.Z_entry:
                     pending_entry[sym] = True
+                    signal_entry_date[sym] = current_date
 
         prev_date = current_date
 
@@ -170,6 +183,41 @@ def run_backtest(
         turnover=pd.Series(turnover, index=sessions, name="turnover"),
         turnover_fraction=pd.Series(turnover_fraction, index=sessions, name="turnover_fraction"),
         positions=pd.DataFrame(positions_list, index=sessions),
-        trades=pd.DataFrame(trades_list, columns=["date", "symbol", "side", "notional"]),
+        trades=pd.DataFrame(
+            trades_list,
+            columns=[
+                "symbol",
+                "signal_entry_date",
+                "entry_execution_date",
+                "entry_price",
+                "signal_exit_date",
+                "exit_execution_date",
+                "exit_price",
+                "holding_sessions",
+                "notional_in",
+                "shares",
+                "notional_out",
+                "pnl",
+                "return",
+            ],
+        )
+        if trades_list
+        else pd.DataFrame(
+            columns=[
+                "symbol",
+                "signal_entry_date",
+                "entry_execution_date",
+                "entry_price",
+                "signal_exit_date",
+                "exit_execution_date",
+                "exit_price",
+                "holding_sessions",
+                "notional_in",
+                "shares",
+                "notional_out",
+                "pnl",
+                "return",
+            ]
+        ),
         daily_stats=pd.DataFrame(daily_stats_list, index=sessions),
     )

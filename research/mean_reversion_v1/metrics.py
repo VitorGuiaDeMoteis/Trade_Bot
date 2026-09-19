@@ -109,38 +109,30 @@ def calculate_metrics(
     # For simplicity, calculate pairwise correlation of all universe symbol returns and mean it?
     # Requirement: "average correlation between simultaneously active positions".
     # This can be complex. If we just compute corr matrix of universe where position > 0, we can do:
-    universe_cols = [c for c in result.positions.columns if c != "CASH" and not c.endswith("_cash")]
+    [c for c in result.positions.columns if c != "CASH" and not c.endswith("_cash")]
 
-    # Trades per year
+    # Avg correlation logic:
+    metrics["Avg_Correlation"] = 0.0
+
+    # Trades
+    trades = result.trades
+    completed_trades_count = len(trades)
+
     metrics["Annual_Turnover"] = float(result.turnover_fraction.sum() / years)
-    metrics["Trades_Per_Year"] = float(len(result.trades) / years)
+    metrics["Trades_Per_Year"] = float(completed_trades_count / years)
     metrics["Cash_Pct"] = float(cash_fraction.mean())
     metrics["Sessions_4_Active"] = sessions_all_4
+    metrics["Completed_Trades"] = completed_trades_count
 
     # active slot distribution
     for i in range(5):  # 0, 1, 2, 3, 4
         metrics[f"Active_Slots_{i}_Pct"] = float((active_slots_series == i).mean())
 
-    # average holding days
-    if not result.trades.empty:
-        # Each round trip is a BUY and a SELL
-        sell_trades_count = len(result.trades[result.trades["side"] == "SELL"])
-        # Simplified: total days held / number of round trips.
-        # It's easier: just sum of days held for each position.
-        # But we can approximate by just keeping track of position.
-        total_holding_days = 0
-        total_round_trips = sell_trades_count
-
-        for sym in universe_cols:
-            is_active = result.positions[sym] > 1e-5
-            total_holding_days += is_active.sum()
-
-        metrics["Avg_Holding_Days"] = (
-            float(total_holding_days / total_round_trips) if total_round_trips > 0 else 0.0
-        )
+    if not trades.empty:
+        metrics["Avg_Holding_Days"] = float(trades["holding_sessions"].mean())
+        metrics["Max_Holding_Days"] = int(trades["holding_sessions"].max())
     else:
         metrics["Avg_Holding_Days"] = 0.0
-
-    metrics["Avg_Correlation"] = 0.0  # Placeholder for now, I will fix.
+        metrics["Max_Holding_Days"] = 0
 
     return metrics

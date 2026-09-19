@@ -89,5 +89,5 @@ def test_first_signal_properties_and_execution() -> None:
     assert not spy_trades.empty
 
     entry_trade = spy_trades.iloc[0]
-    assert entry_trade["date"] == dates[66]  # executed at next session
-    assert entry_trade["side"] == "BUY"
+    assert entry_trade["entry_execution_date"] == dates[66]  # executed at next session
+    assert pd.notna(entry_trade["entry_execution_date"])

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
+import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -149,3 +151,55 @@ def sealed_source_paths(root: Path) -> list[Path]:
 
 def get_source_tree_hash(root: Path) -> str:
     return hash_files(sealed_source_paths(root), root=root)
+
+
+def get_git_info(root: Path) -> dict[str, str]:
+    def run_cmd(cmd):
+        res = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
+        return res.stdout.strip()
+
+    head = run_cmd(["git", "rev-parse", "HEAD"])
+    branch = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    status = run_cmd(["git", "status", "--porcelain"])
+
+    return {
+        "git_head": head,
+        "git_branch": branch,
+        "git_worktree_path": str(root.resolve()),
+        "git_is_clean": "YES" if not status else "NO",
+    }
+
+
+def create_run_manifest(
+    root: Path, config: dict, data_hashes: dict, command: str, period: dict
+) -> dict:
+    git_info = get_git_info(root)
+    if git_info["git_is_clean"] == "NO":
+        raise RuntimeError("DIRTY_RESEARCH_TREE")
+
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        **git_info,
+        "source_tree_hash": get_source_tree_hash(root),
+        "config_hash": hash_object(config),
+        "strategy_hash": get_strategy_definitions_hash(),
+        "cost_model_hash": get_cost_model_hash(),
+        "dependency_lock_hash": hash_files([root / "uv.lock"], root=root)
+        if (root / "uv.lock").exists()
+        else "NO_LOCK",
+        "command": command,
+        "run_started_at": dt.datetime.now(dt.UTC).isoformat(),
+        "requested_period": period,
+        "dataset_hashes": data_hashes,
+        "status": "RUNNING",
+    }
+
+
+def finalize_run_manifest(
+    manifest: dict, artifact_hashes: dict, status: str = "COMPLETED_VALID"
+) -> dict:
+    manifest["run_finished_at"] = dt.datetime.now(dt.UTC).isoformat()
+    manifest["status"] = status
+    manifest["artifact_hashes"] = artifact_hashes
+    manifest["run_manifest_hash"] = hash_object(manifest)
+    return manifest

@@ -1,11 +1,42 @@
+import json
+from pathlib import Path
+
 import typer
+
+from research.mean_reversion_v1.manifest import PROTOCOL_VERSION, get_git_info, get_source_tree_hash
 
 app = typer.Typer(no_args_is_help=True, help="Mean Reversion V1.2 research-only CLI")
 
 
 @app.command()
 def status() -> None:
-    print("Mean Reversion V1.2 CLI status: OK")
+    root = Path.cwd().resolve()
+    manifest_path = root / ".artifacts" / "research" / "mean_reversion_v1" / "dev_manifest.json"
+
+    dev_status = "NOT_RUN"
+    if manifest_path.exists():
+        try:
+            m = json.loads(manifest_path.read_text())
+            dev_status = m.get("status", "INVALID_FOR_RESEARCH")
+
+            print(f"DEV: {dev_status}")
+            print(f"git_head: {m.get('git_head')}")
+            print(f"source_tree_hash: {m.get('source_tree_hash')}")
+            print(f"protocol_version: {m.get('protocol_version')}")
+            return
+        except Exception:
+            dev_status = "INVALID_FOR_RESEARCH"
+
+    # If not run, show current
+    try:
+        git_info = get_git_info(root)
+        print(f"DEV: {dev_status}")
+        print(f"git_head: {git_info['git_head']}")
+        print(f"source_tree_hash: {get_source_tree_hash(root)}")
+        print(f"protocol_version: {PROTOCOL_VERSION}")
+    except Exception:
+        print(f"DEV: {dev_status}")
+        print("Cannot determine git/source state.")
 
 
 @app.command()
