@@ -1,0 +1,2429 @@
+# DUMP PARA REVIEW DE LIVE TRADING E ESTRATÉGIA
+
+================================================================================
+Arquivo: services/strategy_engine/engine.py
+================================================================================
+"""Motor de estratégia determinístico da v0.1 (M2)."""
+
+from datetime import datetime
+from uuid import uuid4
+
+from packages.domain.market import Candle
+from packages.domain.strategy import Signal, SignalType
+
+
+class BaseStrategy:
+    VERSION = "v1-deterministic"
+
+    def process_candle(self, candle: Candle, current_time: datetime) -> Signal:
+        """Processa um candle e retorna um sinal determinístico."""
+        if not candle.is_closed or (
+            candle.provider == "alpaca" and candle.close_time > current_time
+        ):
+            raise ValueError("partial_candle")
+        signal_type: SignalType = "HOLD"
+        if candle.close > candle.open:
+            signal_type = "BUY"
+        elif candle.close < candle.open:
+            signal_type = "SELL"
+
+        return Signal(
+            signal_id=uuid4(),
+            candle_id=candle.candle_id,
+            stream_id=candle.stream_id,
+            strategy_version=self.VERSION,
+            signal_type=signal_type,
+            generated_at=current_time,
+            reason={
+                "BUY": "Fechamento acima da abertura.",
+                "SELL": "Fechamento abaixo da abertura.",
+                "HOLD": "Abertura e fechamento equivalentes. Sem ação.",
+            }[signal_type],
+        )
+
+
+================================================================================
+Arquivo: packages/domain/strategy.py
+================================================================================
+"""Definição de domínio para Sinais gerados pelas Estratégias."""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Literal
+from uuid import UUID
+
+SignalType = Literal["BUY", "SELL", "HOLD"]
+
+
+@dataclass(frozen=True)
+class Signal:
+    signal_id: UUID
+    candle_id: UUID
+    stream_id: UUID
+    strategy_version: str
+    signal_type: SignalType
+    generated_at: datetime
+    reason: str
+
+    def __post_init__(self) -> None:
+        if self.generated_at.utcoffset() != timedelta(0):
+            raise ValueError("O relógio deve estar em UTC.")
+        if not self.strategy_version:
+            raise ValueError("A versão da estratégia é obrigatória.")
+        if not self.reason.strip():
+            raise ValueError("A justificativa do sinal é obrigatória.")
+
+
+================================================================================
+Arquivo: services/risk_engine/engine.py
+================================================================================
+"""Motor de risco determinístico da v0.1 (M2)."""
+
+from datetime import datetime, timedelta
+from uuid import uuid4
+
+from packages.domain.risk import RiskDecision
+from packages.domain.strategy import Signal
+
+
+class RiskEngine:
+    VERSION = "m2-expiry-1h"
+
+    def evaluate(
+        self, signal: Signal, current_time: datetime, system_paused: bool = False
+    ) -> RiskDecision:
+        """Avalia um sinal emitido pela estratégia e aprova ou bloqueia."""
+
+        if system_paused:
+            return RiskDecision(
+                decision_id=uuid4(),
+                signal_id=signal.signal_id,
+                decision="REJECTED",
+                reason="Sistema está pausado.",
+                decided_at=current_time,
+            )
+
+        # Regra de vencimento
+        if current_time - signal.generated_at > timedelta(hours=1):
+            return RiskDecision(
+                decision_id=uuid4(),
+                signal_id=signal.signal_id,
+                decision="REJECTED",
+                reason="Sinal vencido (gerado há mais de 1h).",
+                decided_at=current_time,
+            )
+
+        # Se passou por tudo
+        return RiskDecision(
+            decision_id=uuid4(),
+            signal_id=signal.signal_id,
+            decision="APPROVED",
+            reason="Aprovado pelas regras de risco.",
+            decided_at=current_time,
+        )
+
+
+================================================================================
+Arquivo: services/risk_engine/paper_sizing.py
+================================================================================
+"""Conservative initial allocation, including transaction costs in the 10% cap."""
+
+from decimal import ROUND_FLOOR, Decimal
+
+from packages.domain.paper import ZERO, money
+
+
+def entry_quantity(equity: Decimal, fill_price: Decimal, fee_bps: Decimal) -> int:
+    if equity <= ZERO or fill_price <= ZERO:
+        return 0
+    budget = money(equity * Decimal("0.10"))
+    unit_cost = fill_price * (Decimal("1") + fee_bps / Decimal("10000"))
+    quantity = int((budget / unit_cost).to_integral_value(rounding=ROUND_FLOOR))
+    # Fee rounding must never cross the allocation ceiling.
+    while (
+        quantity
+        and money(fill_price * quantity) + money(fill_price * quantity * fee_bps / Decimal("10000"))
+        > budget
+    ):
+        quantity -= 1
+    return quantity
+
+
+================================================================================
+Arquivo: packages/domain/risk.py
+================================================================================
+"""Definição de domínio para Decisões do Motor de Risco."""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Literal
+from uuid import UUID
+
+DecisionType = Literal["APPROVED", "REJECTED"]
+
+
+@dataclass(frozen=True)
+class RiskDecision:
+    decision_id: UUID
+    signal_id: UUID
+    decision: DecisionType
+    reason: str
+    decided_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.decided_at.utcoffset() != timedelta(0):
+            raise ValueError("O relógio deve estar em UTC.")
+        if self.decision == "REJECTED" and not self.reason:
+            raise ValueError("Toda decisão de rejeição deve ter uma justificativa (reason).")
+        if self.decision == "APPROVED" and not self.reason:
+            # Mesmo aprovado, é bom ter um reason padrão como 'OK' ou justificativa do limite
+            pass
+
+
+================================================================================
+Arquivo: services/alpaca_paper/adapter.py
+================================================================================
+from decimal import Decimal
+from typing import Any
+
+import httpx
+
+PAPER_BASE_URL = "https://paper-api.alpaca.markets/v2"
+
+
+class AlpacaPaperError(Exception):
+    def __init__(
+        self, message: str, code: str, retryable: bool = False, status_code: int | None = None
+    ):
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+        self.status_code = status_code
+
+
+class AlpacaPaperAdapter:
+    """
+    Adapter estrito para Alpaca Paper Trading.
+    Nenhuma URL LIVE é definida ou permitida.
+    """
+
+    def __init__(
+        self, api_key: str, secret_key: str, client: httpx.AsyncClient | None = None
+    ) -> None:
+        if not api_key.strip() or not secret_key.strip():
+            raise AlpacaPaperError("Credentials missing", "missing_credentials")
+        self._api_key = api_key
+        self._secret_key = secret_key
+        self._client = client
+        self._own_client = False
+
+    async def __aenter__(self) -> "AlpacaPaperAdapter":
+        if self._client is None:
+            self._own_client = True
+            self._client = httpx.AsyncClient(timeout=10.0)
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if self._own_client and self._client:
+            await self._client.aclose()
+            self._client = None
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        if not self._client:
+            raise RuntimeError("Client not initialized (use async with)")
+
+        headers = kwargs.pop("headers", {})
+        headers.update(
+            {
+                "APCA-API-KEY-ID": self._api_key,
+                "APCA-API-SECRET-KEY": self._secret_key,
+            }
+        )
+        url = f"{PAPER_BASE_URL}{path}"
+
+        try:
+            response = await self._client.request(method, url, headers=headers, **kwargs)
+        except httpx.RequestError as exc:
+            raise AlpacaPaperError("Network error", "network_error", retryable=True) from exc
+
+        if response.status_code == 429:
+            raise AlpacaPaperError("Rate limit exceeded", "rate_limit", retryable=True)
+
+        if response.status_code >= 500:
+            raise AlpacaPaperError("Server error", "server_error", retryable=True)
+
+        if response.status_code >= 400:
+            raise AlpacaPaperError(
+                f"Client error {response.status_code}: {response.text}",
+                "client_error",
+                retryable=False,
+                status_code=response.status_code,
+            )
+
+        if not response.content:
+            return {}
+        return response.json()
+
+    async def get_account(self) -> dict[str, Any]:
+        return await self._request("GET", "/account")  # type: ignore[no-any-return]
+
+    async def get_positions(self) -> list[dict[str, Any]]:
+        return await self._request("GET", "/positions")  # type: ignore[no-any-return]
+
+    async def get_open_orders(self) -> list[dict[str, Any]]:
+        return await self._request("GET", "/orders", params={"status": "open"})  # type: ignore[no-any-return]
+
+    async def get_order_by_client_id(self, client_order_id: str) -> dict[str, Any] | None:
+        try:
+            return await self._request(  # type: ignore[no-any-return]
+                "GET", "/orders:by_client_order_id", params={"client_order_id": client_order_id}
+            )
+        except AlpacaPaperError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+    async def submit_order(
+        self,
+        symbol: str,
+        qty: Decimal | None,
+        side: str,
+        client_order_id: str,
+        notional: str | None = None,
+    ) -> dict[str, Any]:
+        if side not in ("buy", "sell"):
+            raise ValueError("Side must be buy or sell")
+        payload = {
+            "symbol": symbol,
+            "side": side,
+            "type": "market",
+            "time_in_force": "day",
+            "client_order_id": client_order_id,
+        }
+        if qty is not None:
+            payload["qty"] = str(qty)
+        if notional is not None:
+            payload["notional"] = str(notional)
+
+        return await self._request("POST", "/orders", json=payload)  # type: ignore[no-any-return]
+
+    async def cancel_order(self, order_id: str) -> None:
+        try:
+            await self._request("DELETE", f"/orders/{order_id}")
+        except AlpacaPaperError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+    async def get_fills(self, order_id: str) -> list[dict[str, Any]]:
+        return await self._request("GET", "/account/activities/FILL", params={"order_id": order_id})  # type: ignore[no-any-return]
+
+    async def get_order_by_id(self, order_id: str) -> dict[str, Any] | None:
+        try:
+            return await self._request("GET", f"/orders/{order_id}")  # type: ignore[no-any-return]
+        except AlpacaPaperError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+
+================================================================================
+Arquivo: services/market_data/alpaca_provider.py
+================================================================================
+"""Alpaca Market Data only: canonical REST 1Hour; WS minute bars are hints."""
+
+import asyncio
+import json
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from time import monotonic
+from typing import Any, Protocol
+from uuid import uuid4
+
+import httpx
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
+
+from packages.contracts.market import MarketDataStatus, ProviderState
+from packages.contracts.provider import MarketDataProvider
+from packages.domain.market import Candle
+from packages.domain.market_bar import MarketBar
+from packages.domain.timeframes import timeframe_duration
+from services.market_data.calendar import regular_session
+from services.market_data.errors import ProviderError
+
+logger = logging.getLogger("trading_bot.market_data.alpaca")
+BACKOFF = (1, 2, 5, 10, 30)
+
+
+class Socket(Protocol):
+    async def recv(self) -> str | bytes: ...
+    async def send(self, message: str) -> None: ...
+    async def close(self) -> None: ...
+
+
+def alpaca_timeframe(timeframe: str) -> str:
+    timeframe_duration(timeframe)
+    return {"1h": "1Hour"}[timeframe]
+
+
+def parse_time(value: str) -> datetime:
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if result.tzinfo is None:
+        raise ValueError("utc_required")
+    return result.astimezone(UTC)
+
+
+class AlpacaMarketDataProvider(MarketDataProvider):
+    def __init__(
+        self,
+        api_key: str,
+        secret_key: str,
+        feed: str,
+        symbols: list[str],
+        timeframe: str,
+        *,
+        client: httpx.AsyncClient | None = None,
+        socket_factory: Callable[[], Awaitable[Socket]] | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        timer: Callable[[], float] = monotonic,
+        poll_seconds: float = 60,
+    ) -> None:
+        if not api_key.strip() or not secret_key.strip():
+            raise ProviderError("missing_alpaca_credentials")
+        if feed not in {"iex", "sip"} or not symbols or any(not s for s in symbols):
+            raise ProviderError("invalid_feed_or_symbols")
+        alpaca_timeframe(timeframe)
+        self._headers = {"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key}
+        self._auth = {"action": "auth", "key": api_key, "secret": secret_key}
+        self.feed, self.symbols, self.timeframe = feed, list(dict.fromkeys(symbols)), timeframe
+        self.clock, self.sleep, self.timer = clock, sleep, timer
+        self.poll_seconds = poll_seconds
+        self.client = client or httpx.AsyncClient(timeout=15)
+        self._own_client = client is None
+        self.socket_factory = socket_factory or self._connect
+        self._state: ProviderState = "connecting"
+        self._error: str | None = None
+        self._last_message: datetime | None = None
+        self._last_bar: datetime | None = None
+        self._last_open: dict[str, datetime] = {}
+        self._socket: Socket | None = None
+
+    async def _connect(self) -> Socket:
+        try:
+            return await connect(
+                f"wss://stream.data.alpaca.markets/v2/{self.feed}",
+                open_timeout=10,
+                close_timeout=5,
+                ping_interval=20,
+                ping_timeout=20,
+            )
+        except InvalidStatus as error:
+            status = error.response.status_code
+            code = {401: "unauthorized", 403: "feed_forbidden"}.get(
+                status, "websocket_http_rejected"
+            )
+            raise self._fail(code, retryable=status == 429 or status >= 500) from None
+        except InvalidHandshake:
+            raise self._fail("websocket_handshake_failed", retryable=True) from None
+
+    def _fail(self, code: str, *, retryable: bool = False) -> ProviderError:
+        self._state = "reconnecting" if retryable else "configuration_error"
+        self._error = code
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "market.provider.status",
+                    "reason": code,
+                    "provider": "alpaca",
+                    "state": self._state,
+                    "occurred_at": self.clock().isoformat(),
+                    "correlation_id": str(uuid4()),
+                }
+            )
+        )
+        return ProviderError(code, retryable=retryable)
+
+    async def get_historical_candles(
+        self,
+        symbol: str,
+        timeframe: str,
+        limit: int = 200,
+        *,
+        start: datetime | None = None,
+    ) -> list[MarketBar | Candle]:
+        mapped = alpaca_timeframe(timeframe)
+        if symbol not in self.symbols or not 1 <= limit <= 10000:
+            raise ValueError("invalid_symbol_or_limit")
+        if start is not None and start.utcoffset() != timedelta(0):
+            raise ValueError("utc_required")
+        # End filters OPEN timestamps: full hour plus a late-trade grace.
+        end = self.clock() - timeframe_duration(timeframe) - timedelta(seconds=60)
+        beginning = start or end - timedelta(days=max(30, limit // 4 + 10))
+        if beginning > end:
+            return []
+        params: dict[str, str | int] = {
+            "symbols": symbol,
+            "timeframe": mapped,
+            "feed": self.feed,
+            "adjustment": "raw",
+            "sort": "asc" if start else "desc",
+            "start": beginning.isoformat(),
+            "end": end.isoformat(),
+            "limit": limit,
+        }
+        result: list[MarketBar | Candle] = []
+        tokens: set[str] = set()
+        while True:
+            try:
+                response = await self.client.get(
+                    "https://data.alpaca.markets/v2/stocks/bars",
+                    headers=self._headers,
+                    params=params,
+                )
+            except httpx.RequestError:
+                raise self._fail("historical_transport", retryable=True) from None
+            if response.status_code in {401, 403}:
+                raise self._fail(
+                    "unauthorized" if response.status_code == 401 else "feed_forbidden"
+                )
+            if response.status_code == 429 or response.status_code >= 500:
+                raise self._fail("historical_unavailable", retryable=True)
+            if response.status_code != 200:
+                raise self._fail("historical_request_rejected")
+            try:
+                payload = json.loads(response.content, parse_float=Decimal)
+                grouped = payload["bars"] or {}
+                if set(grouped) - {symbol}:
+                    raise ValueError("unexpected_symbol")
+                for raw in grouped.get(symbol, []):
+                    opened = parse_time(raw["t"])
+                    if not beginning <= opened <= end:
+                        continue
+                    volume = Decimal(str(raw["v"]))
+                    if volume != volume.to_integral_value():
+                        raise ValueError("non_integral_volume")
+                    result.append(
+                        MarketBar(
+                            provider="alpaca",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            open_time=opened,
+                            close_time=opened + timeframe_duration(timeframe),
+                            open=Decimal(str(raw["o"])),
+                            high=Decimal(str(raw["h"])),
+                            low=Decimal(str(raw["l"])),
+                            close=Decimal(str(raw["c"])),
+                            volume=int(volume),
+                            is_closed=True,
+                        )
+                    )
+                token = payload.get("next_page_token")
+                if token is not None and not isinstance(token, str):
+                    raise ValueError("invalid_page_token")
+            except (KeyError, TypeError, ValueError, ArithmeticError):
+                error = self._fail("invalid_historical_payload")
+                self._state = "degraded"
+                raise error from None
+            if not token or (start is None and len(result) >= limit):
+                break
+            if token in tokens:
+                raise self._fail("repeated_page_token")
+            tokens.add(token)
+            params["page_token"] = token
+        result.sort(key=lambda bar: bar.open_time)
+        if start is None:
+            result = result[-limit:]
+        if result:
+            self._last_bar = max(b.close_time for b in result)
+        return result
+
+    async def _receive(self, socket: Socket, timeout: float = 10) -> list[dict[str, Any]]:
+        raw = await asyncio.wait_for(socket.recv(), timeout)
+        try:
+            messages = json.loads(raw, parse_float=Decimal)
+            if not isinstance(messages, list) or any(not isinstance(m, dict) for m in messages):
+                raise ValueError("invalid_envelope")
+        except (TypeError, ValueError):
+            raise self._fail("invalid_ws_payload") from None
+        self._last_message = self.clock()
+        for message in messages:
+            if message.get("T") == "error":
+                code = message.get("code")
+                names = {
+                    400: "invalid_symbol_or_request",
+                    401: "unauthorized",
+                    402: "auth_failed",
+                    403: "already_authenticated",
+                    404: "auth_timeout",
+                    405: "symbol_limit",
+                    406: "connection_limit",
+                    407: "slow_client",
+                    409: "feed_forbidden",
+                    410: "invalid_subscription",
+                    500: "provider_internal",
+                }
+                raise self._fail(names.get(code, "provider_rejected"), retryable=code in {407, 500})
+        return messages
+
+    async def handshake(self, socket: Socket) -> None:
+        welcome = await self._receive(socket)
+        if not any(m.get("T") == "success" and m.get("msg") == "connected" for m in welcome):
+            raise self._fail("connection_ack_missing")
+        await socket.send(json.dumps(self._auth))
+        auth = await self._receive(socket)
+        if not any(m.get("T") == "success" and m.get("msg") == "authenticated" for m in auth):
+            raise self._fail("authentication_ack_missing")
+        await socket.send(
+            json.dumps(
+                {
+                    "action": "subscribe",
+                    "bars": self.symbols,
+                    "updatedBars": self.symbols,
+                }
+            )
+        )
+        subscription = await self._receive(socket)
+        if not any(
+            m.get("T") == "subscription"
+            and set(self.symbols) <= set(m.get("bars", []))
+            and set(self.symbols) <= set(m.get("updatedBars", []))
+            for m in subscription
+        ):
+            raise self._fail("subscription_ack_missing")
+        self._state, self._error = "connected", None
+
+    def resume_from(self, symbol: str, opened: datetime) -> None:
+        self._last_open[symbol] = opened
+
+    async def refresh(self) -> AsyncIterator[MarketBar | Candle]:
+        for symbol in self.symbols:
+            for bar in await self.get_historical_candles(
+                symbol,
+                self.timeframe,
+                start=self._last_open.get(symbol),
+            ):
+                yield bar
+                self._last_open[symbol] = max(
+                    self._last_open.get(symbol, bar.open_time), bar.open_time
+                )
+
+    async def subscribe(self) -> AsyncIterator[MarketBar | Candle]:
+        attempt = 0
+        while True:
+            established: float | None = None
+            try:
+                self._state = "connecting" if attempt == 0 else "reconnecting"
+                self._socket = await self.socket_factory()
+                await self.handshake(self._socket)
+                established = self.timer()
+                due = self.timer()
+                while True:
+                    if self.timer() >= due:
+                        async for bar in self.refresh():
+                            yield bar
+                        due = self.timer() + self.poll_seconds
+                    try:
+                        messages = await self._receive(self._socket, max(0.01, due - self.timer()))
+                    except TimeoutError:
+                        continue
+                    for message in messages:
+                        if message.get("T") in {"b", "u"}:
+                            if message.get("S") not in self.symbols:
+                                raise self._fail("unexpected_ws_symbol")
+                            # Minute data is a liveness hint only. The bounded REST
+                            # refresh obtains canonical, closed hourly bars.
+                            parse_time(message["t"])
+                    if self.timer() - established >= 60:
+                        attempt = 0
+            except ProviderError as error:
+                if not error.retryable:
+                    raise
+            except (ConnectionClosed, OSError, TimeoutError):
+                self._fail("stream_disconnected", retryable=True)
+            except (ValueError, KeyError, TypeError):
+                raise self._fail("invalid_ws_payload") from None
+            finally:
+                if self._socket is not None:
+                    await self._socket.close()
+                    self._socket = None
+            if established is not None and self.timer() - established >= 60:
+                attempt = 0
+            await self.sleep(BACKOFF[min(attempt, len(BACKOFF) - 1)])
+            attempt += 1
+
+    def get_status(self) -> MarketDataStatus:
+        state, now = self._state, self.clock()
+        session = regular_session(now)
+        if state == "connected":
+            if session is None or not session[0] <= now < session[1]:
+                state = "market_closed"
+            elif now > session[0] + timedelta(hours=2) and (
+                self._last_bar is None or now - self._last_bar > timedelta(hours=2)
+            ):
+                state = "delayed"
+        return MarketDataStatus(
+            provider="alpaca",
+            feed=self.feed,
+            state=state,
+            symbols=self.symbols,
+            timeframe=self.timeframe,
+            session="regular",
+            last_message_at=self._last_message,
+            last_bar_at=self._last_bar,
+            error=self._error,
+        )
+
+    async def close(self) -> None:
+        if self._socket is not None:
+            await self._socket.close()
+        if self._own_client:
+            await self.client.aclose()
+        self._state = "stopped"
+
+
+================================================================================
+Arquivo: services/api/config.py
+================================================================================
+from datetime import UTC, datetime
+from decimal import Decimal
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
+
+from packages.domain.market import SimulationSpec
+from packages.domain.timeframes import timeframe_duration
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+    )
+
+    app_env: Literal["local", "test"] = "local"
+    database_role: Literal["runtime", "test"] = "runtime"
+    postgres_host: str = "127.0.0.1"
+    postgres_port: int = Field(default=5432, ge=1, le=65535)
+    postgres_db: str = "trading_bot_dev"
+    postgres_user: str = "trading_bot_dev"
+    postgres_password: SecretStr
+    runtime_postgres_host: str = "127.0.0.1"
+    runtime_postgres_port: int = Field(default=5432, ge=1, le=65535)
+    runtime_postgres_db: str = "trading_bot_dev"
+    test_postgres_db: str = "trading_bot_test"
+    simulator_enabled: bool = True
+    paper_initial_cash: Decimal = Field(default=Decimal("10000.00"), ge=0)
+    paper_fee_bps: Decimal = Field(default=Decimal("1.0"), ge=0)
+    paper_slippage_bps: Decimal = Field(default=Decimal("5.0"), ge=0)
+    simulator_seed: int = 42
+    simulator_start: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+    simulator_interval_seconds: float = Field(default=2.0, ge=0.1, le=3600)
+
+    market_data_provider: Literal["simulator", "alpaca"] = "simulator"
+    execution_mode: Literal["local_paper", "alpaca_paper"] = "local_paper"
+    alpaca_api_key_id: SecretStr | None = None
+    alpaca_api_secret_key: SecretStr | None = None
+    alpaca_data_feed: Literal["iex", "sip"] = "iex"
+    market_symbols: str = "SPY,AAPL,TSLA"
+    market_timeframe: str = "1h"
+    backtest_artifacts_dir: str = ".artifacts"
+
+    @field_validator("market_symbols")
+    @classmethod
+    def normalize_symbols(cls, value: str) -> str:
+        import re
+
+        symbols = list(dict.fromkeys(s.strip().upper() for s in value.split(",") if s.strip()))
+        if not symbols or any(not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,15}", s) for s in symbols):
+            raise ValueError("configuration_error: invalid_market_symbols")
+        return ",".join(symbols)
+
+    @model_validator(mode="after")
+    def validate_alpaca_credentials(self) -> "Settings":
+        SimulationSpec(self.simulator_seed, self.simulator_start)
+        timeframe_duration(self.market_timeframe)
+        requires_alpaca = (
+            self.market_data_provider == "alpaca" or self.execution_mode == "alpaca_paper"
+        )
+        if requires_alpaca and not (
+            self.alpaca_api_key_id
+            and self.alpaca_api_key_id.get_secret_value().strip()
+            and self.alpaca_api_secret_key
+            and self.alpaca_api_secret_key.get_secret_value().strip()
+        ):
+            raise ValueError("configuration_error: missing_alpaca_credentials")
+
+        validate_database_target(self)
+
+        return self
+
+    @property
+    def symbols(self) -> list[str]:
+        return (
+            ["TEST"] if self.market_data_provider == "simulator" else self.market_symbols.split(",")
+        )
+
+    @property
+    def database_url(self) -> URL:
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.postgres_user,
+            password=self.postgres_password.get_secret_value(),
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+def validate_database_target(settings: Settings) -> None:
+    """Validate the declared database role before an engine can be created.
+
+    The explicit role and exact configured database names are the source of truth.
+    We deliberately do not infer safety from a substring such as ``"test"``.
+    ``DATABASE_URL`` is not a supported fallback anywhere in this application.
+    """
+
+    if settings.runtime_postgres_db == settings.test_postgres_db:
+        raise ValueError("configuration_error: runtime and test database names must differ")
+
+    target = (settings.postgres_host, settings.postgres_port, settings.postgres_db)
+    runtime_target = (
+        settings.runtime_postgres_host,
+        settings.runtime_postgres_port,
+        settings.runtime_postgres_db,
+    )
+
+    if settings.app_env == "test":
+        if (
+            settings.database_role != "test"
+            or settings.postgres_db != settings.test_postgres_db
+            or target == runtime_target
+        ):
+            raise ValueError("REFUSING TO RUN TESTS AGAINST RUNTIME DATABASE")
+        return
+
+    if settings.database_role != "runtime" or settings.postgres_db != settings.runtime_postgres_db:
+        raise ValueError("configuration_error: runtime cannot connect to test database")
+
+
+================================================================================
+Arquivo: .env.example
+================================================================================
+# Somente desenvolvimento local. Valores ficticios, sem credenciais externas.
+APP_ENV=local
+DATABASE_ROLE=runtime
+POSTGRES_DB=trading_bot_dev
+POSTGRES_USER=trading_bot_dev
+POSTGRES_PASSWORD=local_example_only
+POSTGRES_PORT=5432
+RUNTIME_POSTGRES_HOST=127.0.0.1
+RUNTIME_POSTGRES_PORT=5432
+RUNTIME_POSTGRES_DB=trading_bot_dev
+TEST_POSTGRES_DB=trading_bot_test
+# Uma hora conceitual por candle; 2 segundos reais = demonstracao acelerada.
+SIMULATOR_ENABLED=true
+SIMULATOR_SEED=42
+SIMULATOR_START=2026-01-01T00:00:00Z
+SIMULATOR_INTERVAL_SECONDS=2
+
+# Fonte de dados; nunca habilita Trading API ou ordens.
+MARKET_DATA_PROVIDER=simulator
+ALPACA_API_KEY_ID=
+ALPACA_API_SECRET_KEY=
+ALPACA_DATA_FEED=iex
+MARKET_SYMBOLS=SPY,AAPL,TSLA
+MARKET_TIMEFRAME=1h
+# Alterar para 1 somente quando autorizar explicitamente o smoke de dados reais.
+RUN_ALPACA_SMOKE_TEST=0
+
+
+================================================================================
+Arquivo: scripts/paper_ops.py
+================================================================================
+"""Operational controls for the Alpaca Paper V1 runtime.
+
+All commands are fail-closed and use the explicit runtime database identity.
+No command in this module can select the Alpaca LIVE endpoint.
+"""
+
+import argparse
+import asyncio
+import json
+import os
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
+
+import httpx
+from sqlalchemy import func, select, text, update
+
+from services.alpaca_paper.adapter import PAPER_BASE_URL, AlpacaPaperAdapter
+from services.alpaca_paper.worker import ACTIVE_ORDER_STATUSES, AlpacaPaperWorker
+from services.api.config import Settings, validate_database_target
+from services.api.database import (
+    check_database,
+    create_database_engine,
+    get_alembic_head,
+    get_alembic_heads,
+    paper_runtime_lock_available,
+)
+from services.api.models import (
+    broker_fills,
+    broker_orders,
+    broker_portfolio_snapshots,
+    broker_positions,
+    paper_orders,
+    paper_runs,
+    system_controls,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PID_FILE = PROJECT_ROOT / ".runtime" / "alpaca-paper.pid"
+
+
+def runtime_pid() -> int | None:
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        os.kill(pid, 0)
+        return pid
+    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+        return None
+
+
+def runtime_settings() -> Settings:
+    settings = Settings(execution_mode="alpaca_paper")
+    validate_database_target(settings)
+    if settings.app_env == "test" or settings.database_role != "runtime":
+        raise RuntimeError("paper_runtime_requires_runtime_environment")
+    if PAPER_BASE_URL != "https://paper-api.alpaca.markets/v2":
+        raise RuntimeError("alpaca_live_endpoint_forbidden")
+    return settings
+
+
+def database_revision(engine) -> tuple[list[str], str]:  # type: ignore[no-untyped-def]
+    expected = get_alembic_head()
+    with engine.connect() as connection:
+        current = list(connection.scalars(text("SELECT version_num FROM alembic_version")))
+    return current, expected
+
+
+def set_paused(engine, paused: bool, *, require_active_run: bool = False) -> None:  # type: ignore[no-untyped-def]
+    with engine.begin() as connection:
+        control = (
+            connection.execute(
+                select(system_controls).where(system_controls.c.control_id == 1).with_for_update()
+            )
+            .mappings()
+            .first()
+        )
+        if control is None:
+            raise RuntimeError("system_control_missing_run_baseline_reset_first")
+        if require_active_run and control["active_run_id"] is None:
+            raise RuntimeError("active_alpaca_paper_run_missing_baseline_reset_first")
+        if require_active_run:
+            mode = connection.scalar(
+                select(paper_runs.c.mode).where(paper_runs.c.run_id == control["active_run_id"])
+            )
+            if mode != "ALPACA_PAPER":
+                raise RuntimeError(f"active_run_mode_mismatch:{mode}")
+            connection.execute(
+                update(paper_runs)
+                .where(paper_runs.c.run_id == control["active_run_id"])
+                .values(status="RUNNING")
+            )
+        connection.execute(
+            update(system_controls)
+            .where(system_controls.c.control_id == 1)
+            .values(paused=paused, updated_at=datetime.now(UTC))
+        )
+        confirmed = connection.scalar(
+            select(system_controls.c.paused).where(system_controls.c.control_id == 1)
+        )
+        if confirmed != paused:
+            raise RuntimeError("pause_confirmation_failed")
+
+
+def validate_active_runtime_run(engine) -> None:  # type: ignore[no-untyped-def]
+    with engine.connect() as connection:
+        control = (
+            connection.execute(select(system_controls).where(system_controls.c.control_id == 1))
+            .mappings()
+            .first()
+        )
+        if control is None or control["active_run_id"] is None:
+            raise RuntimeError("active_alpaca_paper_run_missing_baseline_reset_first")
+        mode = connection.scalar(
+            select(paper_runs.c.mode).where(paper_runs.c.run_id == control["active_run_id"])
+        )
+        if mode != "ALPACA_PAPER":
+            raise RuntimeError(f"active_run_mode_mismatch:{mode}")
+
+
+async def run_preflight(release: bool) -> dict[str, Any]:
+    settings = runtime_settings()
+    heads = get_alembic_heads()
+    if len(heads) != 1:
+        raise RuntimeError(f"alembic_expected_single_head:{','.join(heads) or 'none'}")
+
+    engine = create_database_engine(settings)
+    try:
+        if check_database(engine) != "up":
+            current, expected = database_revision(engine)
+            raise RuntimeError(f"alembic_not_at_head:current={current},head={expected}")
+        if not paper_runtime_lock_available(engine):
+            raise RuntimeError("alpaca_paper_runtime_already_active")
+        validate_active_runtime_run(engine)
+
+        assert settings.alpaca_api_key_id and settings.alpaca_api_secret_key
+        adapter = AlpacaPaperAdapter(
+            settings.alpaca_api_key_id.get_secret_value(),
+            settings.alpaca_api_secret_key.get_secret_value(),
+        )
+        worker = AlpacaPaperWorker(engine, adapter, settings)
+        async with adapter:
+            account, positions = await worker.reconcile_once()
+            open_orders = await adapter.get_open_orders()
+
+        exposure = sum(
+            (Decimal(str(position["market_value"])) for position in positions), Decimal("0")
+        )
+        if release:
+            set_paused(engine, False, require_active_run=True)
+        return {
+            "app_env": settings.app_env,
+            "database": settings.postgres_db,
+            "alembic": get_alembic_head(),
+            "broker_endpoint": PAPER_BASE_URL,
+            "broker_account": account.get("status"),
+            "broker_positions": len(positions),
+            "broker_open_orders": len(open_orders),
+            "broker_exposure": str(exposure),
+            "reconciliation": "COMPLETE",
+            "execution_released": release,
+        }
+    finally:
+        engine.dispose()
+
+
+def pause_command() -> dict[str, Any]:
+    settings = runtime_settings()
+    engine = create_database_engine(settings)
+    try:
+        set_paused(engine, True)
+        return {"database": settings.postgres_db, "paused": True, "confirmed": True}
+    finally:
+        engine.dispose()
+
+
+def audit_runtime_fixtures() -> dict[str, Any]:
+    settings = runtime_settings()
+    engine = create_database_engine(settings)
+    try:
+        with engine.connect() as connection:
+            signatures = {
+                "replay_runs": connection.scalar(
+                    select(func.count())
+                    .select_from(paper_runs)
+                    .where(paper_runs.c.mode == "REPLAY")
+                ),
+                "broker_order_b_id": connection.scalar(
+                    select(func.count())
+                    .select_from(broker_orders)
+                    .where(broker_orders.c.broker_order_id == "b_id")
+                ),
+                "broker_fill_fill_1": connection.scalar(
+                    select(func.count())
+                    .select_from(broker_fills)
+                    .where(broker_fills.c.broker_fill_id == "fill_1")
+                ),
+            }
+        if any(signatures.values()):
+            raise RuntimeError(f"runtime_fixture_contamination:{signatures}")
+        return {
+            "database": settings.postgres_db,
+            "runtime_fixture_signatures": signatures,
+            "clean": True,
+        }
+    finally:
+        engine.dispose()
+
+
+def _safe_decimal(value: Any) -> Decimal | None:
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return result if result.is_finite() else None
+
+
+async def status_command() -> dict[str, Any]:
+    settings = runtime_settings()
+    engine = create_database_engine(settings)
+    result: dict[str, Any] = {
+        "app_env": settings.app_env,
+        "database": settings.postgres_db,
+        "runtime_pid": runtime_pid(),
+        "broker_endpoint": PAPER_BASE_URL,
+    }
+    degraded = False
+    local_positions: list[dict[str, Any]] = []
+    local_open_orders: int | None = None
+    try:
+        try:
+            result["runtime_lock_available"] = paper_runtime_lock_available(engine)
+        except Exception:
+            result["runtime_lock_available"] = "UNKNOWN"
+            degraded = True
+        heads = get_alembic_heads()
+        result["alembic_head"] = list(heads)
+        try:
+            current, expected = database_revision(engine)
+            result["alembic_current"] = current
+            result["schema_at_head"] = current == [expected] and len(heads) == 1
+        except Exception:
+            result["alembic_current"] = "UNAVAILABLE"
+            result["schema_at_head"] = False
+        degraded |= not result["schema_at_head"]
+
+        try:
+            with engine.connect() as connection:
+                control = connection.execute(select(system_controls)).mappings().first()
+                snapshot = (
+                    connection.execute(
+                        select(broker_portfolio_snapshots).where(
+                            broker_portfolio_snapshots.c.provider == "alpaca"
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                local_positions = [
+                    dict(row)
+                    for row in connection.execute(
+                        select(broker_positions).where(broker_positions.c.provider == "alpaca")
+                    ).mappings()
+                ]
+                local_open_orders = connection.scalar(
+                    select(func.count())
+                    .select_from(paper_orders)
+                    .where(paper_orders.c.status.in_(ACTIVE_ORDER_STATUSES))
+                )
+                active_run_mode = (
+                    None
+                    if control is None or control["active_run_id"] is None
+                    else connection.scalar(
+                        select(paper_runs.c.mode).where(
+                            paper_runs.c.run_id == control["active_run_id"]
+                        )
+                    )
+                )
+            result["runtime_paused"] = None if control is None else control["paused"]
+            result["runtime_active_run"] = (
+                None if control is None else str(control["active_run_id"] or "") or None
+            )
+            result["runtime_active_run_mode"] = active_run_mode
+            result["local_reconciliation_state"] = (
+                "MISSING" if snapshot is None else snapshot["status"]
+            )
+            result["local_reconciled_at"] = (
+                None if snapshot is None else snapshot["last_reconciled_at"].isoformat()
+            )
+            reconciliation_age = (
+                None
+                if snapshot is None
+                else (datetime.now(UTC) - snapshot["last_reconciled_at"]).total_seconds()
+            )
+            result["local_reconciliation_age_seconds"] = reconciliation_age
+            result["local_runtime_positions"] = [
+                {
+                    "symbol": row["symbol"],
+                    "qty": str(row["quantity"]),
+                    "market_value": str(row["market_value"]),
+                }
+                for row in local_positions
+            ]
+            result["local_open_orders"] = local_open_orders
+            degraded |= snapshot is None or snapshot["status"] != "ACTIVE"
+            degraded |= reconciliation_age is None or reconciliation_age > 15
+            degraded |= active_run_mode != "ALPACA_PAPER"
+        except Exception:
+            result["runtime_paused"] = "UNKNOWN"
+            result["local_reconciliation_state"] = "UNAVAILABLE"
+            degraded = True
+
+        try:
+            response = httpx.get("http://127.0.0.1:8000/health", timeout=1.0)
+            result["api_health"] = response.json().get("status")
+        except Exception:
+            result["api_health"] = "OFFLINE"
+
+        try:
+            assert settings.alpaca_api_key_id and settings.alpaca_api_secret_key
+            adapter = AlpacaPaperAdapter(
+                settings.alpaca_api_key_id.get_secret_value(),
+                settings.alpaca_api_secret_key.get_secret_value(),
+            )
+            async with adapter:
+                account = await adapter.get_account()
+                positions = await adapter.get_positions()
+                orders = await adapter.get_open_orders()
+            exposure = Decimal("0")
+            exposure_known = True
+            for position in positions:
+                value = _safe_decimal(position.get("market_value"))
+                if value is None:
+                    exposure_known = False
+                else:
+                    exposure += value
+            for order in orders:
+                if str(order.get("side", "")).lower() != "buy":
+                    continue
+                value = _safe_decimal(order.get("notional"))
+                if value is None:
+                    exposure_known = False
+                else:
+                    exposure += value
+            result["broker_paper_status"] = account.get("status")
+            result["broker_positions"] = [
+                {
+                    "symbol": p.get("symbol"),
+                    "qty": p.get("qty"),
+                    "market_value": p.get("market_value"),
+                }
+                for p in positions
+            ]
+            result["broker_open_orders"] = len(orders)
+            result["broker_exposure"] = str(exposure) if exposure_known else "UNKNOWN"
+            broker_position_quantities = {
+                str(item.get("symbol")): _safe_decimal(item.get("qty")) for item in positions
+            }
+            local_position_quantities = {
+                str(item["symbol"]): Decimal(str(item["quantity"])) for item in local_positions
+            }
+            result["broker_local_divergence"] = (
+                broker_position_quantities != local_position_quantities
+                or local_open_orders is None
+                or len(orders) != local_open_orders
+            )
+            degraded |= account.get("status") != "ACTIVE" or not exposure_known
+            degraded |= result["broker_local_divergence"]
+        except Exception:
+            result["broker_paper_status"] = "UNAVAILABLE"
+            result["broker_positions"] = "UNAVAILABLE"
+            result["broker_open_orders"] = "UNAVAILABLE"
+            result["broker_exposure"] = "UNKNOWN"
+            degraded = True
+
+        result["degraded"] = degraded
+        return result
+    finally:
+        engine.dispose()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Alpaca Paper V1 operational controls")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    preflight = subparsers.add_parser("preflight")
+    preflight.add_argument("--release", action="store_true")
+    subparsers.add_parser("status")
+    subparsers.add_parser("pause")
+    subparsers.add_parser("audit-runtime-fixtures")
+    args = parser.parse_args()
+
+    try:
+        if args.command == "preflight":
+            output = asyncio.run(run_preflight(args.release))
+        elif args.command == "status":
+            output = asyncio.run(status_command())
+        elif args.command == "pause":
+            output = pause_command()
+        else:
+            output = audit_runtime_fixtures()
+    except Exception as error:
+        parser.exit(1, f"FAIL CLOSED: {error}\n")
+    print(json.dumps(output, indent=2, ensure_ascii=False, default=str))
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+Arquivo: scripts/paper-status.sh
+================================================================================
+#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+export APP_ENV="local"
+export DATABASE_ROLE="runtime"
+export EXECUTION_MODE="alpaca_paper"
+exec .venv/bin/python -m scripts.paper_ops status
+
+
+================================================================================
+Arquivo: scripts/stop-alpaca.sh
+================================================================================
+#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+export APP_ENV="local"
+export DATABASE_ROLE="runtime"
+export EXECUTION_MODE="alpaca_paper"
+
+.venv/bin/python -m scripts.paper_ops pause
+
+PID_FILE="$PROJECT_ROOT/.runtime/alpaca-paper.pid"
+if [[ ! -f "$PID_FILE" ]]; then
+  echo "PAUSE confirmado; nenhum PID de runtime registrado."
+  exit 0
+fi
+
+runtime_pid="$(tr -cd '0-9' < "$PID_FILE")"
+if [[ -z "$runtime_pid" ]] || ! kill -0 "$runtime_pid" 2>/dev/null; then
+  echo "PAUSE confirmado; runtime já estava encerrado."
+  exit 0
+fi
+
+kill -TERM "$runtime_pid"
+for _ in {1..30}; do
+  if ! kill -0 "$runtime_pid" 2>/dev/null; then
+    echo "PAUSE confirmado; runtime encerrado de forma graciosa."
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "PAUSE confirmado, mas o runtime não encerrou em 30 segundos (PID $runtime_pid)." >&2
+exit 1
+
+
+================================================================================
+Arquivo: scripts/reset-paper-baseline.py
+================================================================================
+#!/usr/bin/env python3
+"""Create a reviewed, backed-up Alpaca Paper V1 database baseline."""
+
+# ruff: noqa: E402 -- direct execution needs the project root on sys.path first.
+
+import argparse
+import asyncio
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+import httpx
+from sqlalchemy import func, insert, select
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.paper_ops import database_revision, runtime_pid, runtime_settings
+from services.alpaca_paper.adapter import AlpacaPaperAdapter
+from services.api.config import Settings
+from services.api.database import (
+    acquire_paper_runtime_lock,
+    create_database_engine,
+    paper_runtime_lock_available,
+    release_paper_runtime_lock,
+)
+from services.api.models import (
+    broker_fills,
+    broker_orders,
+    broker_portfolio_snapshots,
+    broker_positions,
+    paper_events,
+    paper_fills,
+    paper_marks,
+    paper_orders,
+    paper_outcomes,
+    paper_runs,
+    portfolio_snapshots,
+    positions,
+    risk_decisions,
+    signals,
+    system_controls,
+)
+
+BACKUP_DIR = PROJECT_ROOT / ".artifacts" / "paper-baseline-backups"
+
+# Children precede parents. alembic_version, candles, system_events,
+# observer audit, and market archives are deliberately excluded.
+RESET_TABLES = (
+    broker_fills,
+    broker_orders,
+    paper_outcomes,
+    paper_fills,
+    paper_orders,
+    broker_positions,
+    broker_portfolio_snapshots,
+    positions,
+    portfolio_snapshots,
+    paper_marks,
+    paper_events,
+    system_controls,
+    risk_decisions,
+    signals,
+    paper_runs,
+)
+
+
+def planned_backup_path() -> Path:
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return BACKUP_DIR / f"trading_bot_dev-before-paper-reset-{stamp}.dump"
+
+
+def api_is_active() -> bool:
+    try:
+        return httpx.get("http://127.0.0.1:8000/health", timeout=0.75).status_code in (200, 503)
+    except Exception:
+        return False
+
+
+async def broker_state(
+    settings: Settings,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    assert settings.alpaca_api_key_id and settings.alpaca_api_secret_key
+    adapter = AlpacaPaperAdapter(
+        settings.alpaca_api_key_id.get_secret_value(),
+        settings.alpaca_api_secret_key.get_secret_value(),
+    )
+    async with adapter:
+        account = await adapter.get_account()
+        positions_state = await adapter.get_positions()
+        open_orders = await adapter.get_open_orders()
+    return account, positions_state, open_orders
+
+
+def inspect_plan(engine, settings, backup_path: Path) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    current, head = database_revision(engine)
+    with engine.connect() as connection:
+        counts = {
+            table.name: connection.scalar(select(func.count()).select_from(table))
+            for table in RESET_TABLES
+        }
+        control = connection.execute(select(system_controls)).mappings().first()
+    account, broker_positions_state, broker_orders_state = asyncio.run(broker_state(settings))
+    return {
+        "mode": "DRY_RUN",
+        "target_database": settings.postgres_db,
+        "environment": settings.app_env,
+        "database_role": settings.database_role,
+        "schema_current": current,
+        "schema_head": head,
+        "schema_at_head": current == [head],
+        "runtime_pid": runtime_pid(),
+        "runtime_api_active": api_is_active(),
+        "runtime_lock_available": paper_runtime_lock_available(engine),
+        "runtime_paused": None if control is None else control["paused"],
+        "tables": counts,
+        "broker_account": account.get("status"),
+        "broker_positions": [
+            {
+                "symbol": row.get("symbol"),
+                "qty": row.get("qty"),
+                "market_value": row.get("market_value"),
+            }
+            for row in broker_positions_state
+        ],
+        "broker_open_orders": [
+            {
+                "id": row.get("id"),
+                "client_order_id": row.get("client_order_id"),
+                "symbol": row.get("symbol"),
+                "side": row.get("side"),
+                "status": row.get("status"),
+            }
+            for row in broker_orders_state
+        ],
+        "backup_file": str(backup_path),
+    }
+
+
+def create_backup(settings, backup_path: Path) -> None:  # type: ignore[no-untyped-def]
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    environment = os.environ.copy()
+    environment["PGPASSWORD"] = settings.postgres_password.get_secret_value()
+    partial_path = backup_path.with_suffix(".dump.partial")
+    partial_path.unlink(missing_ok=True)
+    if shutil.which("pg_dump"):
+        command = [
+            "pg_dump",
+            "--host",
+            settings.postgres_host,
+            "--port",
+            str(settings.postgres_port),
+            "--username",
+            settings.postgres_user,
+            "--dbname",
+            settings.postgres_db,
+            "--format=custom",
+            "--file",
+            str(partial_path),
+        ]
+        completed = subprocess.run(
+            command,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+        )
+    else:
+        command = [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "postgres",
+            "pg_dump",
+            "--username",
+            settings.postgres_user,
+            "--dbname",
+            settings.postgres_db,
+            "--format=custom",
+        ]
+        with partial_path.open("wb") as output:
+            completed = subprocess.run(
+                command,
+                cwd=PROJECT_ROOT,
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+    if completed.returncode != 0 or not partial_path.is_file() or partial_path.stat().st_size == 0:
+        partial_path.unlink(missing_ok=True)
+        raise RuntimeError("operational_backup_failed")
+    partial_path.replace(backup_path)
+
+
+def create_clean_baseline(engine, account) -> str:  # type: ignore[no-untyped-def]
+    initial_cash = Decimal(str(account.get("cash", "0")))
+    if not initial_cash.is_finite() or initial_cash <= 0:
+        raise RuntimeError("invalid_broker_cash_for_baseline")
+    run_id = uuid4()
+    now = datetime.now(UTC)
+    dataset_hash = hashlib.sha256(b"[]").hexdigest()
+
+    with engine.begin() as connection:
+        for table in RESET_TABLES:
+            connection.execute(table.delete())
+        connection.execute(
+            insert(paper_runs).values(
+                run_id=run_id,
+                mode="ALPACA_PAPER",
+                provider="alpaca",
+                status="READY",
+                initial_cash=initial_cash,
+                cash=initial_cash,
+                fees=Decimal("0"),
+                realized_pnl=Decimal("0"),
+                fee_bps=Decimal("0"),
+                slippage_bps=Decimal("0"),
+                dataset=[],
+                dataset_hash=dataset_hash,
+                step=0,
+                as_of=None,
+                created_at=now,
+            )
+        )
+        connection.execute(
+            insert(system_controls).values(
+                control_id=1,
+                active_run_id=run_id,
+                paused=True,
+                updated_at=now,
+            )
+        )
+    return str(run_id)
+
+
+def validate_confirm_preconditions(plan: dict[str, object]) -> None:
+    if plan["runtime_pid"] is not None or plan["runtime_api_active"] is True:
+        raise RuntimeError("runtime_is_active")
+    if plan["runtime_paused"] is not True:
+        raise RuntimeError("runtime_is_not_paused")
+    if plan["runtime_lock_available"] is not True:
+        raise RuntimeError("runtime_is_active")
+    if plan["broker_positions"]:
+        raise RuntimeError("broker_has_open_positions")
+    if plan["broker_open_orders"]:
+        raise RuntimeError("broker_has_open_orders")
+
+
+def perform_confirm(settings, engine, plan, backup_path: Path) -> str:  # type: ignore[no-untyped-def]
+    validate_confirm_preconditions(plan)
+    create_backup(settings, backup_path)
+
+    # Re-read broker state after backup and immediately before mutation.
+    account, current_positions, current_orders = asyncio.run(broker_state(settings))
+    if current_positions:
+        raise RuntimeError("broker_positions_changed_after_backup")
+    if current_orders:
+        raise RuntimeError("broker_orders_changed_after_backup")
+    return create_clean_baseline(engine, account)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Safe Alpaca Paper baseline reset")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--confirm", metavar="TOKEN")
+    args = parser.parse_args()
+
+    if args.confirm and args.confirm != "RESET_PAPER_BASELINE":
+        parser.error("--confirm requires the exact token RESET_PAPER_BASELINE")
+
+    try:
+        settings = runtime_settings()
+        engine = create_database_engine(settings)
+        backup_path = planned_backup_path()
+        try:
+            plan = inspect_plan(engine, settings, backup_path)
+            print(json.dumps(plan, indent=2, ensure_ascii=False, default=str))
+            if args.dry_run:
+                return
+            if plan["schema_at_head"] is not True:
+                raise RuntimeError("schema_not_at_alembic_head")
+
+            # Refresh liveness immediately before the guarded operation.
+            plan["runtime_pid"] = runtime_pid()
+            plan["runtime_api_active"] = api_is_active()
+            runtime_lock = acquire_paper_runtime_lock(engine)
+            try:
+                run_id = perform_confirm(settings, engine, plan, backup_path)
+            finally:
+                release_paper_runtime_lock(runtime_lock)
+            print(
+                json.dumps(
+                    {
+                        "result": "CLEAN_BASELINE_CREATED",
+                        "backup_file": str(backup_path),
+                        "active_run_id": run_id,
+                        "paused": True,
+                    },
+                    indent=2,
+                )
+            )
+        finally:
+            engine.dispose()
+    except Exception as error:
+        parser.exit(1, f"RESET REFUSED: {error}\n")
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+Arquivo: tests/test_alpaca_paper_incident.py
+================================================================================
+import pytest
+import asyncio
+from uuid import uuid4
+from datetime import UTC, datetime
+from decimal import Decimal
+
+from sqlalchemy import insert, select, text
+from httpx import AsyncClient, MockTransport, Response
+
+from packages.domain.risk import RiskDecision
+from services.alpaca_paper.adapter import AlpacaPaperAdapter
+from services.alpaca_paper.worker import AlpacaPaperWorker
+from services.alpaca_paper.guard import ExecutionGuard
+from services.api.models import paper_orders, broker_orders, risk_decisions, signals, candles, paper_runs, system_controls
+from services.api.config import Settings
+from sqlalchemy import create_engine
+
+@pytest.fixture
+def engine():
+    settings = Settings()
+    engine = create_engine(settings.database_url)
+    return engine
+
+@pytest.fixture
+def async_adapter():
+    def handler(request):
+        # Default mock returning typical responses
+        if "/account" in str(request.url):
+            return Response(200, json={"status": "ACTIVE", "cash": "100000", "equity": "100000", "portfolio_value": "100000"})
+        if "/positions" in str(request.url):
+            return Response(200, json=[])
+        if "/orders" in str(request.url):
+            if request.method == "POST":
+                return Response(200, json={"id": "fake_broker_id", "status": "accepted"})
+            return Response(200, json=[])
+        return Response(404)
+        
+    client = AsyncClient(transport=MockTransport(handler))
+    return AlpacaPaperAdapter("k", "s", client=client)
+
+def insert_baseline(engine):
+    with engine.begin() as conn:
+        run_id = uuid4()
+        conn.execute(insert(paper_runs).values(
+            run_id=run_id, mode="REPLAY", provider="alpaca", status="RUNNING",
+            initial_cash=100000, cash=100000, fees=0, realized_pnl=0,
+            fee_bps=0, slippage_bps=0, dataset={}, dataset_hash="h", step=1,
+            created_at=datetime.now(UTC)
+        ))
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        
+        stmt = pg_insert(system_controls).values(
+            control_id=1, active_run_id=run_id, paused=False, updated_at=datetime.now(UTC)
+        )
+        conn.execute(stmt.on_conflict_do_update(
+            index_elements=['control_id'],
+            set_={'active_run_id': run_id}
+        ))
+        
+        # Insert a signal and risk decision
+        c_id = uuid4()
+        s_id = uuid4()
+        from datetime import timedelta
+        open_time = datetime.now(UTC)
+        conn.execute(insert(candles).values(
+            candle_id=c_id, stream_id=uuid4(), sequence=1, symbol="AAPL", provider="alpaca",
+            open_time=open_time, close_time=open_time + timedelta(hours=1),
+            open=100, high=100, low=100, close=100, volume=100
+        ))
+        conn.execute(insert(signals).values(
+            signal_id=s_id, candle_id=c_id, stream_id=uuid4(), strategy_version="1",
+            reason="test", signal_type="BUY", generated_at=datetime.now(UTC)
+        ))
+        rd_id = uuid4()
+        conn.execute(insert(risk_decisions).values(
+            decision_id=rd_id, run_id=run_id, signal_id=s_id, decision="APPROVED",
+            reason="ok", decided_at=datetime.now(UTC)
+        ))
+        return run_id, s_id, rd_id
+
+
+@pytest.mark.anyio
+async def test_1_and_2_notional_constraint(engine):
+    run_id, s_id, rd_id = insert_baseline(engine)
+    order_id = uuid4()
+    
+    with engine.begin() as conn:
+        # Test 2: Quantity-based fails if filled > quantity
+        with pytest.raises(Exception):
+            conn.execute(insert(paper_orders).values(
+                order_id=uuid4(), run_id=run_id, signal_id=s_id, risk_decision_id=rd_id,
+                symbol="AAPL", side="BUY", quantity=Decimal("10"), filled_quantity=Decimal("11"),
+                status="FILLED", requested_at=datetime.now(UTC), idempotency_key=uuid4(), reason="test"
+            ))
+            
+    with engine.begin() as conn:
+        # Test 1 & 2: Notional-based (quantity=0) accepts ANY filled_quantity
+        conn.execute(insert(paper_orders).values(
+            order_id=order_id, run_id=run_id, signal_id=s_id, risk_decision_id=rd_id,
+            symbol="AAPL", side="BUY", quantity=Decimal("0"), filled_quantity=Decimal("0.03005596"),
+            status="FILLED", requested_at=datetime.now(UTC), idempotency_key=order_id, reason="test"
+        ))
+        
+        # Verify it persisted exactly
+        row = conn.execute(select(paper_orders.c.filled_quantity).where(paper_orders.c.order_id == order_id)).first()
+        assert row.filled_quantity == Decimal("0.03005596")
+
+
+@pytest.mark.anyio
+async def test_3_reconciliation_failure_fail_safe(engine, async_adapter):
+    run_id, s_id, rd_id = insert_baseline(engine)
+    worker = AlpacaPaperWorker(engine, async_adapter, None)
+    
+    order_id = uuid4()
+    b_id = str(uuid4())
+    with engine.begin() as conn:
+        conn.execute(insert(paper_orders).values(
+            order_id=order_id, run_id=run_id, signal_id=s_id, risk_decision_id=rd_id,
+            symbol="AAPL", side="BUY", quantity=Decimal("10"), filled_quantity=Decimal("0"),
+            status="SUBMITTING", requested_at=datetime.now(UTC), idempotency_key=order_id, reason="test"
+        ))
+        conn.execute(insert(broker_orders).values(
+            order_id=order_id, client_order_id=str(order_id), broker_order_id=b_id,
+            status="submitting", filled_quantity=0, last_reconciled_at=datetime.now(UTC)
+        ))
+
+    # Mock adapter to return a fill that will cause a constraint violation (qty=11 > 10)
+    def handler(request):
+        print(f"REQUEST URL: {request.url}")
+        if "/account" in str(request.url):
+            return Response(200, json={"status": "ACTIVE", "cash": "1000", "equity": "1000", "portfolio_value": "1000"})
+        if f"/orders/{b_id}" in str(request.url):
+            return Response(200, json={"id": b_id, "status": "filled", "filled_qty": "11.0"})
+        if "/positions" in str(request.url):
+            return Response(200, json=[])
+        return Response(200, json=[])
+        
+    worker.adapter._client = AsyncClient(transport=MockTransport(handler))
+    
+    # Run one iteration. The reconciliation should fail due to constraint (11 > 10)
+    worker.running = True
+    task = asyncio.create_task(worker._run())
+    await asyncio.sleep(0.5)
+    worker.running = False
+    await task
+    
+    print(f"DEGRADED AT END: {worker.degraded}")
+    assert worker.degraded is True
+
+
+@pytest.mark.anyio
+async def test_4_broker_local_divergence(engine):
+    # local exposure = 20 (not passed to evaluate directly, Guard uses broker only)
+    # broker exposure = 50 -> should REJECT due to MAX_TOTAL_EXPOSURE = 30
+    
+    broker_positions = [
+        {"symbol": "TSLA", "qty": "0.1", "market_value": "50.00"} # Total exposure = $50
+    ]
+    
+    approved, reason = ExecutionGuard.evaluate(
+        side="BUY", symbol="AAPL", positions=broker_positions,
+        snapshot={"equity": "100"}, last_equity=Decimal("100"),
+        in_flight=[]
+    )
+    
+    assert approved is False
+    assert "Exposição máxima" in reason
+
+
+@pytest.mark.anyio
+async def test_5_multiple_symbols_incident_cap(engine):
+    # 2 symbols in-flight simultaneously with notional = 20
+    in_flight = [
+        {"symbol": "AAPL", "side": "BUY", "quantity": "0", "requested_notional": "20"},
+        {"symbol": "SPY", "side": "BUY", "quantity": "0", "requested_notional": "20"}
+    ]
+    
+    approved, reason = ExecutionGuard.evaluate(
+        side="BUY", symbol="TSLA", positions=[],
+        snapshot={"equity": "100"}, last_equity=Decimal("100"),
+        in_flight=in_flight
+    )
+    
+    # 20 + 20 + 10 (new) = 50 > 30 => Should reject
+    assert approved is False
+    assert "Exposição máxima" in reason
+
+@pytest.mark.anyio
+async def test_6_restart_with_positions(engine, async_adapter):
+    # During startup, if preflight fails (e.g. reconcile fails), no new BUY
+    worker = AlpacaPaperWorker(engine, async_adapter, None)
+    
+    # Force _reconcile_active_orders to fail
+    def fetch_active():
+        raise Exception("DB Down")
+    import unittest.mock as mock
+    with mock.patch("asyncio.to_thread", side_effect=Exception("DB Down")):
+        worker.running = True
+        task = asyncio.create_task(worker._run())
+        await asyncio.sleep(0.5)
+        worker.running = False
+        
+        try:
+            await task
+        except:
+            pass
+            
+    assert worker.degraded is True
+
+
+================================================================================
+Arquivo: tests/test_paper_v1_stabilization.py
+================================================================================
+import importlib.util
+import json
+from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import httpx
+import pytest
+from pydantic import ValidationError
+
+from scripts import paper_ops
+from services.alpaca_paper.adapter import AlpacaPaperAdapter
+from services.alpaca_paper.guard import ExecutionGuard
+from services.alpaca_paper.worker import AlpacaPaperWorker
+from services.api.config import Settings
+from services.api.database import create_database_engine, get_alembic_head, get_alembic_heads
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+def test_test_mode_runtime_database_refused_before_engine_creation(monkeypatch):
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        database_role="test",
+        postgres_db="trading_bot_test",
+    )
+    unsafe = settings.model_copy(update={"postgres_db": "trading_bot_dev"})
+    create = MagicMock()
+    monkeypatch.setattr("services.api.database.create_engine", create)
+
+    with pytest.raises(ValueError, match="REFUSING TO RUN TESTS AGAINST RUNTIME DATABASE"):
+        create_database_engine(unsafe)
+
+    create.assert_not_called()
+
+
+def test_explicit_test_database_is_allowed():
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        database_role="test",
+        postgres_db="trading_bot_test",
+    )
+    assert settings.database_url.database == "trading_bot_test"
+
+
+def test_runtime_mode_test_database_is_refused():
+    with pytest.raises(ValidationError, match="runtime cannot connect to test database"):
+        Settings(
+            _env_file=None,
+            app_env="local",
+            database_role="runtime",
+            postgres_db="trading_bot_test",
+        )
+
+
+@pytest.mark.anyio
+async def test_start_preflight_refuses_database_revision_behind_head(monkeypatch):
+    engine = MagicMock()
+    monkeypatch.setattr(paper_ops, "runtime_settings", lambda: SimpleNamespace())
+    monkeypatch.setattr(paper_ops, "get_alembic_heads", lambda: ("head",))
+    monkeypatch.setattr(paper_ops, "create_database_engine", lambda settings: engine)
+    monkeypatch.setattr(paper_ops, "check_database", lambda candidate: "schema_pending")
+    monkeypatch.setattr(paper_ops, "database_revision", lambda candidate: (["old"], "head"))
+
+    with pytest.raises(RuntimeError, match="alembic_not_at_head"):
+        await paper_ops.run_preflight(False)
+
+    engine.dispose.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_start_preflight_refuses_multiple_alembic_heads(monkeypatch):
+    create = MagicMock()
+    monkeypatch.setattr(paper_ops, "runtime_settings", lambda: SimpleNamespace())
+    monkeypatch.setattr(paper_ops, "get_alembic_heads", lambda: ("one", "two"))
+    monkeypatch.setattr(paper_ops, "create_database_engine", create)
+
+    with pytest.raises(RuntimeError, match="alembic_expected_single_head"):
+        await paper_ops.run_preflight(False)
+
+    create.assert_not_called()
+
+
+def test_alembic_head_is_derived_from_graph():
+    heads = get_alembic_heads()
+    assert len(heads) == 1
+    assert get_alembic_head() == heads[0]
+
+
+@pytest.mark.anyio
+async def test_degraded_worker_never_submits_buy():
+    adapter = AsyncMock()
+    worker = AlpacaPaperWorker(MagicMock(), adapter, MagicMock())
+    worker.executor.submit = AsyncMock()
+
+    await worker._process_pending_submits(
+        account={"equity": "1000"},
+        positions=[],
+    )
+
+    worker.executor.submit.assert_not_awaited()
+
+
+def test_inherited_broker_position_is_known_and_blocks_pyramiding():
+    position = {
+        "symbol": "AAPL",
+        "qty": "0.03005596",
+        "avg_entry_price": "332.71",
+        "current_price": "333.00",
+        "market_value": "10.00863368",
+    }
+    worker = AlpacaPaperWorker(MagicMock(), AsyncMock(), MagicMock())
+    worker._validate_positions([position])
+
+    approved, reason = ExecutionGuard.evaluate(
+        "BUY",
+        "AAPL",
+        [position],
+        {"equity": "1000"},
+        Decimal("1000"),
+        state_known=True,
+    )
+    assert not approved
+    assert reason and "no pyramiding" in reason
+
+
+def test_broker_exposure_at_cap_refuses_buy():
+    approved, reason = ExecutionGuard.evaluate(
+        "BUY",
+        "TSLA",
+        [
+            {"symbol": "AAPL", "qty": "0.1", "market_value": "10"},
+            {"symbol": "SPY", "qty": "0.1", "market_value": "20"},
+        ],
+        {"equity": "1000"},
+        Decimal("1000"),
+        state_known=True,
+    )
+    assert not approved
+    assert reason and "Exposição máxima" in reason
+
+
+@pytest.mark.anyio
+async def test_sell_request_uses_exact_quantity_and_no_notional():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={"id": "paper-id", "status": "accepted"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = AlpacaPaperAdapter("key", "secret", client=client)
+    async with adapter:
+        await adapter.submit_order(
+            symbol="AAPL",
+            qty=Decimal("0.03005596"),
+            side="sell",
+            client_order_id="sell-exact-quantity",
+            notional=None,
+        )
+    await client.aclose()
+
+    assert captured["qty"] == "0.03005596"
+    assert "notional" not in captured
+
+
+def _load_reset_module():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "reset-paper-baseline.py"
+    spec = importlib.util.spec_from_file_location("reset_paper_baseline_test_module", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_baseline_dry_run_inspection_does_not_open_write_transaction(monkeypatch, tmp_path):
+    reset = _load_reset_module()
+    engine = MagicMock()
+    connection = MagicMock()
+    engine.connect.return_value.__enter__.return_value = connection
+    connection.scalar.return_value = 0
+    connection.execute.return_value.mappings.return_value.first.return_value = {"paused": True}
+    monkeypatch.setattr(reset, "database_revision", lambda candidate: (["head"], "head"))
+    monkeypatch.setattr(reset, "api_is_active", lambda: False)
+    monkeypatch.setattr(reset, "runtime_pid", lambda: None)
+    monkeypatch.setattr(reset, "paper_runtime_lock_available", lambda candidate: True)
+
+    async def empty_broker(_settings):
+        return {"status": "ACTIVE"}, [], []
+
+    monkeypatch.setattr(reset, "broker_state", empty_broker)
+    plan = reset.inspect_plan(
+        engine,
+        SimpleNamespace(
+            postgres_db="trading_bot_dev",
+            app_env="local",
+            database_role="runtime",
+        ),
+        tmp_path / "backup.dump",
+    )
+
+    assert plan["tables"]
+    engine.begin.assert_not_called()
+
+
+@pytest.mark.parametrize("field", ["broker_positions", "broker_open_orders"])
+def test_baseline_reset_refuses_nonempty_broker_state(field):
+    reset = _load_reset_module()
+    plan = {
+        "runtime_pid": None,
+        "runtime_api_active": False,
+        "runtime_paused": True,
+        "runtime_lock_available": True,
+        "broker_positions": [],
+        "broker_open_orders": [],
+    }
+    plan[field] = [{"id": "present"}]
+
+    with pytest.raises(RuntimeError, match="broker_has_"):
+        reset.validate_confirm_preconditions(plan)
+
+
+def test_baseline_backup_completes_before_any_database_mutation(monkeypatch, tmp_path):
+    reset = _load_reset_module()
+    events = []
+    monkeypatch.setattr(reset, "create_backup", lambda *args: events.append("backup"))
+
+    async def empty_broker(_settings):
+        events.append("broker_recheck")
+        return {"cash": "1000"}, [], []
+
+    monkeypatch.setattr(reset, "broker_state", empty_broker)
+    monkeypatch.setattr(
+        reset,
+        "create_clean_baseline",
+        lambda *args: events.append("database_mutation") or "run-id",
+    )
+    plan = {
+        "runtime_pid": None,
+        "runtime_api_active": False,
+        "runtime_paused": True,
+        "runtime_lock_available": True,
+        "broker_positions": [],
+        "broker_open_orders": [],
+    }
+
+    reset.perform_confirm(SimpleNamespace(), MagicMock(), plan, tmp_path / "backup.dump")
+
+    assert events == ["backup", "broker_recheck", "database_mutation"]
+
+
+================================================================================
+Arquivo: services/api/static/mission-control.html
+================================================================================
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Bot // Mission Control</title>
+<style>
+:root{color-scheme:dark;--bg:#090e13;--panel:#101820;--line:#23323e;--muted:#8c9fab;--text:#e6edf2;--green:#69edb0;--cyan:#67d4ef;--amber:#ffd184;--red:#ff8e99;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 85% 0%,#112831 0,transparent 45%),var(--bg);color:var(--text);font-size:12px;line-height:1.5}main{max-width:1760px;margin:auto;padding:30px 36px 24px}header{display:flex;justify-content:space-between;gap:24px;align-items:center;margin-bottom:26px}.eyebrow{font-size:10px;letter-spacing:2px;color:var(--cyan);margin-bottom:8px}h1{font-size:clamp(20px,2.2vw,32px);font-weight:600;letter-spacing:-1px;margin:0}h1 span{color:var(--muted);font-weight:400}.session{text-align:right;color:var(--muted);font-size:11px}.live{color:var(--muted);font-weight:bold;letter-spacing:1px;margin-bottom:8px}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px}.live.active{color:var(--green)}.active .dot{animation:pulse 2s infinite}@keyframes pulse{50%{box-shadow:0 0 0 5px #69edb016;opacity:.5}}@media(prefers-reduced-motion:reduce){.active .dot{animation:none}}
+.safety{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 18px;border:1px solid #295046;background:#10231e;border-radius:5px;margin-bottom:20px;color:var(--green)}.safety strong{letter-spacing:.6px}.safety span{font-size:11px}.statusbar{display:flex;align-items:center;gap:12px;margin-bottom:22px;min-height:28px}.badge{padding:4px 9px;border:1px solid currentColor;border-radius:3px;white-space:nowrap;font-size:10px;letter-spacing:1px}.muted{color:var(--muted)}.good{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}.metric{background:linear-gradient(130deg,#14212a,#101820);border:1px solid var(--line);border-radius:6px;padding:20px;min-height:124px}.metric:first-child{border-top:2px solid var(--cyan)}.label{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}.value{font-size:clamp(20px,2.2vw,32px);letter-spacing:-1px;font-weight:600;margin:13px 0 4px;font-variant-numeric:tabular-nums}.metric small{color:var(--muted);font-size:10px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:20px}.left{min-width:0}.panel{border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden;margin-bottom:20px}.panelhead{padding:16px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}h2{margin:0;font-size:12px;font-weight:500;letter-spacing:.4px}.panelhead small{color:var(--muted);font-size:10px}.count{font-size:10px;color:var(--cyan);margin-left:8px}.tablewrap{overflow-x:auto;max-height:330px;overflow-y:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:11px}th{font-weight:400;color:var(--muted);text-align:right;font-size:9px;letter-spacing:.7px;text-transform:uppercase;background:#0e161d;position:sticky;top:0}th,td{padding:12px 16px;border-bottom:1px solid #1b2832;text-align:right}th:first-child,td:first-child{text-align:left}tbody tr:last-child td{border-bottom:0}tbody tr:hover{background:#16232c}.empty{text-align:center!important;white-space:normal;color:var(--muted);padding:40px 18px!important}.split{display:grid;grid-template-columns:1fr;gap:0}dl{padding:5px 18px;margin:0}dl>div{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #1b2832;padding:10px 0}dl>div:last-child{border:0}dt{color:var(--muted)}dd{margin:0;text-align:right;overflow-wrap:anywhere}.note{padding:0 18px 16px;color:var(--muted);font-size:10px;margin:8px 0 0}.timeline{list-style:none;margin:0;padding:0 18px;max-height:418px;overflow-y:auto}.timeline li{padding:13px 0;border-bottom:1px solid #1b2832;display:grid;grid-template-columns:58px 1fr;gap:10px;overflow-wrap:anywhere}.timeline time{color:var(--muted);font-size:10px}.timeline span{font-size:11px}.timeline li:first-child span{color:var(--cyan)}footer{display:flex;justify-content:space-between;gap:20px;color:var(--muted);font-size:10px;border-top:1px solid var(--line);padding-top:16px}.retained .value{opacity:.55}[hidden]{display:none!important}
+@media(min-width:1550px){.split{grid-template-columns:1fr 1fr;gap:20px}}@media(max-width:1100px){main{padding:24px}.layout{grid-template-columns:minmax(0,1fr) 300px}.metric{padding:15px}}@media(max-width:850px){.layout{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.safety,header{align-items:flex-start;flex-direction:column}.session{text-align:left}.statusbar{align-items:flex-start}.value{font-size:25px}footer{flex-direction:column;gap:5px}}
+
+body[data-mode="replay"]{--cyan:#bca2ff;background:radial-gradient(ellipse at 85% 0%,#241a38 0,transparent 45%),var(--bg)}
+body[data-mode="night_lab"]{--cyan:#ffb86c;background:radial-gradient(ellipse at 85% 0%,#3d2817 0,transparent 45%),var(--bg)}
+body[data-mode="replay"] .broker-only, body[data-mode="night_lab"] .broker-only{display:none}
+body[data-mode="replay"] .safety{background:#20192f;border-color:#5c477b;color:#d1bdff}
+body[data-mode="night_lab"] .safety{background:#301e12;border-color:#804f26;color:#ffb86c}
+.replay-only{display:none}body[data-mode="replay"] .replay-only, body[data-mode="night_lab"] .replay-only{display:block}
+.pipeline{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--line)}.stage{padding:13px;background:#151b26;min-width:0}.stage strong{display:block;margin-top:8px;font-size:13px;color:var(--cyan);overflow-wrap:anywhere}.stage small{display:block;color:var(--muted);font-size:9px;margin-top:4px}
+.replay-chart-wrap{display:grid;grid-template-columns:minmax(0,1fr) 205px;gap:20px;padding:16px 18px}.replay-chart-wrap svg{width:100%;height:170px}.ohlc{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:center}.ohlc strong{display:block;font-size:14px;margin-top:3px}.progressline{padding:0 18px 15px;display:flex;align-items:center;gap:15px;color:var(--muted);font-size:10px}progress{width:100%;height:5px;accent-color:var(--cyan)}
+body[data-mode="replay"] .timeline{max-height:610px}body[data-mode="replay"] .timeline li{grid-template-columns:68px 1fr;padding:10px 0}body[data-mode="replay"] .timeline .fill{color:var(--green)}body[data-mode="replay"] .timeline .risk{color:var(--amber)}
+@media(max-width:1000px){.pipeline{grid-template-columns:repeat(3,minmax(0,1fr))}.replay-chart-wrap{grid-template-columns:1fr}.ohlc{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="eyebrow">M7 / BROKER OBSERVABILITY / LOCAL DESK</div><h1>TRADE BOT <span>//</span> MISSION CONTROL</h1></div><div class="session"><div id="live" class="live"><span class="dot"></span>LIVE · TELEMETRIA</div><div>Última atualização <span id="updated">—</span></div><div id="poll-label">Leitura automática · 2 segundos</div></div></header>
+<div class="safety"><strong>ALPACA PAPER — DINHEIRO VIRTUAL</strong><span>READ ONLY — SEM AUTORIDADE DE EXECUÇÃO</span></div>
+<div class="statusbar" role="status" aria-live="polite"><span id="state" class="badge warn">CONECTANDO</span><span id="message" class="muted">Aguardando health e snapshot do broker.</span></div>
+<section id="metrics" class="metrics" aria-label="Portfolio em USD">
+<div class="metric"><div class="label">Equity</div><div id="equity" class="value">—</div><small>ACCOUNT VALUE / USD</small></div>
+<div class="metric"><div class="label">Cash</div><div id="cash" class="value">—</div><small>DISPONÍVEL EM CONTA / USD</small></div>
+<div class="metric"><div class="label">Market Value</div><div id="market_value" class="value">—</div><small>POSIÇÕES DO BROKER / USD</small></div>
+<div class="metric"><div class="label">Unrealized P&amp;L</div><div id="unrealized_pnl" class="value">—</div><small>VALOR INFORMADO PELA API / USD</small></div>
+</section>
+<div class="layout"><div class="left">
+<section class="panel replay-only" id="replay-panel">
+<div class="panelhead"><h2>Historical pipeline <span class="count" id="replay-symbol">SPY / 1h</span></h2><small id="replay-speed">1x · 1 CANDLE/S</small></div>
+<div class="pipeline">
+<div class="stage"><div class="label">01 / Candle</div><strong id="stage-candle">—</strong><small id="candle-time">RELÓGIO HISTÓRICO / UTC</small></div>
+<div class="stage"><div class="label">02 / Strategy</div><strong id="stage-strategy">—</strong><small>SINAL DO FECHAMENTO</small></div>
+<div class="stage"><div class="label">03 / Risk</div><strong id="stage-risk">—</strong><small>SINAL ANTERIOR NA ABERTURA</small></div>
+<div class="stage"><div class="label">04 / Order</div><strong id="stage-order">—</strong><small>LOCAL PAPER EXECUTOR / M3</small></div>
+<div class="stage"><div class="label">05 / Fill</div><strong id="stage-fill">—</strong><small>SIMULADO / CUSTOS M3</small></div>
+<div class="stage"><div class="label">06 / Portfolio</div><strong id="stage-equity">—</strong><small>CONTABILIDADE LOCAL</small></div>
+</div>
+<div class="replay-chart-wrap"><svg id="replay-chart" viewBox="0 0 800 180" role="img" aria-label="Últimos 60 candles históricos observados"></svg><div class="ohlc">
+<div><span class="label">Open</span><strong id="candle-open">—</strong></div><div><span class="label">High</span><strong id="candle-high">—</strong></div><div><span class="label">Low</span><strong id="candle-low">—</strong></div><div><span class="label">Close</span><strong id="candle-close">—</strong></div></div></div>
+<div class="progressline"><span id="replay-progress" style="white-space:nowrap">0 / 0</span><progress id="replay-progress-bar" value="0" max="1" aria-label="Progresso do replay"></progress></div>
+<p class="note" id="replay-reason">O sinal do fechamento passa pelo risco e executa somente na próxima abertura. Sem antecipação de preços.</p>
+</section>
+<section class="panel"><div class="panelhead"><h2>Broker Positions <span class="count" id="positions-count">—</span></h2><small id="positions-source">BROKER STATE / ALPACA PAPER</small></div><div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Quantity</th><th>Avg. price</th><th>Current</th><th>Market value</th><th>Unrealized P&amp;L</th></tr></thead><tbody id="positions"><tr><td class="empty" colspan="6">Aguardando snapshot do Alpaca Paper.</td></tr></tbody></table></div></section>
+<div class="split">
+<section class="panel"><div class="panelhead"><h2>Reconciled Orders <span class="count" id="orders-count">—</span></h2><small>BROKER STATE + LOCAL/RUNTIME LINK</small></div><div class="tablewrap"><table><thead><tr><th>Symbol / ID</th><th>Side</th><th>Quantity</th><th>Filled</th><th>Status</th><th>Updated</th></tr></thead><tbody id="orders"><tr><td class="empty" colspan="6">Aguardando snapshot do Alpaca Paper.</td></tr></tbody></table></div></section>
+<section class="panel"><div class="panelhead"><h2>Recent Fills <span class="count" id="fills-count">—</span></h2><small>ÚLTIMOS 20</small></div><div class="tablewrap"><table><thead><tr><th>Order ID</th><th>Quantity</th><th>Price</th><th>Time</th></tr></thead><tbody id="fills"><tr><td class="empty" colspan="4">Aguardando snapshot do Alpaca Paper.</td></tr></tbody></table></div></section>
+</div><p class="muted broker-only">Positions são BROKER STATE. Orders e fills são LOCAL/RUNTIME STATE reconciliado com o broker. Nenhuma operação pode ser iniciada nesta tela.</p>
+<p class="muted broker-only">Limite atual do M7: o snapshot publica P&amp;L agregado como zero; o P&amp;L por posição vem do broker.</p>
+</div><aside>
+<section class="panel"><div class="panelhead"><h2>Status / Health</h2><small id="health-code">AGUARDANDO</small></div><dl>
+<div><dt>Backend</dt><dd id="backend">—</dd></div><div><dt>Database</dt><dd id="database">—</dd></div><div><dt>Market data</dt><dd id="market">—</dd></div><div><dt id="broker-label">Broker</dt><dd id="broker">—</dd></div><div><dt id="reconciled-label">Reconciliado em</dt><dd id="reconciled">—</dd></div><div><dt id="age-label">Idade do snapshot</dt><dd id="age">—</dd></div><div id="buying-power-row" hidden><dt>Buying power</dt><dd id="buying_power">—</dd></div>
+<div class="replay-only"><dt>Realized P&amp;L</dt><dd id="replay-realized">—</dd></div>
+<div class="replay-only"><dt>Fees</dt><dd id="replay-fees">—</dd></div><div class="replay-only"><dt>Ordens / Fills</dt><dd id="replay-counts">—</dd></div><div class="replay-only"><dt>Operações encerradas</dt><dd id="replay-trades">—</dd></div>
+</dl><p class="note" id="health-note">STALE após 15 s sem reconciliação. LIVE indica atualização da telemetria, nunca execução em conta real. O health também inclui a ingestão de mercado.</p></section>
+<section class="panel"><div class="panelhead"><h2>Event Timeline</h2><small id="timeline-label">SESSÃO LOCAL / 40 MAX</small></div><ul id="timeline" class="timeline"><li><time>—</time><span>Conectando ao backend…</span></li></ul><p class="note" id="timeline-note">Eventos detectados entre snapshots nesta aba. O histórico é reiniciado ao recarregar.</p></section>
+</aside></div>
+<footer><span id="footer-mode">TRADE BOT / M7 · OBSERVATION TERMINAL</span><span id="footer-api">GET /health &nbsp;·&nbsp; GET /api/v1/broker/portfolio &nbsp;·&nbsp; USD</span></footer>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const replayMode = document.body.dataset.mode === 'replay';
+const nightLabMode = document.body.dataset.mode === 'night_lab';
+const money = new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'});
+const time = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString('pt-BR') : '—';
+const amount = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? money.format(Number(value)) : '—';
+let portfolio = null, health = null, previous = null, events = [], state = '', received = 0;
+let portfolioError = '', healthError = '', healthCode = '—';
+function event(message) {
+  events.unshift({at: new Date().toISOString(), message});
+  events = events.slice(0,40);
+  $('timeline').replaceChildren(...events.map(item => {
+    const li = document.createElement('li'), stamp = document.createElement('time'), text = document.createElement('span');
+    stamp.textContent = time(item.at); text.textContent = item.message; li.append(stamp,text); return li;
+  }));
+}
+function table(id, rows, columns, empty) {
+  $(id+'-count').textContent = String(rows.length);
+  const nodes = rows.slice(0,id==='positions'?100:20).map(row => {
+    const tr = document.createElement('tr');
+    columns.forEach(column => {const td = document.createElement('td'); const value = column(row); td.textContent = value ?? '—'; tr.append(td);});
+    return tr;
+  });
+  if (!nodes.length) {const tr = document.createElement('tr'), td = document.createElement('td');td.colSpan = columns.length;td.className = 'empty';td.textContent = empty;tr.append(td);nodes.push(tr);}
+  $(id).replaceChildren(...nodes);
+}
+const id = value => value ? String(value).slice(0,12) : '—';
+function renderPortfolio(p) {
+  ['equity','cash','market_value','unrealized_pnl'].forEach(key => $(key).textContent = amount(p?.[key]));
+  $('unrealized_pnl').className = 'value'+(p ? (Number(p.unrealized_pnl)<0?' bad':Number(p.unrealized_pnl)>0?' good':'') : '');
+  $('buying-power-row').hidden = p?.buying_power == null;
+  $('buying_power').textContent = amount(p?.buying_power);
+  const empty = replayMode ? 'Nenhum registro simulado até este candle.' : p ? 'Nenhum registro no snapshot do broker.' : 'Sem snapshot disponível do Alpaca Paper.';
+  table('positions',p?.positions||[],[r=>r.symbol,r=>r.quantity,r=>amount(r.average_price),r=>amount(r.current_price),r=>amount(r.market_value),r=>amount(r.unrealized_pnl)],empty);
+  table('orders',p?.orders||[],[r=>`${r.symbol} / ${id(r.broker_order_id||r.order_id)}`,r=>r.side,r=>r.quantity,r=>r.filled_quantity,r=>r.broker_status||r.status,r=>time(r.last_reconciled_at||r.requested_at)],empty);
+  table('fills',p?.fills||[],[r=>id(r.order_id),r=>r.quantity,r=>amount(r.price),r=>time(r.filled_at)],empty);
+}
+function detect(p) {
+  if (!previous) {event('Snapshot inicial recebido do Alpaca Paper.');previous=p;return;}
+  if (p.last_reconciled_at !== previous.last_reconciled_at) event('Snapshot reconciled · '+time(p.last_reconciled_at));
+  if (p.equity !== previous.equity) event(`Equity changed · ${amount(previous.equity)} → ${amount(p.equity)}`);
+  const oldPositions = new Map(previous.positions.map(r=>[r.symbol,r]));
+  for (const row of p.positions) {
+    const old = oldPositions.get(row.symbol);
+    if (!old || ['quantity','average_price','current_price','market_value','unrealized_pnl'].some(k=>row[k]!==old[k])) event(`Posição mudou · ${row.symbol} · qty ${row.quantity}`);
+    oldPositions.delete(row.symbol);
+  }
+  for (const symbol of oldPositions.keys()) event('Posição removida · '+symbol);
+  const oldOrders = new Map(previous.orders.map(r=>[r.order_id,r]));
+  for (const row of p.orders) {const old=oldOrders.get(row.order_id);if (!old || old.status!==row.status || old.broker_status!==row.broker_status) event(`Ordem · ${row.symbol} · ${row.broker_status||row.status}`);}
+  const oldFills = new Set(previous.fills.map(r=>r.broker_fill_id||r.fill_id));
+  for (const row of p.fills) if (!oldFills.has(row.broker_fill_id||row.fill_id)) event(`Novo fill · ${id(row.order_id)} · qty ${row.quantity} @ ${amount(row.price)}`);
+  previous=p;
+}
+function renderStatus() {
+  if (replayMode) {renderReplayStatus();return;}
+  if (nightLabMode) {renderNightLabStatus();return;}
+  const age = portfolio?.last_reconciled_at ? (Date.now()-Date.parse(portfolio.last_reconciled_at))/1000 : NaN;
+  let next='HEALTHY', tone='good', message='Alpaca Paper saudável · snapshot atualizado.';
+  if (healthError==='offline' && portfolioError==='offline') {next='BACKEND OFFLINE';tone='bad';message='Conexão indisponível. Últimos valores conhecidos, sem atualização.';}
+  else if (portfolioError==='mode') {next='MODO INCOMPATÍVEL';tone='bad';message='A API não está em Alpaca Paper. Nenhum fallback para Local Paper.';}
+  else if (portfolioError==='empty') {next='SEM SNAPSHOT';tone='warn';message='Backend acessível. Aguardando a primeira reconciliação do broker.';}
+  else if (portfolioError || healthError || !portfolio || !health) {next='DEGRADED';tone='warn';message='Falha ao atualizar as APIs. Últimos valores conhecidos, quando disponíveis.';}
+  else if (!Number.isFinite(age) || age>15 || portfolio.status==='STALE' || Date.now()-received>15000) {next='STALE';tone='warn';message='Snapshot antigo ou sem horário válido. Valores retidos; aguardando reconciliação.';}
+  else if (portfolio.degraded || health.status!=='ok' || portfolio.status!=='ACTIVE') {next='DEGRADED';tone='warn';message='Broker ou health degradado. Consulte os estados ao lado.';}
+  if (state!==next) {event(`Sistema · ${state||'CONECTANDO'} → ${next}`);state=next;}
+  $('state').textContent=next; $('state').className='badge '+tone; $('message').textContent=message;
+  $('live').className='live'+(next==='HEALTHY'?' active':'');
+  $('metrics').classList.toggle('retained',next!=='HEALTHY');
+  $('backend').textContent=healthError ? (healthError==='offline'?'OFFLINE':'RESPOSTA INVÁLIDA') : health?.status?.toUpperCase()||'—';
+  $('health-code').textContent='HTTP '+healthCode;
+  $('database').textContent=healthError?'—':health?.database||'—';
+  $('market').textContent=healthError?'—':health?.market_data?.state||'—';
+  $('broker').textContent=portfolio?.status||'SEM SNAPSHOT';
+  $('reconciled').textContent=time(portfolio?.last_reconciled_at);
+  $('age').textContent=Number.isFinite(age)?Math.max(0,Math.floor(age))+' s':'—';
+}
+async function get(path) {
+  const controller = new AbortController(), timer=setTimeout(()=>controller.abort(),5000);
+  try {const response=await fetch(path,{method:'GET',cache:'no-store',signal:controller.signal,redirect:'error'});let body=null;try{body=await response.json();}catch{}return {code:response.status,body};}
+  finally {clearTimeout(timer);}
+}
+function validPortfolio(p) {
+  return p && p.provider==='alpaca' && typeof p.status==='string' &&
+    ['equity','cash','market_value','unrealized_pnl'].every(k=>p[k]!==null && p[k]!=='' && Number.isFinite(Number(p[k]))) &&
+    ['positions','orders','fills'].every(k=>Array.isArray(p[k]) && p[k].every(r=>r && typeof r==='object'));
+}
+async function poll() {
+  try {
+    const [h,p]=await Promise.allSettled([get('/health'),get('/api/v1/broker/portfolio')]);
+    healthError='';portfolioError='';
+    if (h.status==='fulfilled') {healthCode=h.value.code;const b=h.value.body;if ([200,503].includes(healthCode) && b && ['ok','degraded'].includes(b.status)) health=b;else {health=null;healthError='invalid';}}
+    else {healthError='offline';health=null;healthCode='—';}
+    if (p.status==='rejected') portfolioError='offline';
+    else if (p.value.code===404) {portfolioError='empty';portfolio=null;previous=null;renderPortfolio(null);}
+    else if (p.value.code===400 || (p.value.code===200 && p.value.body?.provider!=='alpaca')) {portfolioError='mode';portfolio=null;previous=null;renderPortfolio(null);}
+    else if (p.value.code===200 && validPortfolio(p.value.body)) {portfolio=p.value.body;received=Date.now();$('updated').textContent=time(new Date(received).toISOString());detect(portfolio);renderPortfolio(portfolio);}
+    else portfolioError='invalid';
+    renderStatus();
+  } catch {portfolioError='invalid';renderStatus();}
+  finally {setTimeout(poll,2000);}
+}
+let replayData=null, replayCursor=0, replaySession=null, replayEvents=[], replayReadAt=0, replayError=false;
+let nlData=null, nlError=false, nlReadAt=0;
+const utc = value => value ? new Date(value).toISOString().slice(11,19)+'Z' : '—';
+function renderReplayStatus() {
+  const status=replayError?'BACKEND OFFLINE':replayData?.status||'READY';
+  const stale=!replayError && replayData && Date.now()-replayReadAt>5000;
+  $('state').textContent=stale?'STALE':status;
+  $('state').className='badge '+(replayError||status==='ERROR'?'bad':stale?'warn':'good');
+  $('live').className='live'+(!replayError&&!stale&&status==='RUNNING'?' active':'');
+  $('metrics').classList.toggle('retained',Boolean(replayError||stale||status==='ERROR'));
+  $('message').textContent=replayError?'Replay indisponível. Último estado local preservado.':stale?'Leitura antiga; aguardando o processo de replay.':status==='COMPLETED'?'Dataset concluído. Carteira final preservada; recarregar a página não reinicia a execução.':status==='ERROR'?'Replay interrompido por erro. Último estado preservado.':'Simulação histórica local · sinal no fechamento → execução na próxima abertura.';
+  $('backend').textContent=replayError?'OFFLINE':'REPLAY / '+status;
+  $('age').textContent=replayReadAt?Math.floor((Date.now()-replayReadAt)/1000)+' s':'—';
+}
+function drawCandles(candles) {
+  const svg=$('replay-chart');svg.replaceChildren();if(!candles.length)return;
+  const top=Math.max(...candles.map(c=>Number(c.high))),bottom=Math.min(...candles.map(c=>Number(c.low)));
+  const span=top-bottom||1, y=v=>160-(Number(v)-bottom)/span*140, width=750/Math.max(candles.length,20);
+  function shape(tag,attrs) {const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));svg.append(n);return n;}
+  for(let i=0;i<3;i++){const yy=20+i*70;shape('line',{x1:0,x2:800,y1:yy,y2:yy,stroke:'#25303d','stroke-dasharray':'3 5'});}
+  candles.forEach((c,i)=>{const x=20+i*width,color=Number(c.close)>=Number(c.open)?'#69edb0':'#ff8e99';shape('line',{x1:x,x2:x,y1:y(c.high),y2:y(c.low),stroke:color});const bar=shape('rect',{x:x-width*.3,y:Math.min(y(c.open),y(c.close)),width:Math.max(2,width*.6),height:Math.max(1,Math.abs(y(c.close)-y(c.open))),fill:color});const title=document.createElementNS('http://www.w3.org/2000/svg','title');title.textContent=`${c.symbol} ${c.open_time} O ${c.open} H ${c.high} L ${c.low} C ${c.close}`;bar.append(title);});
+}
+function renderReplay(data) {
+
+  if (data.ai_status) {
+    let aiBox = document.getElementById('ai-status');
+    if (!aiBox) {
+        let metrics = document.getElementById('metrics');
+        let div = document.createElement('div');
+        div.className = 'metric';
+        div.innerHTML = '<div class="label">AI Observer</div><div id="ai-status" class="value" style="font-size: 14px;">—</div><small id="ai-desc">Aguardando inferência</small>';
+        metrics.appendChild(div);
+        aiBox = document.getElementById('ai-status');
+    }
+    
+    if (data.ai_status !== "OK") {
+        aiBox.textContent = data.ai_status;
+        aiBox.className = "value bad";
+        document.getElementById('ai-desc').textContent = "Inativo ou Degraded";
+    } else if (data.last_ai_observation) {
+        let obs = data.last_ai_observation;
+        let agreement = (data.strategy_signal === obs.regime) ? "AGREEMENT" : "DIVERGENCE";
+        aiBox.textContent = `${obs.regime} (${(obs.confidence * 100).toFixed(0)}%)`;
+        aiBox.className = "value " + (agreement === "AGREEMENT" ? "good" : "warn");
+        document.getElementById('ai-desc').textContent = `Strategy: ${data.strategy_signal} | ${agreement}`;
+    }
+  }
+
+  renderPortfolio(data.portfolio);
+  $('replay-speed').textContent=`${data.speed}x · ${data.speed} CANDLE/S`;
+  $('replay-progress').textContent=`${data.step} / ${data.total_steps} CANDLES`;
+  $('replay-progress-bar').max=data.total_steps||1;$('replay-progress-bar').value=data.step;
+  $('replay-symbol').textContent=(data.dataset?.symbols?.join(', ') || '—')+' / 1h';
+  $('replay-realized').textContent=amount(data.portfolio.realized_pnl);
+  $('replay-fees').textContent=amount(data.portfolio.fees);
+  $('replay-counts').textContent=`${data.orders_count} / ${data.fills_count}`;
+  $('replay-trades').textContent=String(data.closed_trades);
+  $('stage-equity').textContent=amount(data.portfolio.equity);
+  $('reconciled').textContent=data.frame?utc(data.frame.portfolio.timestamp):'—';
+  $('health-note').textContent=`${data.dataset?.name} · ${data.dataset?.candles} candles · capital inicial ${amount(data.initial_cash)}. Memória isolada; nenhum broker conectado.`;
+  const c=data.frame?.candles?.[0], signal=data.frame?.signals?.[0], outcome=data.frame?.outcomes?.[0];
+  if(c){$('stage-candle').textContent=c.symbol+' / '+utc(c.open_time);$('candle-time').textContent=c.open_time.slice(0,10)+' / UTC';['open','high','low','close'].forEach(k=>$('candle-'+k).textContent=amount(c[k]));}
+  $('stage-strategy').textContent=signal?.signal_type||'WAITING';
+  $('stage-risk').textContent=outcome?(outcome.risk?.decision==='REJECTED'?'BLOCKED':'APPROVED'):'WAITING';
+  $('stage-order').textContent=outcome?.order_id?`${outcome.signal?.signal_type} ${outcome.quantity} ${outcome.symbol}`:'NO ORDER';
+  $('stage-fill').textContent=outcome?.fill_id?`${outcome.quantity} @ ${amount(outcome.price)}`:'NO FILL';
+  $('replay-reason').textContent=outcome?`Risco do sinal anterior (${utc(outcome.signal?.generated_at)}): ${outcome.risk?.reason} · Executor: ${outcome.reason}. Sinal atual aguarda a próxima abertura.`:'Primeiro candle: estratégia avaliada no fechamento. Risco e execução aguardam a próxima abertura.';
+
+  drawCandles(data.history || []);
+  if (nightLabMode) {
+      if (data.timeline) {
+          $('timeline').replaceChildren(...[...data.timeline].reverse().map(e=>{const li=document.createElement('li'),t=document.createElement('time'),text=document.createElement('span');t.textContent=utc(e.timestamp);text.textContent=e.type+' → '+(e.payload?.status || 'OK');text.className='info';li.append(t,text);return li;}));
+          $('timeline-note').textContent='Eventos AI Observer e transições Night Lab.';
+      }
+      return;
+  }
+
+  if(replaySession!==data.session_id){replayEvents=[];replayCursor=0;replaySession=data.session_id;}
+  if(data.events_truncated) replayEvents=[];
+  replayEvents.push(...data.events.filter(e=>e.sequence>replayCursor));
+  replayEvents=replayEvents.slice(-80);replayCursor=data.last_sequence;
+  $('timeline').replaceChildren(...[...replayEvents].reverse().map(e=>{const li=document.createElement('li'),t=document.createElement('time'),text=document.createElement('span');t.textContent=utc(e.timestamp||e.recorded_at);text.textContent=e.kind+' → '+e.text;text.className=e.kind.toLowerCase();li.append(t,text);return li;}));
+  $('timeline-note').textContent=data.events_truncated?'Eventos antigos saíram do buffer. Exibindo os últimos disponíveis; execução não foi alterada.':'Eventos reais das engines M4/M3 · relógio histórico UTC · últimos 80. Recarregar só relê o estado.';
+}
+
+function renderNightLabStatus() {
+  const status=nlError?'BACKEND OFFLINE':nlData?.status||'READY';
+  const stale=!nlError && nlData && Date.now()-nlReadAt>5000;
+  $('state').textContent=stale?'STALE':status;
+  $('state').className='badge '+(nlError||status==='ERROR'?'bad':stale?'warn':'good');
+  $('live').className='live'+(!nlError&&!stale&&status==='RUNNING'?' active':'');
+  $('metrics').classList.toggle('retained',stale);
+  $('message').textContent=nlError?'Night Lab runner offline ou não detectado.':stale?'Snapshot de execução pausada ou estagnada.':'Execução em lote saudável.';
+}
+async function nlPoll() {
+  try {
+    const r=await get('/api/v1/mission-control/state');
+    if(r.code!==200)throw new Error('invalid night_lab response ' + r.code);
+    nlData=r.body;nlError=false;nlReadAt=Date.now();$('updated').textContent=time(new Date(nlReadAt).toISOString());$('health-code').textContent='HTTP 200';
+    try {
+      renderReplay(nlData); // Re-use renderReplay
+    } catch(e) {
+      console.error("renderReplay error in Night Lab:", e);
+      // Do not set nlError=true here, just keep going with partial render
+    }
+  }catch (e){
+    console.error("nlPoll fetch error:", e);
+    nlError=true;$('health-code').textContent='OFFLINE / INVALID';
+  }
+  finally {setTimeout(nlPoll,500);} // fast polling for night lab
+}
+
+async function replayPoll() {
+  try {
+    const r=await get('/api/v1/replay/state?after='+replayCursor);
+    if(r.code!==200||r.body?.mode!=='REPLAY')throw new Error('invalid replay');
+    if(replaySession && replaySession!==r.body.session_id){replayCursor=0;replaySession=null;replayEvents=[];return;}
+    replayData=r.body;replayError=false;replayReadAt=Date.now();$('updated').textContent=time(new Date(replayReadAt).toISOString());$('health-code').textContent='HTTP 200';
+    renderReplay(replayData);
+  }catch{replayError=true;$('health-code').textContent='OFFLINE / INVALID';}
+  finally{renderReplayStatus();setTimeout(replayPoll,500);}
+}
+if(replayMode) {
+  $('live').replaceChildren();const dot=document.createElement('span');dot.className='dot';$('live').append(dot,document.createTextNode('REPLAY · TELEMETRIA'));
+  $('poll-label').textContent='Leitura automática · 0,5 segundo';$('positions-source').textContent='LOCAL PAPER / REPLAY';
+  $('broker-label').textContent='Executor';$('broker').textContent='LOCAL PAPER M3';$('database').textContent='NÃO UTILIZADO';$('market').textContent='ARQUIVO HISTÓRICO';
+  $('reconciled-label').textContent='Candle fechado em';$('age-label').textContent='Idade da leitura';$('timeline-label').textContent='PIPELINE / 80 MAX';
+  $('footer-mode').textContent='TRADE BOT / M4 → M3 · HISTORICAL REPLAY';$('footer-api').textContent='GET /api/v1/replay/state · SEM ALPACA · USD SIMULADO';
+  renderPortfolio(null);replayPoll();
+}else if(nightLabMode) {
+  $('live').replaceChildren();const dot=document.createElement('span');dot.className='dot';$('live').append(dot,document.createTextNode('NIGHT LAB · BATCH EXEC'));
+  $('poll-label').textContent='Leitura automática · 0,5 segundo';$('positions-source').textContent='NIGHT LAB MEMORY';
+  $('broker-label').textContent='Executor';$('broker').textContent='LOCAL PAPER M3';$('database').textContent='NÃO UTILIZADO';$('market').textContent='DATASET OFFLINE';
+  $('reconciled-label').textContent='Candle fechado em';$('age-label').textContent='Idade da leitura';$('timeline-label').textContent='AI TIMELINE';
+  $('footer-mode').textContent='TRADE BOT / M8 · NIGHT LAB';$('footer-api').textContent='GET /api/v1/mission-control/state · USD SIMULADO';
+  renderPortfolio(null);nlPoll();
+}else poll();
+setInterval(renderStatus,1000);
+</script>
+</body>
+</html>
+
+
