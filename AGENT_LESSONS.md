@@ -880,3 +880,32 @@ tests/test_broker_routes.py (collects cleanly; runs when Postgres is up).
   the call sites showed the worker validates the RAW broker rows and only the
   guard nets them downstream. Grep every call site and trace where the argument
   came from before deleting a check that looks unreachable.
+
+## Contract defaults are silent lies; grep every constructor of a shared contract
+
+`PaperPortfolio` has exactly TWO constructors (`services/api/broker_routes.py`
+and `services/api/paper_queries.py`). The broker one passed `mode=`; the
+simulator one passed `status` and `provider` but not `mode`, so pydantic
+supplied its default `"REPLAY"` and the endpoint labelled an `ALPACA_PAPER`
+book as REPLAY. A default that is only correct for the common case is a lie for
+every other case, and nothing in the code or the type system says so.
+
+- When a contract model has a defaulted field, audit EVERY constructor against
+  the field list, not just the one that looks suspicious. `grep -n "PaperPortfolio("`
+  is the whole search.
+- Severity ranking inside one payload: a wrong `quantity` misreports one order,
+  a wrong `status` can invalidate the whole model, a wrong `mode` misattributes
+  the executor for every number in the response. Check the blast radius before
+  picking what to fix.
+- `paper_runs.mode` is UPPERCASE `'REPLAY'|'ALPACA_PAPER'`
+  (`ck_paper_run_mode`, dropped and recreated by migration
+  `f2c8a51d9b10_paper_v1_runtime_mode.py`; the original 0008 constraint allowed
+  only REPLAY). It is deliberately identical to the `PaperPortfolio.mode`
+  Literal, so a correct read needs NO translation. A test that feeds lowercase
+  `alpaca_paper` asserts a value the database can never hold and the model would
+  reject -- check the CHECK constraint before writing the fixture value.
+- Stubs for `Connection.execute(...).mappings()` need `__iter__` as well as
+  `.first()`/`.one()`/`.all()`. `paper_queries.portfolio` builds a `marks` dict by
+  iterating `.mappings()` directly, so a stub with only the named accessors
+  raises `TypeError: '_Mappings' object is not iterable` and masks every
+  assertion in the test. Iterate the stub the way production does.

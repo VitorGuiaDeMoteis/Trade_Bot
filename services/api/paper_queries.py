@@ -55,7 +55,12 @@ def portfolio(c: Connection, store: PaperStore, limit: int = 50) -> PaperPortfol
         "fees",
     ):
         setattr(result, name, getattr(book, name))
+    # `mode` must come from the run row: `paper_runs.mode` is CHECK-constrained to
+    # ('REPLAY','ALPACA_PAPER') and this endpoint serves whichever run
+    # system_controls.active_run_id points at. Leaving the contract default in
+    # place labelled every alpaca_paper book "REPLAY".
     result.run_id, result.status, result.provider = run_id, run["status"], run["provider"]
+    result.mode = run["mode"]
     result.as_of, result.step = run["as_of"], run["step"]
     result.fee_bps, result.slippage_bps = run["fee_bps"], run["slippage_bps"]
     result.dataset_hash, result.dataset_count = run["dataset_hash"], len(run["dataset"])

@@ -897,6 +897,62 @@ fills reported/actual 0/0, `latest_orders` len 10, all 10 with null
 `last_reconciled_at`. All of it is the known-undeployed anomaly set -- do not
 re-investigate.
 
+### Cycle: simulator portfolio `mode` hardcoded to REPLAY (FIXED, recovery mode)
+
+Started as RECOVERY MODE: dirty tree with an untracked WIP test
+(`tests/test_paper_portfolio_mode.py`) pinning a defect in the SECOND
+`PaperPortfolio` constructor. No production change was in the WIP, so the cycle
+applied the fix and repaired the fixture.
+
+The defect: `services/api/paper_queries.py:portfolio` read `status` and
+`provider` off the `paper_runs` row but never `mode`, so the contract default
+`"REPLAY"` (packages/contracts/paper.py:76) was published for every run. That
+endpoint serves whichever run `system_controls.active_run_id` points at --
+including an `ALPACA_PAPER` run, which is what this deployment runs -- so the
+same money was labelled `"REPLAY"` here and `"ALPACA_PAPER"` by the sibling
+broker route. `mode` is the one contract field that names the executor which
+produced the numbers, and it was the one field that lied. Blast radius was the
+whole payload, not a field.
+
+Fix: `result.mode = run["mode"]` beside the existing `status`/`provider`
+assignment. Read-only mapping change -- no schema change, no broker call, no
+trading behavior.
+
+Recovery work on the WIP (two fixture defects, not production defects):
+- The test asserted lowercase `"alpaca_paper"`, but `ck_paper_run_mode` at
+  migration head f2c8a51d9b10 is `mode IN ('REPLAY','ALPACA_PAPER')` -- UPPERCASE,
+  and exactly the `PaperPortfolio.mode` Literal, so the column needs no
+  translation. The lowercase value would have been rejected by pydantic.
+- The stub connection's `_Mappings` had `.first()`/`.one()`/`.all()` but no
+  `__iter__`; `portfolio` iterates `.mappings()` directly for the marks query,
+  so 2 of the 3 tests died with `TypeError: '_Mappings' object is not iterable`
+  before reaching the assertion they were written to prove.
+
+Validation: 3 new-file tests passed; 36 passed with the broker-portfolio and
+paper-v1-stabilization siblings; ruff clean on both changed files; mypy clean
+on `services/api/paper_queries.py`. Confirmed pre-fix by `git show
+HEAD:services/api/paper_queries.py` containing zero `result.mode` occurrences
+(read-only dump to scratch, tree untouched).
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health.status=degraded, observed_at 2026-10-02T22:38:03Z,
+last_reconciled_at 2026-10-02T22:37:55Z, open positions AAPL/SPY/TSLA
+(0.0299 / 0.0130 / 0.0269 fractional, market_value 29.92), orders reported 0 vs
+actual 13, fills reported 0 vs actual 11, unrealized P&L -0.047278 (equity
+99951.29 / cash 99921.37), market_data state market_closed.
+
+The reported-count mismatch, the per-order null `last_reconciled_at` (10 of 10)
+and the `health.status=degraded` flap are all the KNOWN-UNDEPLOYED anomaly set
+(fixes committed on this branch, frozen runtime not rebuilt) -- do not
+re-investigate.
+
+NEW observation, not previously recorded: `paper.mode` is `null` in the
+observation payload even though `health.mode` is populated
+("ALPACA PAPER — DINHEIRO VIRTUAL"). `services/alpaca_paper/observation.py` has
+ZERO occurrences of `mode`, so the observation builder never populates it. Same
+constructor-vs-contract-field class as this cycle's fix, one file over. See the
+next-task note.
+
 ## Active blockers
 
 None known at initialization.
@@ -975,19 +1031,21 @@ Candidate next tasks (pick one in a clean cycle):
   whether the raise is reachable per order (then it belongs inside the loop's
   guard) or only for a payload-wide mismatch (then degrading is correct).
 
-NOTE on the second candidate above (the SIMULATOR `PaperPortfolio` in
-services/api/paper_queries.py:28): that is now the strongest remaining lead,
-because this cycle proved the BROKER route's `quantity` mapping was wrong for
-notional orders. `paper_queries.py` reads `PaperOrder.model_validate(dict(r))`
-straight off `paper_orders`, so it cannot hit the NULL-coercion bug -- but it
-is the second constructor of the same contract and deserves the same
-constructor-vs-contract-field audit.
+NOTE on the candidate below, updated this cycle: the SIMULATOR constructor
+`services/api/paper_queries.py:portfolio` is now FIXED -- it publishes
+`run["mode"]` instead of the contract's `"REPLAY"` default. That closes the
+constructor-vs-contract-field audit for `PaperPortfolio.mode`. `PaperOrder`
+there is still `PaperOrder.model_validate(dict(r))` straight off `paper_orders`,
+so its `filled_quantity` is populated by the row, not the `Decimal(0)` default
+-- already correct by construction, no work needed.
 
-- `PaperOrder.filled_quantity` is NOT NULL-defaulted to `Decimal(0)`
-  (packages/contracts/paper.py:17). Confirm the SIMULATOR `paper_queries.py`
-  path actually populates it rather than relying on that default, since a
-  default-filled `filled_quantity: 0` is the mirror of the bug fixed this
-  cycle. Bounded: read the one constructor.
+- `paper.mode` is `null` in `.agent-runtime/paper-latest.json` while
+  `health.mode` is populated. `services/alpaca_paper/observation.py` contains
+  ZERO occurrences of `mode`, so the observation builder never sets it. Bounded
+  single-file audit: find the observation payload's own contract/dataclass and
+  check whether it has a `mode` field that is never assigned, or whether the
+  consumer (mission-control.html / the observation JSON schema) expects one.
+  Same class as the last two cycles' `last_reconciled_at` null.
 
 - `broker_portfolio_snapshots.buying_power` NOT NULL assumption at migration
   head f2c8a51d9b10 (still open, unchanged).
