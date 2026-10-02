@@ -27,6 +27,50 @@ class ExecutionGuard:
         return result
 
     @classmethod
+    def _net_positions(cls, positions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        """Collapse the broker's position rows into ONE netted entry per symbol.
+
+        The broker can report the same symbol on more than one row (hedged legs,
+        partial lots). Collapsing them with a last-row-wins map made every
+        verdict below depend on the ORDER the broker happened to list rows in,
+        and disagreed with `PaperAlpacaWorker`, which nets all rows for a symbol
+        before sizing a SELL -- two components holding two different numbers for
+        the SAME position. Netting here keeps one definition of a position.
+
+        `*_known` reports whether EVERY row for that symbol yielded a usable
+        number. One unsourceable leg makes the net unknown: inventing the
+        missing leg as 0 would state a position the broker never reported, so
+        callers fail closed on it.
+        """
+        netted: dict[str, dict[str, Any]] = {}
+        for position in positions:
+            symbol = position.get("symbol")
+            if not isinstance(symbol, str) or not symbol:
+                # Unattributable row: `evaluate` rejects the payload before
+                # reaching here, so netting it is defensive only.
+                continue
+            entry = netted.setdefault(
+                symbol,
+                {
+                    "qty": Decimal("0"),
+                    "market_value": Decimal("0"),
+                    "qty_known": True,
+                    "market_value_known": True,
+                },
+            )
+            qty = cls._optional_decimal(position.get("qty", position.get("quantity")))
+            if qty is None:
+                entry["qty_known"] = False
+            else:
+                entry["qty"] += qty
+            market_value = cls._optional_decimal(position.get("market_value"))
+            if market_value is None:
+                entry["market_value_known"] = False
+            else:
+                entry["market_value"] += market_value
+        return netted
+
+    @classmethod
     def evaluate(
         cls,
         side: str,
@@ -77,17 +121,21 @@ class ExecutionGuard:
                 else:
                     unknown_in_flight_buy_notional = True
 
-        pos_map = {p["symbol"]: p for p in positions}
-        current_pos = pos_map.get(symbol)
+        net_positions = cls._net_positions(positions)
+        current_pos = net_positions.get(symbol)
         # Same rule for the symbol being traded: an open position whose qty or
         # market_value cannot be sourced makes both the pyramiding check and the
         # exposure sum unusable, so it is reported as unknown instead of zero.
         current_qty_raw = current_mv_raw = None
         if current_pos is not None:
-            current_qty_raw = cls._optional_decimal(
-                current_pos.get("qty", current_pos.get("quantity"))
+            current_qty_raw = (
+                current_pos["qty"] if current_pos["qty_known"] else None
             )
-            current_mv_raw = cls._optional_decimal(current_pos.get("market_value"))
+            current_mv_raw = (
+                current_pos["market_value"]
+                if current_pos["market_value_known"]
+                else None
+            )
         current_mv = current_mv_raw if current_mv_raw is not None else Decimal("0")
         current_qty = current_qty_raw if current_qty_raw is not None else Decimal("0")
 
@@ -136,25 +184,27 @@ class ExecutionGuard:
             if pending_buys > 0:
                 return False, "Máximo 1 posição aberta por símbolo (no pyramiding) [in-flight]"
 
+            # Exposure is summed from the NETTED map, one entry per symbol. The
+            # broker can list a symbol on several rows (hedged legs, partial
+            # lots); adding each row's market_value GROSS charged a hedged pair
+            # for exposure it did not hold and tripped the cap for the wrong
+            # reason. Fail-closed rules are unchanged -- an unsourceable qty or
+            # market_value on ANY leg still refuses the BUY.
             total_exposure = Decimal("0")
-            for position in positions:
-                qty = cls._optional_decimal(
-                    position.get("qty", position.get("quantity"))
-                )
-                if qty is None:
+            for position_symbol, net in net_positions.items():
+                if not net["qty_known"]:
                     # Cannot tell whether this position holds exposure, so it
                     # cannot be excluded from the cap without failing open.
                     return False, (
-                        f"Quantidade da posição {position.get('symbol')} "
+                        f"Quantidade da posição {position_symbol} "
                         "indisponível para o cálculo de exposição"
                     )
-                if qty > 0:
-                    market_value = cls._optional_decimal(position.get("market_value"))
-                    if market_value is None:
+                if net["qty"] > 0:
+                    if not net["market_value_known"]:
                         return False, (
-                            f"Exposição da posição {position.get('symbol')} indisponível"
+                            f"Exposição da posição {position_symbol} indisponível"
                         )
-                    total_exposure += market_value
+                    total_exposure += net["market_value"]
             if unknown_in_flight_buy_notional:
                 return False, "Exposição de BUY in-flight desconhecida"
             if (

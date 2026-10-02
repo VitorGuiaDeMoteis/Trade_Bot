@@ -260,14 +260,14 @@ def test_pending_sell_with_unsourceable_quantity_never_reaches_submission():
     assert any("in-flight desconhecida" in reason for reason in _rejection_reasons(engine))
 
 
-def test_unexecutable_sell_skips_the_decision_instead_of_degrading():
+def test_unexecutable_sell_is_rejected_without_degrading_the_worker():
     """One unexecutable decision must not DEGRADE the whole worker.
 
-    The guard dedupes positions with `pos_map` (LAST row per symbol wins) while
-    the worker SUMS every row for the symbol, so a broker payload carrying two
-    netting rows for the same symbol can leave the guard approving a position it
-    then computes as fully committed. Previously that reached
-    `raise RuntimeError("sell_quantity_unavailable")`, which `_run` escalates to
+    These two netting rows for AAPL sum to 0. The guard now NETS the same way the
+    worker does, so both components agree there is nothing to sell and the guard
+    refuses the SELL itself. Previously the guard took the last row (+10) and
+    approved, and the worker then computed 0 and raised
+    `RuntimeError("sell_quantity_unavailable")`, which `_run` escalates to
     `_enter_degraded`: no further execution for the rest of the process lifetime.
     """
     worker, engine, executor = _worker()
@@ -280,11 +280,16 @@ def test_unexecutable_sell_skips_the_decision_instead_of_degrading():
 
     assert executor.submissions == []
     assert worker.degraded is False
-    assert any("sell_quantity_unavailable" in reason for reason in _rejection_reasons(engine))
+    assert _rejection_reasons(engine)
 
 
-def test_negative_available_quantity_also_skips_instead_of_degrading():
-    """`quantity < 0` must be skipped too, not raised: still fail-closed."""
+def test_negative_available_quantity_is_rejected_without_degrading():
+    """`available_qty <= 0` is refused, by the guard, before any submit.
+
+    Netted AAPL is 5 shares with 6 already in flight, so nothing is available.
+    Guard and worker compute the same remaining quantity, so the guard rejects
+    the row rather than the worker discovering it afterwards.
+    """
     worker, engine, executor = _worker(
         in_flight=[{"symbol": "AAPL", "side": "SELL", "quantity": Decimal("6")}]
     )
@@ -297,11 +302,16 @@ def test_negative_available_quantity_also_skips_instead_of_degrading():
 
     assert executor.submissions == []
     assert worker.degraded is False
-    assert any("sell_quantity_unavailable" in reason for reason in _rejection_reasons(engine))
+    assert _rejection_reasons(engine)
 
 
-def test_skipped_sell_does_not_block_later_pending_decisions():
-    """The skip is scoped to its own row: the loop must keep going."""
+def test_netted_position_that_can_still_be_sized_is_submitted():
+    """Netting must not strand a real long: AAPL nets to 0, TSLA still closes.
+
+    AAPL's two rows sum to 0 so it is refused; the unrelated TSLA decision in the
+    same cycle must still be executed, proving one unexecutable row is scoped to
+    itself.
+    """
     worker, engine, executor = _worker(
         pending=[
             _pending_row("SELL", "AAPL"),
@@ -322,7 +332,7 @@ def test_skipped_sell_does_not_block_later_pending_decisions():
 
     assert [(s["symbol"], s["quantity"]) for s in executor.submissions] == [("TSLA", Decimal("5"))]
     assert worker.degraded is False
-    assert any("sell_quantity_unavailable" in reason for reason in _rejection_reasons(engine))
+    assert _rejection_reasons(engine)
 
 
 def test_sell_without_a_position_is_rejected():

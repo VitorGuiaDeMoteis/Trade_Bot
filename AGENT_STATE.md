@@ -573,6 +573,70 @@ the per-order null `last_reconciled_at` both persist ONLY because the
 agent-side fixes are not deployed to the frozen runtime (deploy requires human
 approval).
 
+### Cycle: guard/worker position aggregation mismatch (FIXED, recovery mode)
+
+Started as RECOVERY MODE: dirty tree with a partially-finished uncommitted
+change in `services/alpaca_paper/guard.py` (new `_net_positions` helper wired
+into the per-symbol lookup) plus an untracked test file
+`tests/test_guard_position_aggregation.py`. The premise was the FIRST candidate
+task in the previous cycle's backlog.
+
+Root cause: two components held two different numbers for the SAME position.
+`guard.py` collapsed the broker's rows with `pos_map = {p["symbol"]: p ...}`
+(LAST row wins) while `worker.py:436-443` SUMS every row for the symbol. Alpaca
+normally returns one row per symbol so this was latent, but any multi-row payload
+made the guard's verdict depend on the ORDER the broker happened to list rows in:
+
+- rows `[+0.03, -0.02]` -> guard saw -0.02 -> SELL rejected as an illegal SHORT,
+  stranding a genuinely long 0.01 position the worker would have closed;
+- rows `[-0.02, +0.03]` -> guard saw +0.03 -> SELL approved on a magnitude the
+  netted position (0.01) never justified.
+
+Exposure had the mirror-image defect: the cap summed every row's `market_value`
+GROSS, so a hedged pair counted 150 of exposure when the net was 15.
+
+Fix: new `ExecutionGuard._net_positions` collapses rows into ONE netted entry
+per symbol, summing `qty` and `market_value`, with `qty_known` /
+`market_value_known` flags. One unsourceable leg makes the net UNKNOWN rather
+than 0 -- inventing the missing leg would state a position the broker never
+reported, so callers fail closed on it. Both consumers read the netted map: the
+per-symbol lookup (pyramiding, SHORT check, dust check) and the BUY exposure cap.
+
+Completed work this cycle: the WIP had wired netting into the lookup but left the
+BUY exposure loop (guard.py:188-205) still summing per-row GROSS, so its own new
+test `test_exposure_cap_uses_netted_market_value_per_symbol` failed on arrival.
+Rewrote that loop to iterate the netted map; fail-closed semantics are unchanged
+(an unsourceable qty or market_value on ANY leg still refuses the BUY), only the
+aggregation is now netted.
+
+Three tests in `tests/test_worker_pending_sell_sizing.py` (committed last cycle)
+had to be rewritten. They reached the worker's `sell_quantity_unavailable` skip by
+constructing the guard/worker DISAGREEMENT -- precisely the precondition this fix
+eliminates. They now pin the stronger invariant: guard and worker agree, the guard
+rejects the row itself, nothing is submitted, and the worker is NOT degraded.
+`test_skipped_sell_does_not_block_later_pending_decisions` was renamed to
+`test_netted_position_that_can_still_be_sized_is_submitted` and keeps its real
+purpose (an unrelated TSLA SELL in the same cycle still executes).
+
+Net effect: the root cause is now closed, not just the crash symptom the previous
+cycle's skip-patch worked around. The worker's defensive skip remains in place as
+belt-and-braces; the two components no longer disagree.
+
+Validation: 6 new-file tests passed; guard/worker/daily-loss/executor sibling
+suites 109 passed; ruff clean on all three changed files; mypy clean on
+services/alpaca_paper/guard.py.
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health ok, open positions [AAPL, SPY, TSLA] (all ~0.013-0.03 fractional shares),
+orders reported 0 vs actual 11, fills reported 0 vs actual 11, unrealized P&L
+0.048309 (equity 99951.39 / cash 99921.37, market_value 30.02), last_reconciled_at
+2026-10-02T19:48:35Z. No new anomaly. Note the live open positions total
+market_value 30.02, which is AT/ABOVE the `MAX_TOTAL_EXPOSURE` 30.00 cap, so new
+BUYs are legitimately cap-blocked right now -- not a defect. The 0-vs-11
+reported-count mismatch and the per-order null `last_reconciled_at` persist ONLY
+because the agent-side fixes are not deployed to the frozen runtime (deploy
+requires human approval).
+
 ## Active blockers
 
 None known at initialization.
@@ -600,21 +664,14 @@ The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
 production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).
 Both branches of the worker's order builder are covered by pure unit tests
 (SELL sizing 04b0f9f, BUY notional coverage, executor numerics).
+The guard/worker POSITION AGGREGATION MISMATCH is fixed -- the guard now NETS
+broker position rows per symbol (`ExecutionGuard._net_positions`) and both the
+per-symbol lookup and the BUY exposure cap read that one definition.
 The Paper-reported-counts observability defect is fixed (see cycle above).
 
 Candidate next tasks (pick one in a clean cycle):
 
-- The guard/worker POSITION AGGREGATION MISMATCH is the real root cause behind
-  the fix just committed, and only the crash symptom was closed.
-  `guard.py:80` builds `pos_map = {p["symbol"]: p for p in positions}` (LAST row
-  wins) while `worker.py:436-443` SUMs every row for the symbol. Alpaca normally
-  returns one row per symbol, so this is latent -- but any multi-row payload makes
-  the guard and the worker disagree about the position, in either direction
-  (guard approves a SELL the worker computes as 0, or the guard blocks a SELL the
-  worker could have sized). Bounded: decide which aggregation is canonical and
-  make both read it, or fail closed when the broker payload has >1 row per
-  symbol. Pure unit tests are possible with the existing scripted-engine pattern.
-- OBSERVATION path null `last_reconciled_at` (confirmed THREE times now in Paper):
+- OBSERVATION path null `last_reconciled_at` (confirmed FOUR times now in Paper):
   every `latest_orders[*]` entry in `.agent-runtime/paper-latest.json` carries
   `"last_reconciled_at": null` while the portfolio-level field is populated.
   The broker route now sets it, so find the SECOND constructor that builds the

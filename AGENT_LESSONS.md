@@ -2,6 +2,43 @@
 
 Durable engineering memory for autonomous development.
 
+## One definition per concept (guard/worker position aggregation)
+
+A latent multi-row defect lived for several cycles because the broker NORMALLY
+returns one position row per symbol, and both components' tests were pure unit
+tests that always passed exactly one row per symbol. The trap:
+
+- `ExecutionGuard` collapsed rows with `pos_map = {p["symbol"]: p for p in positions}`
+  (LAST row wins), so its verdict depended on the ORDER the broker listed rows in;
+- `PaperAlpacaWorker._process_pending_submits` SUMmed every row for the symbol.
+
+Same position, two different numbers, in either direction of harm. The symptom
+that finally exposed it was an availability one, not a correctness assertion: the
+guard approved a SELL the worker then computed as 0 and raised
+`sell_quantity_unavailable`, degrading the entire worker for the process lifetime.
+A previous cycle patched the SYMPTOM (skip the decision); the root cause took
+another cycle because the tests that motivated it were asserting the symptom's
+reachability.
+
+Reusable rules:
+
+- When two components consume the same broker payload, grep for how EACH
+  aggregates it. One sum and one last-wins in the same codebase is a latent
+  divergence, not a style difference.
+- For a fail-closed numeric aggregate, carry a `*_known` flag rather than
+  defaulting the missing leg to 0. Summing with an invented 0 states a position
+  the broker never reported. `ExecutionGuard._net_positions` returns
+  `{symbol: {qty, market_value, qty_known, market_value_known}}`; one
+  unsourceable leg makes the whole net UNKNOWN and callers fail closed.
+- The netted map must be the single input to EVERY consumer of the payload, not
+  just the one that triggered the bug. The WIP that introduced `_net_positions`
+  rewired the per-symbol lookup but left the BUY exposure cap summing per-row
+  GROSS `market_value` -- its own new test caught it on arrival. When a fix
+  introduces a shared derived value, enumerate the consumers before committing.
+- Fixing a root cause can invalidate tests that PROVED the old symptom was
+  reachable. Rewrite them to pin the stronger invariant (the two components
+  agree) rather than deleting them, and say in the commit/state why.
+
 ## Repository
 
 - Agent branch: agent/autonomous-dev
