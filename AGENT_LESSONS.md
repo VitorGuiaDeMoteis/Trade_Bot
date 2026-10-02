@@ -271,6 +271,40 @@ guard rather than a smoke test.
 
 Tests: tests/test_worker_pending_sell_sizing.py (13 pure unit tests).
 
+## The two sides of the order builder are asymmetric
+
+`_process_pending_submits` builds one order per APPROVED decision and the branches
+are NOT symmetric:
+
+- SELL sends SHARES: `quantity = broker_quantity - pending_sell_quantity`,
+  `notional = None`.
+- BUY sends DOLLARS: `quantity = Decimal("0")`,
+  `notional = ExecutionGuard.MAX_NOTIONAL_PER_TRADE` (worker.py:424-426).
+
+Both go through the SAME `ExecutionGuard.evaluate` call and the SAME
+`executor.submit` call, so testing one side leaves the other entirely
+uncovered. A BUY that leaked a share quantity would size a dollar decision as a
+number of shares -- the wrong order, not just a wrong quantity.
+
+Invariant worth pinning in tests: the guard CHARGES
+`MAX_NOTIONAL_PER_TRADE` against `MAX_TOTAL_EXPOSURE` when approving a BUY
+(guard.py:160-168), so the notional the worker submits must be exactly that
+constant. If the two diverged, the exposure cap would be enforced against a
+figure no order ever used. Assert against `ExecutionGuard.MAX_NOTIONAL_PER_TRADE`
+(not a literal 10.00) so changing the constant in only one place fails the test.
+
+Exposure-cap boundary tests are worth having in BOTH directions: with existing
+exposure making `total + MAX_NOTIONAL == MAX_TOTAL_EXPOSURE` the BUY is
+approved (the guard uses `>`), and one cent more is rejected. A single "over the
+cap" test would not catch an off-by-one that flipped to `>=`.
+
+The fail-closed asymmetry is also worth one explicit test: under an account
+missing `last_equity`, a BUY is rejected and a SELL of an existing position
+still submits `quantity=10, notional=None`. That pins "fail closed" as
+BUY-only rather than a blanket shutdown.
+
+Tests: tests/test_worker_pending_buy_notional.py (15 pure unit tests).
+
 ## mypy scope on this repo
 
 - `[tool.mypy] files = ["services", "packages",

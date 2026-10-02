@@ -219,6 +219,43 @@ assertions double as wiring coverage of the guard's SELL branch.
 Validation: 13 new passed; sibling guard/worker suites 48 passed; ruff clean.
 mypy not run -- no production change (tests/ is outside the configured scope).
 
+### Cycle: worker BUY notional sizing now unit tested (DONE)
+
+The remaining half of the only method that turns an APPROVED risk decision into
+an order. The previous cycle covered the SELL branch only, and the two sides
+share one guard call and one submit call, so a BUY-side mistake was invisible to
+the SELL tests.
+
+`worker.py:424-426` sends a DOLLAR order for a BUY -- `quantity = Decimal("0")`
+and `notional = ExecutionGuard.MAX_NOTIONAL_PER_TRADE` -- and had NO pure unit
+coverage. No production code changed. New test file
+tests/test_worker_pending_buy_notional.py (15 pure unit tests, scripted engine +
+recording executor, no Postgres/broker/DB mutation) covers:
+
+- a BUY submits `notional == MAX_NOTIONAL_PER_TRADE` and `quantity == 0`, i.e.
+  never a share quantity;
+- the submitted notional is asserted against the guard CONSTANT, not a literal
+  10.00, because the guard charges that same constant against
+  `MAX_TOTAL_EXPOSURE` (guard.py:160-168). If the two ever diverged, the cap
+  would be enforced against a figure no order used;
+- exposure cap boundary both ways: existing exposure making the total exactly
+  `MAX_TOTAL_EXPOSURE` is APPROVED, one cent more is REJECTED;
+- an in-flight BUY's `requested_notional` counts toward the cap (boundary + over
+  + unsourceable notional -> fail closed);
+- no pyramiding with an open position, no pyramiding with a pending in-flight BUY;
+- another position with unsourceable `market_value` or unsourceable `qty` fails
+  the BUY closed;
+- a missing `last_equity` baseline and a tripped daily breaker reject the BUY;
+- a symbol outside `ALLOWED_SYMBOLS` is rejected;
+- a SELL still submits `quantity=10, notional=None` under the SAME degraded
+  account, pinning that fail-closed is BUY-only.
+
+`ExecutionGuard.evaluate` runs for real in all of them, so the rejections double
+as wiring coverage of the guard's BUY branch.
+
+Validation: 15 new passed; guard/worker sibling suites 61 passed; ruff clean.
+mypy not run -- no production change (tests/ is outside the configured scope).
+
 ## Active blockers
 
 None known at initialization.
@@ -239,8 +276,9 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 ## Next task
 
 The `dict.get(key, 0)` broker-numeric audit is COMPLETE across both layers
-(guard d55774e/6747abe, worker cc0acf5), and the worker's SELL-sizing
-arithmetic is now covered by pure unit tests.
+(guard d55774e/6747abe, worker cc0acf5). Both branches of the worker's order
+builder are now covered by pure unit tests (SELL sizing 04b0f9f, BUY notional
+coverage added this cycle).
 
 Candidate next tasks (pick one in a clean cycle):
 
@@ -248,13 +286,15 @@ Candidate next tasks (pick one in a clean cycle):
   holds in the current migration head (f2c8a51d9b10) before relying on the
   raise-not-NULL decision from the worker broker-numeric cycle. Grep the
   migrations directory, no DB access needed.
-- The BUY branch of `_process_pending_submits` sets
-  `quantity = Decimal("0")` and `notional = MAX_NOTIONAL_PER_TRADE` with no
-  pure unit test yet; the new scripted-engine harness makes it testable in the
-  same style (a BUY must submit notional 10.00 and never a share quantity).
 - Audit `services/alpaca_paper/executor.py` for the same bug class: any broker
   numeric read there with a `dict.get(key, default)` default, and whether
   `broker_order_quantity_divergence` (worker.py:255) has coverage.
+- `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")
+  when computed qty <= 0 (worker.py:421-422). Check whether an unreachable
+  throw there would kill the whole worker cycle (`_run` turns RuntimeError into
+  DEGRADED) rather than just skipping one decision -- a single bad pending SELL
+  degrading the entire bot is an availability concern, unlike the intended
+  financial fail-closed.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest.
