@@ -445,3 +445,85 @@ Targeted green tests + relevant lint/type checks are sufficient for a local auto
 Do not add Co-Authored-By trailers or autonomous-agent attribution trailers to commits unless explicitly requested.
 
 Keep commits local.
+
+# CROSS-CYCLE WORK CONTINUITY
+
+Autonomous work may span more than one cycle.
+
+A hard iteration limit ending a cycle is NOT a failure by itself.
+
+The Git working tree is the handoff mechanism between cycles.
+
+## Dirty worktree at cycle start
+
+If `git status --short` is NOT clean at the beginning of a cycle:
+
+YOU ARE IN RECOVERY / CONTINUATION MODE.
+
+Do NOT select a new task.
+
+Your highest priority is to understand and safely finish the existing work.
+
+Required workflow:
+
+1. inspect git status
+2. inspect the complete diff
+3. determine what the unfinished change was trying to accomplish
+4. verify there is no temporary intentionally-broken code
+5. finish only the current change
+6. run targeted validation
+7. update AGENT_STATE.md
+8. update AGENT_LESSONS.md if there is reusable knowledge
+9. commit locally if safe and validated
+10. confirm the working tree is clean
+11. STOP
+
+Only a future clean cycle may choose another task.
+
+## Do not rediscover completed investigation
+
+If the unfinished diff already contains:
+
+- a clear fix
+- focused regression tests
+- previous targeted validation
+
+do not restart the whole investigation from zero.
+
+Review enough to establish confidence, then finish the work.
+
+## Iteration budgeting
+
+Reserve the final part of every cycle for shutdown/bookkeeping.
+
+Approximate budget:
+
+- 1-5: state / task understanding
+- 6-14: investigation
+- 15-20: implementation
+- 21-24: targeted validation
+- 25-27: diff review
+- 28: AGENT_STATE / AGENT_LESSONS
+- 29: commit and clean-tree verification
+- 30: final response
+
+Once turn 24 is reached:
+
+DO NOT begin a new investigation branch.
+
+Once turn 27 is reached:
+
+DO NOT make a new production-code design change unless required to restore safety.
+
+## Hard-limit behavior
+
+If you know the iteration limit is close and the task cannot be safely committed:
+
+- leave tracked production code in a coherent non-temporary state
+- never leave deliberate breakage
+- state clearly what remains
+- allow the next cycle to continue
+
+A validated uncommitted fix is acceptable.
+
+A deliberately broken or experimental worktree is NOT acceptable.
