@@ -53,7 +53,7 @@ Remove-Item $StopFile -ErrorAction SilentlyContinue
 
 hermes -p cloud config set model.default "stealth/space-bunny-alpha"
 
-$Prompt = "Start ONE TradingBot autonomous development cycle. First read AGENT_MISSION.md, AGENT_STATE.md and AGENT_LESSONS.md completely. Follow AGENT_MISSION.md exactly. Inspect current Git state, select ONE safe high-value task yourself, implement it, validate it, review the diff, update project state/lessons when appropriate, make a LOCAL commit only if safe and green, do not push, do not read secrets, do not mutate broker/runtime database, report the required cycle result and then stop."
+$Prompt = "Start ONE SMALL TradingBot autonomous development cycle. Read AGENT_MISSION.md, AGENT_STATE.md and AGENT_LESSONS.md first and obey them exactly. One task only. Prefer targeted reads and targeted tests. Do NOT run the full test suite at cycle start. Aim for <=20 tool calls. If context compresses twice, preserve state, leave the worktree safe and finish the cycle instead of continuing. Never temporarily break tracked production code to prove a regression test. Do not push, read secrets, mutate broker state or mutate the runtime database. Commit locally only safe validated work, update persistent state/lessons, report CYCLE RESULT / TASK / CHANGES / VALIDATION / COMMIT / NEXT CANDIDATE TASK, then STOP."
 
 $Cycle = 0
 
@@ -159,3 +159,4 @@ finally {
 
     Remove-Item $PidFile -ErrorAction SilentlyContinue
 }
+

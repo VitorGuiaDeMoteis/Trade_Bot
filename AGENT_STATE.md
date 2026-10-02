@@ -68,3 +68,25 @@ None known at initialization.
 Inspect the repository and select the highest-value small safe improvement.
 
 Do not blindly trust historical TODO or handoff documents when Git HEAD or current runtime evidence contradicts them.
+
+## Autonomous cycle incident
+
+First autonomous cycle interrupted before completion.
+
+What happened:
+
+- A suspected daily-loss circuit-breaker bug was investigated.
+- Investigation expanded too far.
+- Full-suite pytest baseline consumed excessive time.
+- Session context was compressed repeatedly.
+- Hermes reached its iteration budget before completing validation.
+- Temporary experimental code was left in the worktree.
+- The incomplete cycle was manually discarded back to the previous clean commit.
+
+Important:
+
+The suspected daily-equity baseline issue remains UNRESOLVED and must be re-investigated in a future SMALL cycle.
+
+Do not assume the interrupted implementation was correct.
+
+Next investigation should be narrow and should specifically consider whether a daily equity baseline must survive process restarts rather than existing only in RAM.

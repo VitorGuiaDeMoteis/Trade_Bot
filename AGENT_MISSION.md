@@ -267,3 +267,143 @@ NEXT CANDIDATE TASK
 Then STOP.
 
 The external autonomous loop will start the next clean cycle automatically.
+
+# CONTEXT AND ITERATION DISCIPLINE
+
+Autonomous cycles MUST remain small.
+
+The purpose of multiple cycles is to avoid giant sessions.
+
+## Hard cycle discipline
+
+Aim for no more than roughly 15-20 tool calls in one cycle.
+
+If you are approaching 20 tool calls:
+
+1. stop expanding scope
+2. preserve useful findings in AGENT_STATE.md
+3. preserve reusable knowledge in AGENT_LESSONS.md
+4. leave the working tree safe
+5. finish the cycle
+
+Never continue investigating indefinitely.
+
+## Context compression
+
+Context compression is a signal that the cycle is becoming too large.
+
+If the session compresses ONCE:
+
+- immediately reduce scope
+- stop opening unrelated files
+- finish the current narrow task if it is already straightforward
+
+If the session compresses a SECOND time:
+
+- do NOT begin new implementation work
+- make sure the working tree contains no temporary intentionally-broken code
+- record findings/state
+- commit only safe already-validated work
+- finish the cycle
+
+Never intentionally continue through repeated context compressions.
+
+## Test discipline
+
+DO NOT run the entire pytest suite at the beginning of a cycle.
+
+Start with the smallest relevant targeted tests.
+
+Examples:
+
+python -m pytest tests/test_specific_area.py -q
+
+or specific test nodes.
+
+Run broader tests only AFTER the implementation is complete and only when the change justifies them.
+
+Do not spend several minutes establishing a full-suite baseline every cycle.
+
+Known unrelated/environmental test failures should be recorded once in AGENT_STATE.md and not rediscovered every cycle.
+
+## File-reading discipline
+
+Prefer:
+
+- search
+- targeted line ranges
+- specific functions
+- specific tests
+
+Avoid repeatedly reading entire large files.
+
+Do not reread a file unless new information requires it.
+
+## Investigation discipline
+
+Once a bug is reproduced and its root cause is proven, stop reconfirming the same fact.
+
+Move to:
+
+test -> fix -> validation -> review -> commit -> state update -> stop.
+
+Do not repeatedly say or prove "root cause confirmed".
+
+## Regression testing discipline
+
+Never intentionally break the CURRENT working tree just to prove that a regression test fails against old behavior.
+
+Do NOT temporarily restore a known bug in repository files.
+
+To reason about old behavior use:
+
+- Git history
+- git show
+- isolated scratch code
+- mocks
+- a separate temporary worktree when truly necessary
+
+The autonomous branch must remain safe throughout the cycle.
+
+## Scope
+
+One cycle = one task.
+
+A task that grows substantially must be divided into future cycles.
+
+It is acceptable to finish a cycle with:
+
+- investigation completed
+- no production-code change
+- a clear next task recorded
+
+That is better than exhausting context.
+
+## Validation budget
+
+Do not run the same validation repeatedly without a concrete reason.
+
+For normal small Python changes prefer:
+
+1. targeted pytest
+2. targeted ruff
+3. targeted mypy if relevant
+
+Then stop.
+
+A full test suite is NOT required for every local autonomous commit.
+
+## Safety before cycle termination
+
+Before ending EVERY cycle verify:
+
+git status --short
+
+There must NEVER be:
+
+- TEMP-BUG-RESTORE
+- temporary intentional breakage
+- scratch experiments inside tracked production files
+- half-applied patches
+
+If the cycle cannot complete, restore only the files modified during that cycle before stopping.

@@ -64,3 +64,12 @@ Uncommitted local files are not automatically canonical.
 - Investigate uncertainty instead of inventing facts
 - Keep durable lessons concise
 - Avoid repeatedly rediscovering known facts
+
+## Autonomous cycle sizing
+
+- The first autonomous cycle became too large: it ran a full pytest suite, used many tool calls and repeatedly compacted context.
+- Full-suite baseline testing must not happen at the beginning of every cycle.
+- Prefer targeted tests and targeted file reads.
+- Repeated context compression means the task must be split.
+- Never temporarily reintroduce a known bug into tracked production code to prove a regression test.
+- A cycle may finish with investigation only; the next clean cycle can implement the fix.
