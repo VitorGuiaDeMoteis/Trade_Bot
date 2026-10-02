@@ -183,6 +183,42 @@ New tests: tests/test_worker_broker_numeric_fail_closed.py (7 pure unit tests,
 stub engine, no Postgres/broker/DB mutation). Targeted 7 passed; sibling guard
 suites 27 passed; ruff clean; mypy clean on `services/alpaca_paper`.
 
+### Cycle: worker pending-SELL sizing arithmetic now unit tested (DONE)
+
+The last untested trading-decision path in the worker. `_process_pending_submits`
+computes the only share quantity the bot ever sends for a position-closing SELL:
+
+    quantity = broker_quantity - pending_sell_quantity   (worker.py:404-422)
+
+Two independent failure directions, both financially material: too large
+oversells into a short, too small leaves dust. `tests/test_alpaca_worker.py`
+touches this method only via DB-backed tests that cannot run without Postgres,
+so the arithmetic had NO pure unit coverage (the prior cycle only asserted the
+`_decimal` contract, not the arithmetic that consumes it).
+
+No production code changed. New test file
+tests/test_worker_pending_sell_sizing.py (13 pure unit tests, scripted engine +
+recording executor, no Postgres/broker/DB mutation) covers:
+
+- full position when nothing is in flight (10 -> 10);
+- subtraction of a single pending SELL (10 - 4 -> 6) and of SEVERAL (10 - 3 -
+  2.5 -> 4.5), the case a single-order assumption would get wrong;
+- a pending SELL for a DIFFERENT symbol is not subtracted, and a pending BUY
+  never reduces a SELL;
+- a pending SELL covering the whole position, or exceeding it, is rejected and
+  NOTHING is submitted;
+- an in-flight SELL with NULL quantity fails closed (no submission);
+- a SELL with no position, and a position whose qty cannot be sourced, are
+  rejected before any submit;
+- a SELL submit carries `notional=None`;
+- a degraded worker and a paused system_controls row submit nothing.
+
+`ExecutionGuard.evaluate` runs for real inside these tests, so the rejection
+assertions double as wiring coverage of the guard's SELL branch.
+
+Validation: 13 new passed; sibling guard/worker suites 48 passed; ruff clean.
+mypy not run -- no production change (tests/ is outside the configured scope).
+
 ## Active blockers
 
 None known at initialization.
@@ -202,22 +238,23 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
 
-The `dict.get(key, 0)` broker-numeric audit is now COMPLETE across both
-layers -- guard (d55774e, 6747abe) and worker (committed this cycle). No
-remaining `, 0` defaults on broker numerics in `services/alpaca_paper/`.
+The `dict.get(key, 0)` broker-numeric audit is COMPLETE across both layers
+(guard d55774e/6747abe, worker cc0acf5), and the worker's SELL-sizing
+arithmetic is now covered by pure unit tests.
 
 Candidate next tasks (pick one in a clean cycle):
 
-- `tests/test_alpaca_worker.py` has only 3 DB-backed tests and they cannot run
-  without Postgres. The worker's `_process_pending_submits` SELL-sizing path
-  (`broker_quantity - pending_sell_quantity`, worker.py:404-422) is covered by
-  NO pure unit test. Adding a stub-engine test for it would close the last
-  untested trading-decision path in the worker, and the worker-side
-  `pending_sell_quantity` fix from this cycle has no direct test coverage of
-  that arithmetic today (only the `_decimal` contract is asserted).
 - Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still
-  holds in the current migration head before relying on the raise-not-NULL
-  decision from this cycle.
+  holds in the current migration head (f2c8a51d9b10) before relying on the
+  raise-not-NULL decision from the worker broker-numeric cycle. Grep the
+  migrations directory, no DB access needed.
+- The BUY branch of `_process_pending_submits` sets
+  `quantity = Decimal("0")` and `notional = MAX_NOTIONAL_PER_TRADE` with no
+  pure unit test yet; the new scripted-engine harness makes it testable in the
+  same style (a BUY must submit notional 10.00 and never a share quantity).
+- Audit `services/alpaca_paper/executor.py` for the same bug class: any broker
+  numeric read there with a `dict.get(key, default)` default, and whether
+  `broker_order_quantity_divergence` (worker.py:255) has coverage.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest.

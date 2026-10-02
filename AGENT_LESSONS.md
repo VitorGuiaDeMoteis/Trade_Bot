@@ -229,6 +229,48 @@ Postgres/broker/DB mutation). The `dict.get(key, 0)` audit is now CLOSED across
 both guard and worker; the convention going forward is: every broker numeric
 reaches `_decimal`/`_optional_decimal` RAW, with no `, 0` default anywhere.
 
+## Unit-testing a DB-driven worker method without Postgres
+
+`_process_pending_submits` looks untestable without a database, but it is not.
+Everything it needs can be injected:
+
+- `self.engine` only ever calls `connect()` / `begin()`, then
+  `execute(...).mappings()` (`.first()` for the single system_controls row, and
+  iteration for the pending/in-flight row sets) and `scalars(...)` for
+  blocked_symbols. A scripted connection that returns canned rows IN CALL
+  ORDER covers all of it: system_controls first, then pending rows, then
+  in-flight rows.
+- `self.executor` is an attribute, so replacing it with a recorder makes the
+  exact `submit(...)` kwargs observable -- which is the assertion that matters,
+  because the quantity handed to submit IS the trading decision.
+- `self.degraded` / `self.reconciliation_ready` are plain attributes; set them
+  to reach the real body instead of the early return.
+
+Result object must support `mappings()` returning something iterable (the
+pending fetch iterates it) plus `.first()` and `.all()`. One small class covers
+all three.
+
+Method under test: `worker._process_pending_submits(account=..., positions=...)`
+is async but does no real I/O in the tested path, so
+`asyncio.run(...)` is enough -- no pytest-asyncio needed.
+
+The guard is NOT stubbed. Running `ExecutionGuard.evaluate` for real makes the
+"nothing was submitted" assertions meaningful (they prove the guard's SELL
+branch short-circuits) and, incidentally, covers the guard/worker wiring that
+the earlier "test the wiring, not just the unit" lesson calls for.
+
+## Asserting a rejection reason without a DB
+
+The guard's rejection path executes
+`update(risk_decisions).values(decision="REJECTED", reason=reason)`. To assert
+WHICH condition rejected, filter the recorded statements by class name
+(`statement.__class__.__name__ == "Update"`) and read
+`statement.compile().params["reason"]`. This turns a generic "nothing was
+submitted" into a specific cause, which is what makes the test a regression
+guard rather than a smoke test.
+
+Tests: tests/test_worker_pending_sell_sizing.py (13 pure unit tests).
+
 ## mypy scope on this repo
 
 - `[tool.mypy] files = ["services", "packages",
