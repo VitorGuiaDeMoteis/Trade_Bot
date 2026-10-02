@@ -175,20 +175,30 @@ def create_app(settings: Settings | None = None, *, observation_only: bool = Fal
         provider_status = request.app.state.simulator.status()
         state = provider_status.state
         ready = database == "up" and state in {"connected", "market_closed"}
-        response.status_code = 200 if ready else 503
         response.headers["Cache-Control"] = "no-store"
 
         execution_mode = getattr(request.app.state.configuration, "execution_mode", "")
         if execution_mode == "alpaca_paper":
             mode = "ALPACA PAPER — DINHEIRO VIRTUAL"
             worker = getattr(request.app.state, "paper_worker", None)
-            ready = ready and bool(worker and worker.reconciliation_ready and not worker.degraded)
+            # `health_ready()`, not the raw execution gate: the gate is
+            # deliberately closed for a moment of every 3s cycle, which is not
+            # a runtime fault. Reading it here made /health flap to 503 in
+            # healthy operation. The trading gate is unchanged and still
+            # fail-closed on `worker.degraded` in the worker's submit path.
+            ready = ready and bool(worker and worker.health_ready())
         else:
             mode = (
                 "DADOS REAIS / EXECUÇÃO SIMULADA"
                 if provider_status.provider != "simulator"
                 else "SIMULADO"
             )
+
+        # Assigned only once every verdict above is final: in ALPACA PAPER the
+        # worker check narrows `ready` after the database/simulator check, so
+        # setting the status code earlier reported HTTP 200 next to a body
+        # saying "degraded".
+        response.status_code = 200 if ready else 503
 
         return HealthResponse(
             status="ok" if ready else "degraded",

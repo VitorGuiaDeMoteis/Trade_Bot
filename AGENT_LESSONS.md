@@ -416,6 +416,44 @@ BUY-only rather than a blanket shutdown.
 
 Tests: tests/test_worker_pending_buy_notional.py (15 pure unit tests).
 
+## The execution gate is NOT a health signal
+
+`AlpacaPaperWorker.reconcile_once` deliberately closes the EXECUTION gate at
+the top of every 3s cycle:
+
+    self.reconciliation_ready = False
+    self.degraded = True
+    self.degraded_reason = "reconciliation_in_progress"
+
+and reopens it only after the broker picture is fully refreshed. That is correct
+for trading -- no order may be placed against half-refreshed state -- but it
+means `degraded` is True for a slice of EVERY cycle even in a perfectly healthy
+runtime. Reading it as a health signal made `/health` flap to 503 in normal
+operation; runtime evidence was decisive: samples reported
+`health.status=degraded` while `paper.degraded=false`, `reconciled=true`,
+`paused=false`, each taken ~3.0-3.9s after its own `last_reconciled_at`, i.e.
+inside the NEXT cycle's window.
+
+The lesson generalizes: a flag that exists to fail CLOSED for one subsystem
+(here, trading) must not be reused as a report of whole-runtime health. Separate
+the two, and keep the sentinel EXACT -- only the literal
+`"reconciliation_in_progress"` is excused, so any real error still reads as
+unhealthy. A boolean alone is not enough: `_enter_degraded` must latch a
+durable `has_reconciled = False`, otherwise the next cycle's in-progress
+sentinel would self-heal a runtime that is failing every single cycle.
+
+Second defect found in the same handler: `response.status_code` was assigned
+BEFORE the ALPACA PAPER worker check narrowed `ready`, so the endpoint could
+return HTTP 200 next to a body saying `degraded`. Compute every verdict, then
+assign the status code once. In the non-paper branch `ready` is not modified,
+so moving the assignment is behavior-preserving there.
+
+`worker.health_ready()` had exactly ONE caller (`/health`); the trading
+decisions at worker.py:313, 359 and 423 read `degraded` /
+`reconciliation_ready` and were deliberately left untouched.
+
+Tests: tests/test_health_paper_worker_ready.py (11 pure unit tests).
+
 ## mypy scope on this repo
 
 - `[tool.mypy] files = ["services", "packages",

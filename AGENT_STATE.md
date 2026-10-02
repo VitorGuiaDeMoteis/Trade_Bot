@@ -333,6 +333,52 @@ length, and cover the empty-state 0 case.
 
 Validation: 3 new passed; ruff clean; mypy clean on broker_routes.py.
 
+### Cycle: /health no longer flaps in ALPACA PAPER (FIXED)
+
+Found by the mandatory Paper review gate, finished and committed in recovery
+mode after an earlier cycle left the change uncommitted.
+
+Runtime evidence: 14 of 41 observation samples reported `health.status=
+degraded` while `paper.degraded=false`, `reconciled=true` and `paused=false`,
+every one taken 3.06-3.92s after that sample's own `last_reconciled_at` -- i.e.
+inside the NEXT cycle's fail-closed window, not a real fault.
+
+Root cause: `reconcile_once` deliberately sets `reconciliation_ready=False`,
+`degraded=True`, `degraded_reason="reconciliation_in_progress"` at the top of
+every 3s cycle so no order can be placed against half-refreshed broker state.
+That is the EXECUTION gate, but `/health` read it as a health signal and
+returned 503 for a slice of every cycle in a healthy runtime. Mission Control
+inherits the flap (mission-control.html:134 keys on `health.status!=='ok'`), so
+this was also a false-DEGRADED operator signal on a real Paper run.
+
+Fix, deliberately splitting the two concepts:
+
+- new `AlpacaPaperWorker.health_ready()` -- the RUNTIME fault signal. It fails
+  closed when `has_reconciled` is False (no verified broker picture yet) or
+  when `degraded_reason` is a real error rather than the in-progress sentinel.
+- new durable `has_reconciled` latch: set True only by a successful
+  `reconcile_once`, set False by `_enter_degraded`. Without the latch the next
+  cycle's in-progress sentinel would self-heal a runtime failing every cycle.
+- `/health` now calls `health_ready()`.
+- NO trading path changed: worker.py:313, 359 and 423 still gate on
+  `degraded` / `reconciliation_ready`, so the in-progress window still submits
+  nothing. `health_ready()` had exactly one caller.
+
+Second, smaller defect in the same handler: `response.status_code` was set
+BEFORE the ALPACA PAPER worker check narrowed `ready`, so the endpoint could
+return HTTP 200 alongside a body saying "degraded". Now every verdict is
+computed first and the status code assigned once.
+
+New tests: tests/test_health_paper_worker_ready.py (11 pure unit tests, stub
+engine + TestClient, no Postgres/broker/DB mutation), including one that pins
+healthy != allowed-to-trade and one that a fault cannot self-heal.
+
+Validation: 11 new passed; health/mission-control/observer/paper_stop siblings
+39 passed, 5 skipped; ruff clean; mypy clean on the two changed files. The 3
+failures in tests/test_mission_control.py are the known environmental
+`alpaca_paper_startup_refused_schema_not_at_head` (Postgres down), unchanged by
+this work.
+
 ## Active blockers
 
 None known at initialization.
@@ -344,7 +390,11 @@ fixture setup. These are NOT caused by agent code changes:
 
 - psycopg OperationalError / ConnectionTimeout (test_paper_audit,
   test_alpaca_paper_incident, many others)
-- RuntimeError: alpaca_paper_startup_refused_schema_not_at_head
+- RuntimeError: alpaca_paper_startup_schema / `alpaca_paper_startup_refused_
+  schema_not_at_head` raised at services/api/main.py:52 during the lifespan ->
+  takes down tests/test_mission_control.py (3 tests: observation-worker
+  factory + the two observation-loop cases, which then report "mock awaited 0
+  times" as a cascade, not an independent defect)
 - tests/test_alpaca_provider.py network smoke tests
 - tests/test_replay_live.py: Windows FileNotFoundError (no ComSpec/SystemRoot)
 
@@ -360,6 +410,12 @@ The Paper-reported-counts observability defect is fixed (see cycle above).
 
 Candidate next tasks (pick one in a clean cycle):
 
+- The Paper review gate keeps re-surfacing the 0-vs-7 `orders_count` mismatch
+  in `paper-latest.json` because fix 7252052 is not deployed to the frozen
+  runtime. Deployment needs human approval, so the agent-side task is instead
+  to confirm the fix is complete for the OBSERVATION payload path too
+  (`services/alpaca_paper/observation.py` / the paper snapshot builder), so a
+  later deploy cannot re-publish 0 from a second constructor.
 - `services/api/paper_queries.py:28` builds a SECOND `PaperPortfolio` (the simulator/local path). Audit it for the same class of unset-field bug: any contract field it leaves at its default while the equivalent broker route supplies it. `grep PaperPortfolio(` finds exactly these two constructors, so this is a bounded two-file check.
 - Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still holds at migration head f2c8a51d9b10 before relying on the worker cycle's raise-not-NULL decision. Grep migrations/, no DB access needed.
 - `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")`

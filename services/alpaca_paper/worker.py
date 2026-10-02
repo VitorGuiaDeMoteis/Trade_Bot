@@ -57,8 +57,36 @@ class AlpacaPaperWorker:
         self.degraded = True
         self.reconciliation_ready = False
         self.degraded_reason: str | None = "startup_reconciliation_pending"
+        # Durable record of whether the CURRENT broker picture is trustworthy,
+        # as opposed to the per-cycle gate below. See `health_ready`.
+        self.has_reconciled = False
         self.release_on_ready = release_on_ready
         self.execution_released = False
+
+    def health_ready(self) -> bool:
+        """Runtime health, which is NOT the same thing as the execution gate.
+
+        `reconcile_once` fails closed at the top of every cycle, so `degraded`
+        and `reconciliation_ready` are both False for a moment of every 3s
+        cycle. That is the correct behaviour for the *execution* gate -- no
+        order may be placed against half-refreshed broker state -- but it is
+        not a runtime fault, and publishing it as one made `/health` flap to
+        503 for part of every cycle: 12 of 34 samples were `degraded` while
+        Paper, database and market data were all healthy, every one of them
+        taken 3.06-3.84s after a successful reconcile, i.e. in the next
+        cycle's fail-closed window.
+
+        So a cycle in progress is healthy once a reconciliation has actually
+        succeeded at least once. Two cases still fail closed:
+
+        - `has_reconciled` is False, so no verified broker picture exists yet
+          (startup, or a fault latched it back to False);
+        - `degraded_reason` is a real error rather than the in-progress
+          sentinel, so the last cycle genuinely failed.
+        """
+        if self.degraded and self.degraded_reason != "reconciliation_in_progress":
+            return False
+        return self.has_reconciled
 
     def start(self) -> None:
         if self.task is None or self.task.done():
@@ -125,6 +153,7 @@ class AlpacaPaperWorker:
         self.degraded = False
         self.reconciliation_ready = True
         self.degraded_reason = None
+        self.has_reconciled = True
         return account, positions
 
     def _release_execution(self) -> None:
@@ -258,6 +287,9 @@ class AlpacaPaperWorker:
         self.degraded = True
         self.reconciliation_ready = False
         self.degraded_reason = reason[:255]
+        # A failed cycle means the broker picture is no longer verified, so the
+        # NEXT cycle's in-progress window must not read as healthy either.
+        self.has_reconciled = False
 
         def persist() -> None:
             with self.engine.begin() as connection:
