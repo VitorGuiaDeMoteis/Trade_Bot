@@ -111,12 +111,46 @@ Fixed via `ExecutionGuard._optional_decimal`; the BUY branch now fails closed
 when either side of the delta is unavailable. Fail-closed applies to opening
 risk only -- position-closing SELLs must keep working when data is missing.
 
+## Guard in-flight / exposure accounting fail-closed (FIXED)
+
+Third instance of the same bug class, in the guard's remaining numeric
+accounting. Every unsourceable broker field was coerced to an INVENTED zero,
+each of which under-counted risk:
+
+- pending SELL with missing/unparsable `quantity` counted as 0 sold, so
+  `available_qty = current_qty - 0` and a second SELL of the FULL position was
+  approved -> oversell into a short position;
+- pending BUY with missing/unparsable `requested_notional` contributed $0 to
+  in-flight exposure;
+- open position with missing `market_value` contributed $0 to total exposure,
+  under-counting MAX_TOTAL_EXPOSURE;
+- open position with missing `qty` was silently SKIPPED by the `qty > 0` filter
+  in the exposure sum, excluding its exposure from the cap entirely.
+
+Fix (all through the existing `ExecutionGuard._optional_decimal`):
+
+- in-flight SELL quantity unknown -> SELL fails closed;
+- in-flight BUY notional unknown -> BUY fails closed (was already partly there,
+  now via the same parsed path);
+- traded symbol position qty unknown -> BOTH sides fail closed;
+- traded symbol position market_value unknown -> BUY fails closed only, so a
+  SELL can still flatten a position;
+- any other position with unreadable qty or market_value -> BUY fails closed.
+
+Fail-closed scope is deliberate: SELL only requires `qty`; `market_value` is
+required only for BUY. New tests:
+tests/test_guard_in_flight_fail_closed.py (10 pure guard unit tests).
+
 ## Guard fail-closed invariants worth preserving
 
 - BUY requires BOTH `last_equity` (baseline) and `snapshot["equity"]` (current).
 - `last_equity` of 0 is treated as unavailable (falsy), not as a valid baseline.
 - SELL paths never depend on the daily-loss data, so a degraded account can
   still be flattened.
+- SELL needs only position `qty`; `market_value` is required only for BUY.
+  Never add a shared precondition that blocks position-closing.
+- A position dict whose `qty` cannot be read must NOT be dropped by a
+  `if qty > 0` filter -- that silently removes its exposure from the cap.
 
 ## Testing on this Windows host
 

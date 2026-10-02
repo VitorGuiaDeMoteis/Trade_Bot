@@ -102,6 +102,33 @@ Fix:
 Both halves of the bug are now closed: the worker supplies an independent
 baseline, and the guard refuses to compute a delta it cannot source.
 
+### Cycle: guard in-flight/exposure fail-closed accounting (FIXED)
+
+Third and last instance of the same bug class, in the guard's remaining
+numeric accounting. Unsourceable broker fields were coerced to invented zeros
+that under-counted risk:
+
+- pending SELL with missing `quantity` counted as 0 sold, so `available_qty`
+  stayed at the full position size and a second SELL of the whole position was
+  approved -> oversell into a short;
+- pending BUY with missing `requested_notional` contributed $0 in-flight;
+- open position with missing `market_value` contributed $0 to total exposure;
+- open position with missing `qty` was skipped by the `qty > 0` filter, so its
+  exposure never entered the cap.
+
+Fix: all four now route through `ExecutionGuard._optional_decimal` and fail
+closed. Scope kept narrow so closing risk is never blocked: SELL requires only
+position `qty`; `market_value` is required only for BUY.
+
+New tests: tests/test_guard_in_flight_fail_closed.py (10 pure guard unit
+tests). Targeted suite 32 passed; ruff and mypy clean.
+
+## Cycle bookkeeping
+
+The guard in-flight/exposure fix above was finished in a prior cycle but left
+uncommitted; a recovery-mode cycle re-validated it (32 targeted tests, ruff,
+mypy) and committed it. The tree was clean at the start of the next cycle.
+
 ## Active blockers
 
 None known at initialization.
@@ -121,14 +148,14 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
 
-Candidate: audit the remaining guard fail-closed paths and in-flight/exposure
-accounting for the same class of bug (a comparison whose two sides derive from
-the same snapshot, making the delta constant). tests/test_daily_loss_baseline.py
-and tests/test_daily_loss_equity_missing.py document the pattern.
+Candidate: the fail-closed guard audit is now complete (three instances found
+and fixed). Secondary candidate: add observability for a missing `last_equity`
+vs a missing current `equity`, since both currently fail closed with the same
+generic message and an operator cannot tell them apart from logs.
 
-Secondary candidate: add observability for a missing `last_equity`, since it now
-silently forces all BUYs to fail closed with the same generic message as a
-missing current equity; an operator cannot tell the two apart from logs.
+Second candidate: extend the same audit to worker.py's non-guard risk
+accounting (pending BUY dedupe and any other `dict.get(key, 0)` on a broker
+field), which has not been reviewed in this cycle.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest.

@@ -52,28 +52,52 @@ class ExecutionGuard:
         pending_buys = Decimal("0")
         pending_sells = Decimal("0")
         total_in_flight_exposure = Decimal("0")
+        unknown_in_flight_sell_qty = False
+        unknown_in_flight_buy_notional = False
 
         for flight in in_flight:
+            flight_side = flight.get("side")
             if flight["symbol"] == symbol:
-                if flight["side"] == "BUY":
+                if flight_side == "BUY":
                     pending_buys += Decimal("1")  # count of pending BUY orders
-                elif flight["side"] == "SELL":
-                    pending_sells += Decimal(str(flight.get("quantity", 0)))
-            if flight["side"] == "BUY":
-                flight_notional = flight.get("requested_notional")
-                if flight_notional:
-                    total_in_flight_exposure += Decimal(str(flight_notional))
+                elif flight_side == "SELL":
+                    # A pending SELL with an unsourceable quantity must NOT be
+                    # treated as zero: doing so overstates how much of the
+                    # position is still available and allows a second SELL that
+                    # oversells into a short position.
+                    flight_qty = cls._optional_decimal(flight.get("quantity"))
+                    if flight_qty is None:
+                        unknown_in_flight_sell_qty = True
+                    else:
+                        pending_sells += flight_qty
+            if flight_side == "BUY":
+                flight_notional = cls._optional_decimal(flight.get("requested_notional"))
+                if flight_notional is not None:
+                    total_in_flight_exposure += flight_notional
+                else:
+                    unknown_in_flight_buy_notional = True
 
         pos_map = {p["symbol"]: p for p in positions}
         current_pos = pos_map.get(symbol)
-        current_mv = (
-            Decimal(str(current_pos.get("market_value", "0"))) if current_pos else Decimal("0")
-        )
-        current_qty = (
-            Decimal(str(current_pos.get("qty", current_pos.get("quantity", "0"))))
-            if current_pos
-            else Decimal("0")
-        )
+        # Same rule for the symbol being traded: an open position whose qty or
+        # market_value cannot be sourced makes both the pyramiding check and the
+        # exposure sum unusable, so it is reported as unknown instead of zero.
+        current_qty_raw = current_mv_raw = None
+        if current_pos is not None:
+            current_qty_raw = cls._optional_decimal(
+                current_pos.get("qty", current_pos.get("quantity"))
+            )
+            current_mv_raw = cls._optional_decimal(current_pos.get("market_value"))
+        current_mv = current_mv_raw if current_mv_raw is not None else Decimal("0")
+        current_qty = current_qty_raw if current_qty_raw is not None else Decimal("0")
+
+        # Quantity is required by BOTH branches: BUY needs it for the pyramiding
+        # check, SELL needs it to prove a position exists. market_value is only
+        # required for BUY (exposure); a SELL must keep working when it is absent.
+        if current_pos is not None and current_qty_raw is None:
+            return False, f"Quantidade da posição {symbol} indisponível"
+        if side == "BUY" and current_pos is not None and current_mv_raw is None:
+            return False, f"Valor de mercado da posição {symbol} indisponível"
 
         available_qty = current_qty - pending_sells
 
@@ -99,15 +123,26 @@ class ExecutionGuard:
             if pending_buys > 0:
                 return False, "Máximo 1 posição aberta por símbolo (no pyramiding) [in-flight]"
 
-            total_exposure = sum(
-                Decimal(str(p.get("market_value", 0)))
-                for p in positions
-                if Decimal(str(p.get("qty", p.get("quantity", 0)))) > 0
-            )
-            if any(
-                flight["side"] == "BUY" and flight.get("requested_notional") is None
-                for flight in in_flight
-            ):
+            total_exposure = Decimal("0")
+            for position in positions:
+                qty = cls._optional_decimal(
+                    position.get("qty", position.get("quantity"))
+                )
+                if qty is None:
+                    # Cannot tell whether this position holds exposure, so it
+                    # cannot be excluded from the cap without failing open.
+                    return False, (
+                        f"Quantidade da posição {position.get('symbol')} "
+                        "indisponível para o cálculo de exposição"
+                    )
+                if qty > 0:
+                    market_value = cls._optional_decimal(position.get("market_value"))
+                    if market_value is None:
+                        return False, (
+                            f"Exposição da posição {position.get('symbol')} indisponível"
+                        )
+                    total_exposure += market_value
+            if unknown_in_flight_buy_notional:
                 return False, "Exposição de BUY in-flight desconhecida"
             if (
                 total_exposure + total_in_flight_exposure + cls.MAX_NOTIONAL_PER_TRADE
@@ -120,6 +155,11 @@ class ExecutionGuard:
                 )
 
         elif side == "SELL":
+            if unknown_in_flight_sell_qty:
+                return False, (
+                    f"Quantidade de SELL in-flight desconhecida para {symbol} "
+                    "(risco de venda a descoberto)"
+                )
             if not current_pos or available_qty <= 0:
                 return (
                     False,
