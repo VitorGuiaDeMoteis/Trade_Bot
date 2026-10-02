@@ -142,7 +142,7 @@ model=stealth/space-bunny-alpha
         elseif ($ExitCode -ne 0) {
 
             # Sem WIP para recuperar: provavelmente provider/rate-limit/erro externo.
-            $Wait = 600
+            $Wait = 120
 
             Write-Host ""
             Write-Host "Hermes retornou erro ($ExitCode) sem WIP pendente." -ForegroundColor Yellow
@@ -171,6 +171,7 @@ finally {
 
     Remove-Item $PidFile -ErrorAction SilentlyContinue
 }
+
 
 
 
