@@ -79,6 +79,12 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                     paper_orders.c.signal_id,
                     paper_orders.c.risk_decision_id,
                     paper_orders.c.requested_at,
+                    # paper_orders.status is the executor's _map_status output
+                    # and the only value CHECK-constrained to the contract
+                    # Literal (ck_paper_orders_state_m7). broker_orders.status
+                    # holds the raw broker text. Label it so it does not
+                    # collide with broker_orders.status in the mapping row.
+                    paper_orders.c.status.label("paper_status"),
                 )
                 .select_from(j)
                 # Ordered by SUBMIT time, not by reconcile time: last_reconciled_at
@@ -124,7 +130,19 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                         )
                     ),
                     filled_quantity=Decimal(str(o["filled_quantity"])),
-                    status=o["status"].upper() if o.get("status") else "UNKNOWN",
+                    # Report the mapped status the executor already wrote to
+                    # paper_orders, never a status re-derived from the raw
+                    # broker string. `.upper()` was only accidentally correct
+                    # for the ten statuses in _map_status: Alpaca also emits
+                    # states outside that map (e.g. "done_for_day", "halted",
+                    # "suspended", "stopped"), and .upper() turned those into
+                    # strings absent from the contract Literal, so pydantic
+                    # rejected the row and the whole portfolio endpoint 500'd
+                    # on a single unfamiliar order status. _map_status degrades
+                    # to UNKNOWN instead, which is exactly the fallback wanted.
+                    # paper_orders.status is NOT NULL and CHECK-constrained, so
+                    # this can never be empty.
+                    status=o["paper_status"],
                     # requested_at is the real submission time from paper_orders.
                     # broker_orders.last_reconciled_at is bumped on every
                     # reconciliation, so it must never be reported as the
@@ -136,6 +154,7 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                     reason="Broker Order",
                     client_order_id=o["client_order_id"],
                     broker_order_id=o["broker_order_id"] or "",
+                    # The raw broker string stays raw, in its own field.
                     broker_status=o["status"],
                 )
             )

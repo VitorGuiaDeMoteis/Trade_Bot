@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from fastapi import Response
 
 from services.api.broker_routes import get_broker_portfolio
@@ -28,6 +29,7 @@ def _order_row(
     requested_quantity: Decimal | str | None = Decimal("1"),
     filled_quantity: Decimal | str = Decimal("1"),
     status: str = "filled",
+    paper_status: str = "FILLED",
 ) -> dict[str, Any]:
     """One joined broker_orders+paper_orders row.
 
@@ -38,6 +40,14 @@ def _order_row(
     `requested_quantity` defaults to a real share count but accepts None,
     because a NOTIONAL order (the BUY branch sends dollars, not shares) stores
     NULL there by design -- see the route's quantity mapping.
+
+    `status` is the RAW broker text (broker_orders.status) and `paper_status` is
+    the MAPPED local value (paper_orders.status, the executor's _map_status
+    output, CHECK-constrained to the contract Literal). They are separate keys
+    with separate defaults and are deliberately NOT derived from one another, so
+    a test can prove which of the two the route reports. The route selects the
+    local column under the label `paper_status` to avoid colliding with the
+    broker column the full `select(broker_orders, ...)` expansion also brings in.
     """
     return {
         "order_id": uuid4(),
@@ -49,6 +59,7 @@ def _order_row(
         "requested_quantity": requested_quantity,
         "filled_quantity": filled_quantity,
         "status": status,
+        "paper_status": paper_status,
         "requested_at": SUBMITTED_AT if requested_at is None else requested_at,
         "last_reconciled_at": NOW,
         "client_order_id": f"cid-{uuid4()}",
@@ -292,7 +303,9 @@ def test_share_order_keeps_requested_quantity() -> None:
 
 def test_unfilled_notional_order_reports_zero_because_it_traded_nothing() -> None:
     """An open notional order with no fill has 0 real shares -- that zero is true."""
-    order = _order_row(requested_quantity=None, filled_quantity="0", status="NEW")
+    order = _order_row(
+        requested_quantity=None, filled_quantity="0", status="new", paper_status="NEW"
+    )
     conn = _StubConnection(
         control={"paused": False, "active_run_id": order["run_id"]},
         positions=[],
@@ -425,3 +438,106 @@ def test_orders_window_has_a_stable_tiebreaker() -> None:
 
     order_by = _orders_order_by(conn)
     assert "paper_orders.symbol, paper_orders.order_id" in order_by
+
+
+def test_order_status_is_the_mapped_local_value_not_an_uppercased_broker_string() -> None:
+    """`status` must come from paper_orders, never be re-derived from broker text.
+
+    The route used `broker_orders.status.upper()`. That happens to be correct for
+    the ten states in `AlpacaPaperExecutor._map_status`, but Alpaca emits states
+    OUTSIDE that map ("done_for_day", "halted", "suspended", "stopped"), and
+    `.upper()` turned them into strings absent from the `PaperOrder.status`
+    Literal -- so pydantic rejected the row and ONE unfamiliar order status took
+    down the ENTIRE portfolio endpoint with a 500.
+
+    The local column is authoritative: the executor already mapped it and the DB
+    CHECK-constrains it to exactly the contract Literal
+    (migration 863267844740, ck_paper_orders_state_m7).
+    """
+    order = _order_row(status="done_for_day", paper_status="FILLED")
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    portfolio = _call(conn)
+
+    published = portfolio.orders[0]
+    assert published.status == "FILLED"
+    # The raw broker text is preserved verbatim, in its own field.
+    assert published.broker_status == "done_for_day"
+    # The test has teeth: the two sources really do disagree.
+    assert published.status != published.broker_status.upper()
+
+
+@pytest.mark.parametrize(
+    "broker_text",
+    [
+        "done_for_day",
+        "halted",
+        "suspended",
+        "stopped",
+        "pending_replace",
+        "calculated",
+        "a_state_this_map_has_never_heard_of",
+    ],
+)
+def test_unfamiliar_broker_status_cannot_take_down_the_whole_portfolio(broker_text: str) -> None:
+    """No broker order status may 500 the endpoint, whatever Alpaca emits.
+
+    The failure mode was total, not per-row: a single order whose status was
+    absent from the contract Literal failed validation of the whole response
+    model, so an operator lost the ENTIRE portfolio -- positions, counts and all
+    other orders -- over one unfamiliar string. The mapped local value degrades
+    to UNKNOWN instead, so the payload always renders.
+    """
+    # What the executor stores for anything _map_status does not know.
+    order = _order_row(status=broker_text, paper_status="UNKNOWN")
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[_position_row()],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    portfolio = _call(conn)
+
+    # The endpoint's whole value is that it returns at all.
+    assert len(portfolio.positions) == 1
+    assert len(portfolio.orders) == 1
+    assert portfolio.orders[0].status == "UNKNOWN"
+    assert portfolio.orders[0].broker_status == broker_text
+
+
+def test_order_status_column_is_selected_under_a_label_that_cannot_shadow_broker_status() -> None:
+    """The projection must take paper_orders.status, not broker_orders.status.
+
+    The query selects the whole `broker_orders` table, whose expansion already
+    includes its own `status`. Selecting `paper_orders.c.status` unlabelled
+    yields a mapping with ONE ambiguous key, so this pins the label: a regression
+    that dropped it would resolve `paper_status` to the raw broker text again.
+    """
+    order = _order_row()
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    _call(conn)
+
+    projection = next(
+        s for s in conn.statements if "broker_orders" in s and "ORDER BY" in s
+    ).split("ORDER BY", 1)[0]
+    assert "paper_orders.status AS paper_status" in projection
+    # The broker column is still projected, for the verbatim broker_status field.
+    assert "broker_orders.status" in projection

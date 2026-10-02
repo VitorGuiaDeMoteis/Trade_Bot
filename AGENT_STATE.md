@@ -830,6 +830,73 @@ reported 0 vs actual 11, every `latest_orders[*].last_reconciled_at` still null.
 Both remain the known-undeployed anomalies (fixes committed, frozen runtime not
 rebuilt) -- do not re-investigate.
 
+### Cycle: broker portfolio status derived from broker text (FIXED, recovery mode)
+
+RECOVERY MODE: the cycle started with a dirty worktree holding an UNFINISHED
+broker-route status fix. The production fix was correct and was kept; its only
+test was DB-backed (unrunnable, Postgres down) and it had left the existing
+pure-unit suite RED (9 failures, `KeyError: 'paper_status'`). Finishing that WIP
+was the whole cycle -- no new task was chosen.
+
+The defect: `get_broker_portfolio` set
+`status=o["status"].upper() if o.get("status") else "UNKNOWN"`, re-deriving the
+user-facing status from the RAW broker string instead of reading the mapped one.
+`.upper()` is correct for exactly the ten states in
+`AlpacaPaperExecutor._map_status`, but Alpaca also emits states OUTSIDE that map
+(`done_for_day`, `halted`, `suspended`, `stopped`, `pending_replace`,
+`calculated`, ...) and `.upper()` produced strings absent from the
+`PaperOrder.status` Literal. Blast radius is TOTAL, not per-row: one unfamiliar
+order status failed validation of the whole `PaperPortfolio` response model, so
+an operator lost the ENTIRE endpoint -- positions, counts and all other orders.
+Verified against pydantic directly: 7/7 of those strings are rejected.
+
+Fix kept from the WIP: select `paper_orders.c.status.label("paper_status")` and
+report `status=o["paper_status"]`, leaving the raw text verbatim in
+`broker_status`. The label is load-bearing: the query selects the whole
+`broker_orders` table, whose expansion already contains its own `status`, so an
+unlabelled second `status` would silently resolve to the raw broker text again.
+The local column is authoritative and safe to trust: `_map_status` already
+mapped it, it is NOT NULL, and migration `863267844740` CHECK-constrains it
+(`ck_paper_orders_state_m7`) to EXACTLY the contract Literal, degrading
+unfamiliar broker text to UNKNOWN.
+
+Recovery work added this cycle:
+
+- Fixed the shared pure-unit fixture `_order_row` to model the observation
+  builder honestly: `status` (raw broker text) and `paper_status` (mapped local
+  value) are separate keys with separate defaults, deliberately NOT derived
+  from one another, so a test can prove which source the route reports. The one
+  caller that passed raw `status="NEW"` now passes `status="new"` +
+  `paper_status="NEW"`.
+- Added 3 executable tests (9 cases with the parametrization) in
+  tests/test_broker_portfolio_counts.py: the status is the mapped value and not
+  the uppercased broker string (asserting the two sources DISAGREE, so the test
+  has teeth); 7 unfamiliar broker statuses each still return a full portfolio
+  (positions + order + counts) instead of 500ing; and the projection still
+  carries `paper_orders.status AS paper_status`.
+- The DB-backed sibling in tests/test_broker_routes.py is KEPT as the real-schema
+  proof; it now collects cleanly (3 tests) and will run when Postgres is up.
+- Its 7 ruff findings all sit at lines 1-82; the diff only added lines 147-247,
+  so the WIP introduced none (checked by line location, not by an out-of-tree
+  HEAD copy -- see AGENT_LESSONS.md).
+
+Continuation cycle (recovery mode again, same uncommitted work): re-validated
+the above (19 passed, PYTEST_EXIT=0 unpiped; `--collect-only` 3 collected; ruff
+locations all predate the diff), added the durable lesson, and COMMITTED. No new
+task was chosen and no production code was changed in that continuation.
+
+Validation: tests/test_broker_portfolio_counts.py 19 passed, PYTEST_EXIT=0
+(unpiped -- a piped run reported exit 0 from `tail` and had masked the failure);
+ruff clean on both changed files; the DB-backed file verified by
+`--collect-only` only, since Postgres is down.
+
+PAPER_REVIEW (read-only): status ACTIVE, paused=false, degraded=false,
+reconciled=true, health.status=degraded, positions AAPL/SPY/TSLA,
+cash 99921.37, equity 99951.30, market_value 29.93, orders reported/actual 0/0,
+fills reported/actual 0/0, `latest_orders` len 10, all 10 with null
+`last_reconciled_at`. All of it is the known-undeployed anomaly set -- do not
+re-investigate.
+
 ## Active blockers
 
 None known at initialization.

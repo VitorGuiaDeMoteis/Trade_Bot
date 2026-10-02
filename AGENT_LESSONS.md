@@ -819,6 +819,51 @@ Lessons:
 
 Tests: tests/test_worker_reconcile_isolates_bad_order.py (7 pure unit tests).
 
+## Never re-derive a mapped value from its raw source; and watch for column shadowing
+
+`get_broker_portfolio` published `status=o["status"].upper() if o.get("status")
+else "UNKNOWN"` -- it re-computed the user-facing status from the RAW
+`broker_orders.status` string instead of reading the one the executor had
+already mapped into `paper_orders.status`. `.upper()` is correct for exactly the
+ten states in `AlpacaPaperExecutor._map_status`, and Alpaca also emits states
+OUTSIDE that map (`done_for_day`, `halted`, `suspended`, `stopped`,
+`pending_replace`, `calculated`, ...). Those uppercased strings are absent from
+the `PaperOrder.status` Literal, so pydantic rejected the ROW and one unfamiliar
+order status 500'd the ENTIRE portfolio endpoint -- positions, counts and every
+other order lost over one string. Verified against pydantic: 7/7 rejected.
+
+Lessons:
+
+- If a component already MAPS a broker enum into your contract, the consumer
+  must read that mapping. Re-deriving the value with a transformation
+  (`.upper()`, a dict, a cast) silently re-implements the map in a second place
+  with no test coverage outside the mapped set.
+- Blast radius scales with where validation happens: a bad ENUM member fails the
+  whole response model, not one field, so a per-row data quirk becomes a
+  total endpoint outage. Prefer a source that is guaranteed in-domain over one
+  that must be normalized at read time. `paper_orders.status` is NOT NULL and
+  CHECK-constrained to the contract Literal (`ck_paper_orders_state_m7`,
+  migration 863267844740) and degrades unfamiliar broker text to UNKNOWN, which
+  is exactly the fallback wanted.
+- When a query does `select(broker_orders, ...)` (a whole-table expansion) AND
+  joins a table with a same-named column, an unlabelled extra column does not
+  add a key -- it collides with the existing one, and the row resolves to the
+  FIRST expanded match, i.e. the raw broker text again. Select it under an
+  explicit `.label("paper_status")` and pin that label in a test by reading the
+  compiled SQL out of the stub connection's recorded statements.
+- A fixture that derives the two candidate values from ONE source cannot detect
+  this class of bug: `status` (raw broker text) and `paper_status` (mapped local)
+  needed separate keys with separate, deliberately DISAGREEING defaults, plus an
+  assertion that the reported value is not the uppercased broker string --
+  otherwise the test passes against the bug it is meant to pin.
+- Keep the raw value reachable in its own response field (`broker_status`)
+  instead of discarding it. The mapping is for the CONTRACT; the operator still
+  needs what the broker actually said.
+
+Tests: tests/test_broker_portfolio_counts.py (19 pure unit tests; 3 new, 9
+cases with parametrization) plus a DB-backed sibling in
+tests/test_broker_routes.py (collects cleanly; runs when Postgres is up).
+
 ## One rejection string can hide two different remediations
 
 - When a single `raise` (or rejection message) covers two distinct broker

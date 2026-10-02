@@ -145,6 +145,107 @@ async def test_broker_portfolio_fee_none(test_engine, override_config, monkeypat
 
 
 @pytest.mark.anyio
+async def test_broker_order_status_is_mapped_local_value_not_uppercased_broker_text(
+    test_engine, override_config, monkeypatch
+):
+    """status must come from paper_orders, never be re-derived from broker text.
+
+    Alpaca emits order states outside _map_status (done_for_day, halted,
+    stopped, ...). The route used `.upper()` on the raw broker string, which
+    produced a value absent from the contract Literal, and pydantic rejected
+    it: ONE unfamiliar order status 500'd the entire portfolio endpoint. The
+    mapped paper_orders.status degrades to UNKNOWN and must be what is served.
+    """
+
+    async def mock_stop(self) -> None:
+        pass
+
+    monkeypatch.setattr("services.alpaca_paper.worker.AlpacaPaperWorker.start", lambda self: None)
+    monkeypatch.setattr("services.alpaca_paper.worker.AlpacaPaperWorker.stop", mock_stop)
+
+    from services.api.main import create_app
+
+    app = create_app()
+    run_id, s_id, rd_id = insert_baseline(test_engine)
+
+    with test_engine.begin() as conn:
+        from sqlalchemy import delete
+
+        from services.api.models import (
+            broker_fills,
+            broker_orders,
+            broker_portfolio_snapshots,
+            paper_orders,
+        )
+
+        conn.execute(delete(broker_fills))
+        conn.execute(delete(broker_orders))
+        conn.execute(delete(paper_orders))
+        conn.execute(delete(broker_portfolio_snapshots))
+
+        conn.execute(
+            insert(broker_portfolio_snapshots).values(
+                provider="alpaca",
+                status="ACTIVE",
+                cash=Decimal("100"),
+                market_value=Decimal("0"),
+                equity=Decimal("100"),
+                unrealized_pnl=Decimal("0"),
+                buying_power=Decimal("100"),
+                last_reconciled_at=datetime.now(UTC),
+            )
+        )
+
+        order_id = uuid4()
+        # Local mapped status is FILLED (what the executor wrote).
+        conn.execute(
+            insert(paper_orders).values(
+                order_id=order_id,
+                run_id=run_id,
+                signal_id=s_id,
+                risk_decision_id=rd_id,
+                symbol="AAPL",
+                side="BUY",
+                quantity=Decimal("1"),
+                filled_quantity=Decimal("1"),
+                status="FILLED",
+                requested_at=datetime.now(UTC),
+                idempotency_key=order_id,
+                reason="test",
+            )
+        )
+        # The raw broker string is one _map_status does NOT know: .upper()
+        # makes "DONE_FOR_DAY", which is not in the contract Literal.
+        conn.execute(
+            insert(broker_orders).values(
+                order_id=order_id,
+                client_order_id=str(order_id),
+                broker_order_id="b_id",
+                status="done_for_day",
+                filled_quantity=Decimal("1"),
+                last_reconciled_at=datetime.now(UTC),
+            )
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/broker/portfolio")
+        # The invariant the bug broke: an unfamiliar broker status must not
+        # take down the whole portfolio payload.
+        assert response.status_code == 200
+        order = response.json()["orders"][0]
+        # The mapped local status is authoritative, not an uppercased guess.
+        assert order["status"] == "FILLED"
+        # The raw broker string is still available, verbatim, in its own field.
+        assert order["broker_status"] == "done_for_day"
+
+    with test_engine.begin() as conn:
+        conn.execute(delete(broker_fills))
+        conn.execute(delete(broker_orders))
+        conn.execute(delete(paper_orders))
+        conn.execute(delete(broker_portfolio_snapshots))
+
+
+@pytest.mark.anyio
 async def test_broker_order_requested_at_is_submit_time_not_reconcile_time(
     test_engine, override_config, monkeypatch
 ):
