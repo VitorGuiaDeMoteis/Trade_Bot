@@ -570,3 +570,64 @@ Safety rules:
 - Strategy hypotheses must first be tested offline/backtested.
 - Promotion of execution/strategy changes to the frozen runtime requires human approval.
 - Continue one safe task per bounded cycle.
+
+## MANDATORY PAPER REVIEW GATE
+
+This gate is REQUIRED at the beginning of every CLEAN autonomous cycle,
+BEFORE choosing or continuing a normal backlog task.
+
+1. Read `.agent-runtime/paper-latest.json` when it exists.
+
+2. Explicitly emit one concise log line beginning exactly with:
+
+   PAPER_REVIEW:
+
+   The line must include:
+   - runtime status;
+   - paused;
+   - degraded;
+   - reconciled;
+   - open position symbols;
+   - orders_count_reported vs orders_count_actual;
+   - fills_count_reported vs fills_count_actual;
+   - unrealized P&L.
+
+3. Compare the current observation with the most recent relevant Paper finding
+   already present in AGENT_STATE.md. Read paper-observations.jsonl only when
+   history is needed to understand a meaningful change.
+
+4. If the Paper observation exposes a concrete engineering anomaly, prioritize
+   investigation of that anomaly over unrelated backlog work.
+
+   Examples:
+   - degraded runtime;
+   - stale reconciliation;
+   - broker/local divergence;
+   - duplicate or suspicious execution;
+   - accounting inconsistency;
+   - reported counts disagreeing with the actual lists;
+   - missing data needed to explain a trade;
+   - repeated execution/guard failures.
+
+5. Record meaningful current Paper findings in AGENT_STATE.md.
+
+6. Record only durable and generalizable conclusions in AGENT_LESSONS.md.
+
+7. If no meaningful Paper issue exists, emit:
+
+   PAPER_REVIEW: healthy/no-new-actionable-finding
+
+   and continue with the normal backlog.
+
+IMPORTANT:
+
+- Reading Paper data is mandatory.
+- Changing the active Paper runtime is forbidden.
+- Never mutate Alpaca, runtime DB, positions or orders.
+- Never restart or modify the frozen runtime worktree.
+- Never deploy a strategy adjustment directly from live Paper observations.
+- Strategy ideas discovered from Paper must become hypotheses and be validated
+  offline/backtested first.
+- Human approval is required before promoting strategy or execution changes to
+  the frozen runtime.
+- A small Paper sample is not sufficient evidence for retuning a strategy.
