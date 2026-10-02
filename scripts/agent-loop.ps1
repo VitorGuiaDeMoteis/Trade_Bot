@@ -127,21 +127,33 @@ model=stealth/space-bunny-alpha
             break
         }
 
-        if ($ExitCode -ne 0) {
+        $DirtyTree = [bool](git status --porcelain)
 
+        if ($DirtyTree) {
+
+            # WIP seguro deixado por um ciclo que bateu o hard limit.
+            # O próximo ciclo entra automaticamente em RECOVERY MODE.
+            $Wait = 30
+
+            Write-Host ""
+            Write-Host "WIP detectado após o ciclo." -ForegroundColor Yellow
+            Write-Host "Recovery cycle em $Wait segundos..." -ForegroundColor Yellow
+        }
+        elseif ($ExitCode -ne 0) {
+
+            # Sem WIP para recuperar: provavelmente provider/rate-limit/erro externo.
             $Wait = 600
 
             Write-Host ""
-            Write-Host "Hermes retornou erro ($ExitCode)." -ForegroundColor Yellow
-            Write-Host "Provável limite temporário/provider." -ForegroundColor Yellow
-            Write-Host "Nova tentativa em $Wait segundos." -ForegroundColor Yellow
+            Write-Host "Hermes retornou erro ($ExitCode) sem WIP pendente." -ForegroundColor Yellow
+            Write-Host "Nova tentativa em $Wait segundos..." -ForegroundColor Yellow
         }
         else {
 
             $Wait = $DelaySeconds
 
             Write-Host ""
-            Write-Host "Ciclo $Cycle concluído." -ForegroundColor Green
+            Write-Host "Ciclo $Cycle concluído e worktree limpa." -ForegroundColor Green
             Write-Host "Próximo ciclo em $Wait segundos." -ForegroundColor DarkGray
         }
 
@@ -159,6 +171,7 @@ finally {
 
     Remove-Item $PidFile -ErrorAction SilentlyContinue
 }
+
 
 
 
