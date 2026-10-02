@@ -181,6 +181,54 @@ Safety semantics were NOT changed by this: both paths still fail CLOSED on BUY
 and SELL is still unaffected. Tests:
 tests/test_daily_loss_breaker_reason_observability.py.
 
+## Worker broker-numeric accounting fail-closed (FIXED) -- audit now CLOSED
+
+Fourth and final instance of the `dict.get(key, 0)` bug class, in the worker's
+own accounting (the guard's instances are above). Same trap, one level
+deeper: `AlpacaPaperWorker._decimal` DID raise on an unsourceable value, but
+the call sites passed a `, 0` DEFAULT INTO it. `dict.get("k", 0)` returns an
+INVENTED 0 for a missing key, so `_decimal` succeeded on a value that never
+existed. A strict parser does not help if the caller pre-fabricates the input.
+
+Sites fixed (all now pass raw `dict.get(key)`):
+
+- `pending_sell_quantity` in `_process_pending_submits` (worker.py:414) -- a
+  pending SELL row with NULL quantity summed as 0 sold, overstating
+  `available_qty`. Defense-in-depth only: `ExecutionGuard.evaluate` already
+  fails closed on an unsourceable in-flight SELL quantity BEFORE this line.
+- `buying_power` and `unrealized_pl` in `_save_broker_snapshot`
+  (worker.py:451, :458) -- these feed ONLY the `broker_portfolio_snapshots`
+  observability row, so an absent field wrote a plausible-looking 0 and
+  Mission Control showed a real-looking ACTIVE account with no buying power
+  and zero unrealized P/L. Wrong numbers presented as authoritative.
+
+Lessons:
+
+- `dict.get(key, default)` is a silent fail-open even when the value is fed to
+  a strict validator. When the default is passed INTO a parsing helper, the
+  helper can never see the absence. Pass the raw `.get(key)` and let the
+  helper decide.
+- Parsing BEFORE opening an engine connection makes these paths unit-testable
+  with a stub engine: `_save_broker_snapshot` raises `invalid_broker_<field>`
+  on every field before `self.engine.begin()`, so no DB is needed to prove a
+  fabricated zero never reaches the snapshot row (asserted by
+  `test_fail_closed_occurs_before_any_write`).
+- An observability column that is NOT NULL forces a deliberate choice: raise,
+  or allow NULL plus a migration. Chosen here: RAISE. It needs no schema
+  change, matches the three sibling account fields (`cash`, `equity`,
+  `portfolio_value`) which already raised, and keeps the row's real-vs-absent
+  status visible by absence rather than by a NULL that looks like a real
+  balance of zero.
+- Fail-closed here is DEGRADED, not permissive: `_run` (worker.py:97-99)
+  catches the `invalid_broker_*` RuntimeError and calls `_enter_degraded`,
+  which marks the snapshot DEGRADED in the DB. A payload too poor to account
+  for is not allowed to publish an invented balance.
+
+Tests: tests/test_worker_broker_numeric_fail_closed.py (7 pure unit tests, no
+Postgres/broker/DB mutation). The `dict.get(key, 0)` audit is now CLOSED across
+both guard and worker; the convention going forward is: every broker numeric
+reaches `_decimal`/`_optional_decimal` RAW, with no `, 0` default anywhere.
+
 ## mypy scope on this repo
 
 - `[tool.mypy] files = ["services", "packages",

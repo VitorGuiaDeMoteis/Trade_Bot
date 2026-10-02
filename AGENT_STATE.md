@@ -146,6 +146,43 @@ mypy) and committed it. The tree was clean at the start of the next cycle.
   guard unit tests). Targeted 37 passed; ruff clean; mypy clean on the
   configured production scope.
 
+### Cycle: worker broker-numeric fail-closed accounting (FIXED)
+
+Final unreviewed layer of the `dict.get(key, 0)` fail-open bug class -- the
+worker's own broker-numeric accounting rather than the guard's. Three call
+sites passed a `, 0` default into `self._decimal`, which DEFEATED the helper:
+`dict.get` returned an INVENTED 0 for a missing key, so `_decimal` succeeded
+and the fabricated value flowed on.
+
+- `pending_sell_quantity` (`_process_pending_submits`): a pending SELL row with
+  a NULL quantity summed as 0 sold, so `available_qty` was overstated and a
+  second SELL of the whole position would be sized correctly only by accident.
+  Defense-in-depth: `ExecutionGuard.evaluate` already fails closed on an
+  unsourceable in-flight SELL quantity BEFORE this line runs, so it was not a
+  live fail-open.
+- `buying_power` and `unrealized_pl` (`_save_broker_snapshot`): an absent field
+  wrote a plausible-looking 0 into `broker_portfolio_snapshots`, so Mission
+  Control displayed a real-looking ACTIVE account with no buying power and zero
+  unrealized P/L -- wrong numbers presented as authoritative.
+
+Fix: all three pass the raw `dict.get(key)`, matching the convention already
+used by every sibling field in the same functions (`cash`, `equity`,
+`portfolio_value`, `qty`, `market_value`, `avg_entry_price`, `current_price`
+all already raised). A missing field now reaches `_decimal` and fails the
+cycle closed as `invalid_broker_<field>`, which `_run` turns into DEGRADED.
+This is fail-CLOSED and never permissive: a broker payload too poor to
+account for is not allowed to publish an invented balance.
+
+Deliberate decision on `buying_power` (schema is NOT NULL): raise rather than
+allow NULL. Allowing NULL would require a migration and would leave the
+snapshot row's real-vs-absent status invisible in Mission Control, whereas
+raising is already the behavior for the three sibling account fields and needs
+no schema change.
+
+New tests: tests/test_worker_broker_numeric_fail_closed.py (7 pure unit tests,
+stub engine, no Postgres/broker/DB mutation). Targeted 7 passed; sibling guard
+suites 27 passed; ruff clean; mypy clean on `services/alpaca_paper`.
+
 ## Active blockers
 
 None known at initialization.
@@ -165,24 +202,22 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
 
-Candidate: extend the same audit to worker.py's non-guard risk
-accounting. Remaining `dict.get(key, 0)` sites in
-`services/alpaca_paper/worker.py` (checked this cycle, NOT yet fixed):
+The `dict.get(key, 0)` broker-numeric audit is now COMPLETE across both
+layers -- guard (d55774e, 6747abe) and worker (committed this cycle). No
+remaining `, 0` defaults on broker numerics in `services/alpaca_paper/`.
 
-- line ~414 `self._decimal(item.get("quantity", 0), "pending_sell_quantity")` --
-  a pending SELL row with NULL quantity becomes 0, overstating
-  `available_qty`. This is the same bug class as the guard's in-flight fix, but
-  in the worker. NOTE: it is currently unreachable-as-a-bug because the guard
-  already fails closed on unsourceable in-flight SELL quantity, so fixing it is
-  defense-in-depth for the worker path, not a live fail-open.
-- line ~451 `account.get("buying_power", 0)` and line ~458
-  `remote.get("unrealized_pl", 0)` -- both feed ONLY the
-  `broker_portfolio_snapshots` observability row (`buying_power` is
-  NOT NULL in the schema). A missing field fabricates a plausible-looking 0 in
-  Mission Control. Decide deliberately: raise (`_decimal` without a default) or
-  allow NULL. This is observability accuracy, not a trading-safety path.
-- `_validate_positions` (~line 186) already raises via `_decimal` with no
-  defaults -- that path is correct and needs no change.
+Candidate next tasks (pick one in a clean cycle):
+
+- `tests/test_alpaca_worker.py` has only 3 DB-backed tests and they cannot run
+  without Postgres. The worker's `_process_pending_submits` SELL-sizing path
+  (`broker_quantity - pending_sell_quantity`, worker.py:404-422) is covered by
+  NO pure unit test. Adding a stub-engine test for it would close the last
+  untested trading-decision path in the worker, and the worker-side
+  `pending_sell_quantity` fix from this cycle has no direct test coverage of
+  that arithmetic today (only the `_decimal` contract is asserted).
+- Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still
+  holds in the current migration head before relying on the raise-not-NULL
+  decision from this cycle.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest.

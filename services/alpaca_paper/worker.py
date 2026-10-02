@@ -411,7 +411,7 @@ class AlpacaPaperWorker:
                 )
                 pending_sell_quantity = sum(
                     (
-                        self._decimal(item.get("quantity", 0), "pending_sell_quantity")
+                        self._decimal(item.get("quantity"), "pending_sell_quantity")
                         for item in in_flight
                         if item["symbol"] == symbol and item["side"] == "SELL"
                     ),
@@ -448,14 +448,14 @@ class AlpacaPaperWorker:
         cash = self._decimal(account.get("cash"), "cash")
         equity = self._decimal(account.get("equity"), "equity")
         portfolio_value = self._decimal(account.get("portfolio_value"), "portfolio_value")
-        buying_power = self._decimal(account.get("buying_power", 0), "buying_power")
+        buying_power = self._decimal(account.get("buying_power"), "buying_power")
         market_value = portfolio_value - cash
         reconciled_at = datetime.now(UTC)
 
         positions_data = []
         unrealized_pnl_total = Decimal("0")
         for remote in remote_positions:
-            unrealized_pnl = self._decimal(remote.get("unrealized_pl", 0), "unrealized_pnl")
+            unrealized_pnl = self._decimal(remote.get("unrealized_pl"), "unrealized_pnl")
             unrealized_pnl_total += unrealized_pnl
             positions_data.append(
                 {
