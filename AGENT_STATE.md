@@ -735,6 +735,52 @@ approval) -- neither is new work:
   payload. The broker route now supplies it, so the null must come from the
   observation builder path -- see the next-task note in AGENT_STATE.md.
 
+### Cycle: worker position-identity tripwire names WHICH cause (DONE)
+
+- `_validate_positions` (services/alpaca_paper/worker.py:215) collapsed two
+  DIFFERENT broker realities into the single reason
+  `broker_position_identity_unknown`: a row whose symbol is missing or blank
+  (unattributable) and a symbol the broker reported on more than one row
+  (the position was split across rows). `degraded_reason` is the only string
+  an operator gets, and the two causes have different remediations.
+- The branches are now separate. Missing/blank symbol KEEPS
+  `broker_position_identity_unknown` (unchanged, so existing log greps still
+  match); a repeat symbol raises
+  `broker_position_split_across_rows:{SYMBOL}`.
+- NO safety semantics changed: both branches still raise, so a split payload
+  still fails the cycle CLOSED into DEGRADED. Only the string an operator
+  reads got sharper.
+- Verified the split branch is genuinely reachable and not already netted
+  away upstream: both call sites (worker.py:148 `reconcile_once`,
+  worker.py:565 `_snapshot_broker_portfolio`) hand `_validate_positions` the
+  RAW `adapter.get_positions()` rows. The per-symbol netting added in abe7d25
+  lives DOWNSTREAM in `ExecutionGuard._net_positions`, and the snapshot write
+  (`_save_broker_snapshot`, worker.py:556-560) still inserts one
+  `broker_positions` row per broker row -- so a split payload really does have
+  to fail closed here.
+- New tests: tests/test_worker_position_identity_reasons.py (7 pure unit
+  tests). It builds the worker with `AlpacaPaperWorker.__new__` to skip
+  `__init__` -- safe because `_validate_positions` only reaches `_decimal`, a
+  staticmethod, so no engine or broker is constructed. The split test pins the
+  new reason AND asserts the unattributable string is ABSENT from it, so a
+  future collapse back to one string fails the test.
+
+Validation: 7 passed in the new file; 117 passed across the new file plus the
+sibling guard/worker/daily-loss suites; 21 passed together with
+tests/test_paper_v1_stabilization.py (the pre-existing direct caller); ruff
+clean and mypy clean on worker.py. Grep confirms no other code, template or doc
+references either reason string, so nothing else needed updating.
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health.status=ok, last_reconciled_at 2026-10-02T20:34:49Z, open positions 3
+(SPY/AAPL/TSLA fractional, market_value 29.92), orders reported 0 vs actual
+13, fills reported 0 vs actual 11, unrealized P&L -0.053430 (equity 99951.29 /
+cash 99921.37), database up, market_data state market_closed. The two
+known-undeployed anomalies persist unchanged: every
+`latest_orders[*].last_reconciled_at` is still null and the reported counts are
+still 0 vs 13/11. Both fixes are committed but not deployed -- do not
+re-investigate.
+
 ## Active blockers
 
 None known at initialization.
@@ -757,6 +803,12 @@ fixture setup. These are NOT caused by agent code changes:
 Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
+
+The tree was CLEAN at the start of the cycle that recovered the position-
+identity WIP (this cycle, recovery mode: the worktree already held the
+worker.py split-reason change plus its new test file, both unvalidated). That
+WIP is now committed and validated; the tree is clean again, so the next cycle
+picks a candidate from the list below.
 
 The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
 production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).

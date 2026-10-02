@@ -220,8 +220,17 @@ class AlpacaPaperWorker:
             market_value = self._decimal(position.get("market_value"), "position_market_value")
             self._decimal(position.get("avg_entry_price"), "average_price")
             self._decimal(position.get("current_price"), "current_price")
-            if not symbol or symbol in seen:
+            # Two DIFFERENT broker realities used to share this check, and they
+            # have different remediations: a row whose symbol is missing cannot
+            # be attributed at all, while a symbol reported on more than one row
+            # means the broker split the position across rows (the guard nets
+            # those; this worker and the snapshot write cannot). An operator
+            # reading only degraded_reason could not tell them apart, so name
+            # the cause instead of collapsing both into one string.
+            if not symbol:
                 raise RuntimeError("broker_position_identity_unknown")
+            if symbol in seen:
+                raise RuntimeError(f"broker_position_split_across_rows:{symbol}")
             if symbol not in ExecutionGuard.ALLOWED_SYMBOLS:
                 raise RuntimeError(f"unmanaged_broker_position:{symbol}")
             if quantity < 0 or market_value < 0:

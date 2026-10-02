@@ -765,3 +765,20 @@ Tests: tests/test_worker_reconcile_unknown_open_orders.py (18 pure unit tests).
   fixture setup with psycopg ConnectionTimeout. These are environmental.
   tests/test_replay_live.py also fails on Windows for lack of ComSpec/SystemRoot.
 - Check whether a failure happens at SETUP before treating it as a regression.
+
+## One rejection string can hide two different remediations
+
+- When a single `raise` (or rejection message) covers two distinct broker
+  realities, an operator reading only that string cannot act on it. Split the
+  string BEFORE splitting any behaviour, and leave the pre-existing string on
+  the branch that already had it so existing log greps keep matching.
+- Pin the split by asserting the OTHER reason is ABSENT from the message, not
+  just that the new one is present. A test that only asserts
+  `pytest.raises(..., match="new_reason")` still passes if both causes keep
+  collapsing into that one string.
+- Check the LAYER before calling a branch dead code. Here
+  `ExecutionGuard._net_positions` (commit abe7d25) nets duplicate position
+  rows, which made the worker's duplicate-symbol check look redundant; reading
+  the call sites showed the worker validates the RAW broker rows and only the
+  guard nets them downstream. Grep every call site and trace where the argument
+  came from before deleting a check that looks unreachable.
