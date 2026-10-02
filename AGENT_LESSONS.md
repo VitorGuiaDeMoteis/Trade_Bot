@@ -766,6 +766,59 @@ Tests: tests/test_worker_reconcile_unknown_open_orders.py (18 pure unit tests).
   tests/test_replay_live.py also fails on Windows for lack of ComSpec/SystemRoot.
 - Check whether a failure happens at SETUP before treating it as a regression.
 
+## Fail-closed is per-entity; the blast radius decides whether it escalates
+
+`AlpacaPaperExecutor._required_decimal` raising `RuntimeError("invalid_broker_*")`
+on one order was CORRECT -- and `_reconcile_active_orders` still degraded the
+whole worker on it. The loop called `executor.reconcile_order` unguarded, so a
+single unsourceable broker numeric for ONE order aborted every remaining order
+in the batch (fills unrecorded, in-flight exposure stale) and escaped to `_run`,
+whose `except Exception` calls `_enter_degraded` -- releasing NO further
+execution for the REST OF THE PROCESS LIFETIME. An availability failure wearing
+fail-closed clothing: fail-closed was per order, but the handler was per
+process.
+
+Fix: `except RuntimeError` scoped to the single call, a warning naming the
+order, loop continues. The bad order still writes nothing and keeps its prior
+status, so it stays in `ACTIVE_ORDER_STATUSES` and is RETRIED next cycle --
+fail-closed preserved, blast radius cut from "worker, permanently" to "one
+order, one cycle".
+
+Lessons:
+
+- For each `raise` on this worker, ask THREE questions, not one: (1) is the
+  condition a safety invariant (must halt) or an expected per-entity outcome
+  (must skip)? (2) what is the ESCAPE RADIUS -- is the handler above it per
+  entity or per process? (3) after the skip, is the entity RETRIED, marked
+  terminal, or silently dropped? A per-entity fail-closed inside a per-process
+  fail-closed handler is fail-CATASTROPHIC regardless of how correct the raise
+  is.
+- Narrow the `except` to the class the callee actually raises. Grepping the
+  callee for `raise` is the cheap proof that the new handler cannot swallow a
+  safety invariant: `reconcile_order` raises only `invalid_broker_*`
+  (executor.py:40,42), while the whole-cycle `broker_order_*_divergence`
+  invariants raise from `_assert_open_orders_known`, called by `reconcile_once`
+  (worker.py:150) OUTSIDE the loop -- so they still degrade the cycle, which is
+  correct because a payload-wide mismatch really is a whole-cycle problem.
+  Locating the call is what makes the fix auditable instead of merely green.
+- A test fixture that instantiates the real object inherits its REAL startup
+  state. `AlpacaPaperWorker.__init__` deliberately opens fail-closed
+  (`degraded=True`, `reconciliation_ready=False`,
+  `degraded_reason="startup_reconciliation_pending"`) and only `reconcile_once`
+  clears it, which needs the adapter/DB the test avoids. Three tests were red
+  for that reason. The fix is the FIXTURE (set the post-reconcile state
+  explicitly, with a comment saying why), NOT `__init__` -- "opening
+  fail-closed at startup" is the production invariant. Same shape as the
+  `_order_row` fixture lesson above.
+- Assert the DEFERRED entity is retried, not just skipped: reconcile a batch
+  again with the fault removed and assert it then completes normally. That
+  pins "deferred", which is what makes the skip safe, rather than "dropped".
+- A stub engine whose `scalars()` returns an iterator and whose `execute()`
+  returns self covers this loop entirely; `asyncio.to_thread(fetch_active)` only
+  needs `connect()` as a context manager.
+
+Tests: tests/test_worker_reconcile_isolates_bad_order.py (7 pure unit tests).
+
 ## One rejection string can hide two different remediations
 
 - When a single `raise` (or rejection message) covers two distinct broker

@@ -578,4 +578,18 @@ class AlpacaPaperWorker:
 
         active_orders = await asyncio.to_thread(fetch_active)
         for order_id in active_orders:
-            await self.executor.reconcile_order(self.engine, order_id)
+            try:
+                await self.executor.reconcile_order(self.engine, order_id)
+            except RuntimeError as error:
+                # One order whose broker numerics cannot be sourced must not
+                # stop the whole bot. `AlpacaPaperExecutor._required_decimal`
+                # fails closed PER ORDER (no fabricated 0 is written, and that
+                # row keeps its prior status, so it stays in ACTIVE_ORDER_STATUSES
+                # and is retried next cycle) -- but an escape from this loop
+                # would abort every remaining order in the batch AND reach
+                # `_run`, whose handler calls `_enter_degraded`, releasing NO
+                # further execution for the rest of the process lifetime. Scope
+                # the fault to its own order and keep reconciling the rest.
+                logger.warning(
+                    "Reconciliation deferred for order %s: %s", order_id, error
+                )

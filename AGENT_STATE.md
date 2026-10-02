@@ -781,6 +781,55 @@ known-undeployed anomalies persist unchanged: every
 still 0 vs 13/11. Both fixes are committed but not deployed -- do not
 re-investigate.
 
+### Cycle: one bad reconciliation order no longer degrades the whole worker (FIXED, recovery mode)
+
+- The worktree was DIRTY at cycle start (worker.py + an untracked test file),
+  so this ran in RECOVERY MODE: no new task was chosen.
+- `_reconcile_active_orders` (services/alpaca_paper/worker.py:568) looped over
+  every active order calling `executor.reconcile_order` UNGUARDED.
+  `AlpacaPaperExecutor._required_decimal` raises
+  `RuntimeError("invalid_broker_<field>")` (executor.py:40,42) when a broker
+  numeric cannot be sourced -- correct fail-closed, PER ORDER. But the raise
+  escaped the loop, which meant ONE malformed payload for ONE order: (a) aborted
+  reconciliation of every remaining order in the batch, leaving their fills
+  unrecorded and in-flight exposure stale, and (b) reached `_run`
+  (worker.py:125-127), whose `except Exception` calls `_enter_degraded`, which
+  releases NO further execution for the REST OF THE PROCESS LIFETIME. That is an
+  availability failure, not a fail-closed one.
+- Fix: `except RuntimeError` scoped to the single `reconcile_order` call, a
+  warning naming the order, then the loop continues. NO safety semantics
+  weakened: the bad order still writes nothing (no fabricated 0), keeps its
+  prior status so it stays in `ACTIVE_ORDER_STATUSES` and is RETRIED on a later
+  cycle, and `reconcile_once` still owns `degraded`/`reconciliation_ready` -- the
+  loop deliberately touches neither, so only a genuine whole-cycle failure
+  degrades.
+- Recovery work done on the WIP: the new test's `_worker(...)` fixture was
+  RED (3 failures) because it built a worker via `AlpacaPaperWorker(...)` and
+  asserted post-reconcile state, but `__init__` intentionally opens the worker
+  fail-closed (`degraded=True`, `reconciliation_ready=False`,
+  `degraded_reason="startup_reconciliation_pending"`) and only `reconcile_once`
+  clears it -- which needs the adapter/DB the test deliberately avoids. Fixed
+  the FIXTURE (set the post-reconcile state explicitly), NOT `__init__`.
+
+Validation (re-run in the recovery cycle that committed it): 7 passed in
+tests/test_worker_reconcile_isolates_bad_order.py; 99 passed across it plus the
+sibling worker/executor/guard/pending-sizing/health suites; ruff clean on both
+files; mypy clean (`services/alpaca_paper`, 6 files). No full suite run.
+
+Scope check performed before committing: the only `RuntimeError` reachable from
+`executor.reconcile_order` is `invalid_broker_<field>` (executor.py:40,42), so
+the new `except RuntimeError` cannot swallow a safety invariant. The whole-cycle
+divergences (`broker_order_*_divergence`, worker.py:265-293) raise from
+`_assert_open_orders_known`, which is called by `reconcile_once`
+(worker.py:150) -- OUTSIDE the loop -- so a payload-wide mismatch still degrades
+the cycle, as it should.
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health.status=degraded, equity 99951.29, orders reported 0 vs actual 13, fills
+reported 0 vs actual 11, every `latest_orders[*].last_reconciled_at` still null.
+Both remain the known-undeployed anomalies (fixes committed, frozen runtime not
+rebuilt) -- do not re-investigate.
+
 ## Active blockers
 
 None known at initialization.
@@ -804,11 +853,11 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
 
-The tree was CLEAN at the start of the cycle that recovered the position-
-identity WIP (this cycle, recovery mode: the worktree already held the
-worker.py split-reason change plus its new test file, both unvalidated). That
-WIP is now committed and validated; the tree is clean again, so the next cycle
-picks a candidate from the list below.
+The tree was DIRTY at the start of the most recent cycle, so that cycle ran in
+RECOVERY MODE and closed the `_reconcile_active_orders` per-order isolation WIP
+(reconciling one malformed order no longer degrades the whole worker). It is now
+committed and validated; the tree is clean again, so the next cycle picks a
+candidate from the list below.
 
 The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
 production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).
@@ -847,15 +896,17 @@ Candidate next tasks (pick one in a clean cycle):
   holds at migration head f2c8a51d9b10 before relying on the worker cycle's
   raise-not-NULL decision. Grep migrations/, no DB access needed.
 - `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")`
-  when computed qty <= 0 (worker.py:421-422). Check whether an unreachable
-  throw there would kill the whole worker cycle (`_run` turns RuntimeError into
-  DEGRADED) rather than just skipping one decision -- a single bad pending SELL
-  degrading the entire bot is an availability concern, unlike the intended
-  financial fail-closed. The new executor raise has the same shape: one
-  untrustworthy payload for one order degrades the whole cycle.
+  when computed qty <= 0 -- ALREADY FIXED (skip-the-row with a REJECTED
+  write-back, see the cycle note above). Its RECONCILIATION twin had the same
+  blast radius and is now fixed too: one bad `reconcile_order` no longer escapes
+  the loop, so it can no longer degrade the whole worker. Both members of that
+  fail-closed-vs-availability family are closed.
 - `broker_order_quantity_divergence` (worker.py:255) raises on quantity
   divergence and has no pure unit coverage; same fail-closed family, and it is
-  reachable from the reconciliation path.
+  reachable from the reconciliation path. STILL OPEN -- and note it is a
+  WHOLE-CYCLE invariant, not a per-order outcome: the question worth asking is
+  whether the raise is reachable per order (then it belongs inside the loop's
+  guard) or only for a payload-wide mismatch (then degrading is correct).
 
 NOTE on the second candidate above (the SIMULATOR `PaperPortfolio` in
 services/api/paper_queries.py:28): that is now the strongest remaining lead,
