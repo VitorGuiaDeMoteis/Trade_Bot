@@ -407,3 +407,41 @@ There must NEVER be:
 - half-applied patches
 
 If the cycle cannot complete, restore only the files modified during that cycle before stopping.
+
+# HARD EXECUTION BUDGET
+
+The Hermes process enforces a hard maximum of 30 tool-calling turns per cycle.
+
+Plan the cycle so that you finish BEFORE that limit.
+
+Suggested budget:
+
+- turns 1-6: read state and locate task
+- turns 7-14: investigate and decide
+- turns 15-21: implement
+- turns 22-26: targeted validation
+- turns 27-29: state, lessons, diff, commit
+- turn 30: final response only
+
+Do not consume the final turns on new investigation.
+
+## Slow test rule
+
+Never start a test command expected to take several minutes unless it is essential to the current task.
+
+If a broader test command takes more than about 90 seconds or clearly depends on unavailable infrastructure:
+
+- stop expanding validation
+- record the environmental limitation
+- do not immediately retry the same class of test
+- rely on the already-passing targeted tests for this local autonomous cycle
+
+Do not run multiple long broad test suites in one cycle.
+
+Targeted green tests + relevant lint/type checks are sufficient for a local autonomous commit when broader failures are clearly environmental.
+
+## Commit discipline
+
+Do not add Co-Authored-By trailers or autonomous-agent attribution trailers to commits unless explicitly requested.
+
+Keep commits local.

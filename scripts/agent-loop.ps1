@@ -103,7 +103,7 @@ model=stealth/space-bunny-alpha
         Write-Host "============================================================" -ForegroundColor Cyan
         Write-Host ""
 
-        hermes -p cloud chat --oneshot -q $Prompt
+        hermes -p cloud chat --oneshot --max-turns 30 -q $Prompt
 
         $ExitCode = $LASTEXITCODE
         $Finished = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -159,4 +159,5 @@ finally {
 
     Remove-Item $PidFile -ErrorAction SilentlyContinue
 }
+
 
