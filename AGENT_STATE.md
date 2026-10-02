@@ -379,6 +379,35 @@ failures in tests/test_mission_control.py are the known environmental
 `alpaca_paper_startup_refused_schema_not_at_head` (Postgres down), unchanged by
 this work.
 
+### Cycle: `_assert_open_orders_known` fail-closed coverage (DONE, recovery mode)
+
+Finished a WIP left uncommitted by a previous cycle: an untracked pure unit test
+file for `AlpacaPaperWorker._assert_open_orders_known` (worker.py:231-284), the
+one reconciliation check that NEVER repairs anything and only raises. It runs on
+EVERY cycle (worker.py:150), between order reconciliation and the snapshot save,
+and any raise becomes `_enter_degraded` via `_run`, which releases no new
+execution for the rest of the process lifetime.
+
+The WIP was 16/17 green. The single failure was a FIXTURE bug, not a production
+defect: `test_one_known_order_does_not_mask_a_second_unknown_one` built two
+remote orders that both defaulted to `client_order_id=CLIENT_ID`, so the second
+one legitimately matched by client id through the broker-id fallback
+(`by_broker_id.get(id) or by_client_id.get(client_id)`). Fixed by giving the
+second order its own `client_order_id`, which is what Alpaca actually does.
+
+No production code changed. New file
+tests/test_worker_reconcile_unknown_open_orders.py (17 pure unit tests, scripted
+connection + canned local rows; no Postgres/broker/DB mutation) pins every
+branch: no-open-orders is safe, BUY compares notional, SELL compares quantity,
+match by client id when the broker id is not stored yet, case-insensitive
+symbol/side, and raises for unknown order, missing id, symbol divergence, side
+divergence, terminal-status divergence (the double-exposure case), notional and
+quantity divergence (including a missing numeric on EITHER side), and an
+unparsable remote size surfacing as `invalid_broker_open_order_notional`.
+
+Validation: 17 new passed; worker sibling suites 35 passed; ruff clean. mypy
+not run -- no production change (`tests/` is outside the configured scope).
+
 ## Active blockers
 
 None known at initialization.

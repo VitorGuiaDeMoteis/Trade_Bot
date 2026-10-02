@@ -316,6 +316,36 @@ Lessons:
 
 Tests: tests/test_broker_portfolio_counts.py (3 pure unit tests).
 
+## A test fixture can contradict the contract it is meant to pin
+
+`_assert_open_orders_known` matches a remote open order with
+`by_broker_id.get(id) or by_client_id.get(client_id)` -- the client-id fallback
+exists because the broker id is written only after submission returns, so an
+order can be working at the broker while only its client id is known locally.
+
+A regression test that built TWO remote orders from one shared fixture default
+(`client_order_id=CLIENT_ID` for both) did not fail because of a missing
+loop-all-orders check -- it failed because the second order was, correctly,
+matched by client id. The assertion was unreachable, and "fixing" the
+production code to make it pass would have removed the fallback that the sibling
+test `test_match_by_client_order_id_when_broker_id_not_stored_yet` depends on.
+
+Lessons:
+
+- When a helper builds a fixture with sensible defaults, a test needing several
+  distinct entities MUST override every identity field, not just the one it
+  asserts on. Broker-external identifiers (broker id AND client id) are one
+  identity -- varying only one of them is not a distinct entity.
+- Before changing production code to satisfy a failing test, ask whether the
+  fixture describes a state the real system can produce. A red test is evidence,
+  not a verdict.
+- Also confirmed while validating: a raise inside this method names the SIDE
+  that diverged, and a junk remote size reuses the existing `_decimal` label
+  (`invalid_broker_open_order_notional`), so it still fails the whole cycle
+  closed rather than being treated as equal to the approved size.
+
+Tests: tests/test_worker_reconcile_unknown_open_orders.py (17 pure unit tests).
+
 ## Running pytest here requires overriding two ambient env vars
 
 The agent shell exports `DATABASE_ROLE=runtime` and `EXECUTION_MODE=alpaca_paper`.
