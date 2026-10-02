@@ -668,6 +668,73 @@ Validated: 21 passed in tests/test_broker_portfolio_counts.py +
 tests/test_health_paper_worker_ready.py (full file, not a subset), ruff clean,
 mypy clean on the route. No production file was modified during recovery.
 
+### Cycle: SELL local-side size coverage in `_assert_open_orders_known` (DONE, recovery mode)
+
+Started as RECOVERY MODE: the tree was dirty with one uncommitted pure unit
+test in tests/test_worker_reconcile_unknown_open_orders.py plus the matching
+AGENT_LESSONS entry. No production code was in the WIP and none was needed.
+
+The test pins the LOCAL-side NULL rule of the SELL branch
+(worker.py:275-284): a local SELL row whose `requested_quantity` is NULL must
+raise `broker_order_quantity_divergence`, not be read as "size zero matches".
+I read the production branch before accepting the premise and confirmed it
+already fails closed on `remote_quantity is None or local_quantity is None`,
+symmetrically with the BUY branch (worker.py:265-274). So this was a genuine
+COVERAGE HOLE, not a latent bug -- the one direction the family was missing.
+
+`requested_quantity` is NULL for every NOTIONAL order (executor.py:151), and
+every execution gate sizes a SELL from that column, so a NULL here is
+"unknown", never "equal to anything". Worth keeping as a regression pin: the
+`or 0`-style coercion that this repo already fixed in guard/worker/executor
+would have silently opened this hole.
+
+Validation: 18 tests in the file pass (full file); sibling guard/worker/daily-
+loss suites 48 passed; ruff clean on the changed test; mypy clean on
+worker.py (no production change -- `tests/` is outside the configured scope).
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health DEGRADED, last_reconciled_at 2026-10-02T20:22:37Z, open positions 3
+(SPY/AAPL/TSLA, fractional, market_value 29.93), orders reported 0 vs actual
+13, fills reported 0 vs actual 11, unrealized P&L -0.036279 (equity 99951.30 /
+cash 99921.37), database up, market_data state market_closed.
+
+Two anomalies, BOTH already root-caused and fixed on this branch and both
+persisting ONLY because the frozen runtime is undeployed (deploy needs human
+approval) -- neither is new work:
+
+1. `/health` flaps: 15 of the last 25 samples report `health.status=degraded`
+   while `paper.degraded=false` and `reconciled=true` every time, each taken
+   0.5-8.8s after that sample's own `last_reconciled_at` -- i.e. inside the
+   next reconcile cycle's fail-closed window. This is the exact
+   `reconciliation_in_progress` sentinel misread as a fault, fixed by
+   `AlpacaPaperWorker.health_ready()` in an earlier cycle. The sample cadence
+   is now ~60s against a 3s reconcile, so the observer more often lands in a
+   NON-cycle and the flap rate should fall once deployed.
+2. Reported counts still 0 vs 13 orders / 0 vs 11 fills, and every
+   `latest_orders[*].last_reconciled_at` is still null. Both agent-side fixes
+   are committed but not deployed.
+
+- `broker_order_quantity_divergence` (worker.py:284) now has pure unit coverage
+  in BOTH directions (broker-side NULL and local-side NULL). The production
+  branch was already correct; only the tests were asymmetric.
+- `health.status=degraded` in `.agent-runtime/paper-observations.jsonl` with
+  `paper.degraded=false` is the ALREADY-FIXED `health_ready()` bug, not a new
+  fault. Do not re-investigate it. Diagnostic that distinguishes the two cases
+  in one read: compare each sample's `observed_at` to that same sample's
+  `paper.last_reconciled_at`. `health_ready()` only fails closed on
+  `has_reconciled=False` or a REAL `degraded_reason`, so a `degraded` health
+  paired with a healthy `paper` block and a small positive delta means the
+  runtime is still running the pre-fix code.
+- The `paper-latest.json` portfolio fields are FLAT (`paper.cash`,
+  `paper.equity`, `paper.orders_count_reported`, ...), not nested under
+  `paper.portfolio`. A first pass that looks for `paper.portfolio.orders`
+  silently reads empty lists and reports orders/fills as 0 vs 0, which is
+  indistinguishable from a real empty state. Dump the keys before trusting a
+  zero.
+- Per-order `latest_orders[*].last_reconciled_at` is null in the observation
+  payload. The broker route now supplies it, so the null must come from the
+  observation builder path -- see the next-task note in AGENT_STATE.md.
+
 ## Active blockers
 
 None known at initialization.

@@ -231,6 +231,22 @@ def test_sell_quantity_missing_on_broker_side_raises():
         )
 
 
+def test_sell_quantity_missing_on_local_side_raises():
+    """A local SELL row with no size must not be read as matching the broker.
+
+    The SELL branch of `_assert_open_orders_known` compares the remote qty
+    against `requested_quantity`, which is NULL for a notional order. Every
+    execution gate here sizes a SELL from that column, so a NULL means "size
+    unknown", never "size zero matches"; the raise keeps the cycle fail-closed
+    rather than accepting an unverifiable open sell.
+    """
+    with pytest.raises(RuntimeError, match=f"broker_order_quantity_divergence:{BROKER_ID}"):
+        _assert(
+            [_local_row(side="SELL", requested_quantity=None)],
+            [_remote_order(side="SELL", qty="10")],
+        )
+
+
 def test_unparsable_remote_notional_fails_closed_as_invalid_broker_field():
     """A junk size raises the parse error, still failing the cycle closed."""
     with pytest.raises(RuntimeError, match="invalid_broker_open_order_notional"):

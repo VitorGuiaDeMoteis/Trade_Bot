@@ -727,6 +727,34 @@ Tests: 3 pure unit tests added to tests/test_worker_pending_sell_sizing.py
 - Validate types with `mypy services/alpaca_paper` (the configured scope), and
   use ruff plus pytest for the new test file.
 
+## Symmetric fail-closed branches are usually a coverage hole, not a code bug
+
+`_assert_open_orders_known` compares size two ways: the BUY branch raises
+`broker_order_notional_divergence` unless BOTH `remote.notional` and
+`local.requested_notional` are present and equal; the SELL branch raises
+`broker_order_quantity_divergence` under the same both-present rule for
+`remote.qty` / `local.requested_quantity`. Reading them side by side makes the
+SELL branch look like it would accept a NULL local size as a match -- it does
+not. Both branches already fail closed; only the TESTS were asymmetric
+(BUY had broker-side-missing and local-side-missing, SELL had only
+broker-side-missing).
+
+Lessons:
+
+- When a task says a fail-closed path "has no coverage", check whether a
+  SIBLING branch for the other side already has it, and read the production
+  branch before assuming a defect. Two of three candidate defects this cycle
+  resolved to "already fixed on the frozen runtime", and this one to "already
+  correct in production, untested in one direction".
+- A NULL size column must never be read as "size zero matches". `requested_quantity`
+  is NULL for every notional order, and every execution gate sizes a SELL from
+  that column, so an unsourceable value is unknown -- not equal to anything.
+- Keep the new test byte-compatible with the family's shared helpers
+  (`_local_row`, `_remote_order`) so it inherits their docstrings and
+  defaults; only override what the case asserts on.
+
+Tests: tests/test_worker_reconcile_unknown_open_orders.py (18 pure unit tests).
+
 ## Testing on this Windows host
 
 - The default `python` on PATH is Hermes' own 3.14 and has NO pytest.
