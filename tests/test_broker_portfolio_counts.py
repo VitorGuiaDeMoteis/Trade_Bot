@@ -8,7 +8,7 @@ connection that dispatches on the statement being executed.
 """
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -19,9 +19,16 @@ from fastapi import Response
 from services.api.broker_routes import get_broker_portfolio
 
 NOW = datetime.now(UTC)
+SUBMITTED_AT = NOW - timedelta(hours=2)
 
 
-def _order_row() -> dict[str, Any]:
+def _order_row(*, requested_at: datetime | None = None) -> dict[str, Any]:
+    """One joined broker_orders+paper_orders row.
+
+    `requested_at` is paper_orders' immutable submit time; `last_reconciled_at`
+    is broker_orders' timestamp, bumped on EVERY reconcile cycle. They are kept
+    deliberately distinct so a test can tell which one the route reported.
+    """
     return {
         "order_id": uuid4(),
         "run_id": uuid4(),
@@ -32,20 +39,21 @@ def _order_row() -> dict[str, Any]:
         "requested_quantity": Decimal("1"),
         "filled_quantity": Decimal("1"),
         "status": "filled",
+        "requested_at": SUBMITTED_AT if requested_at is None else requested_at,
         "last_reconciled_at": NOW,
         "client_order_id": f"cid-{uuid4()}",
         "broker_order_id": f"boid-{uuid4()}",
     }
 
 
-def _fill_row(order_id: Any) -> dict[str, Any]:
+def _fill_row(order_id: Any, *, filled_at: datetime | None = None) -> dict[str, Any]:
     return {
         "broker_fill_id": f"fill-{uuid4()}",
         "order_id": order_id,
         "price": Decimal("612.5"),
         "quantity": Decimal("1"),
         "fee": None,
-        "filled_at": NOW,
+        "filled_at": SUBMITTED_AT + timedelta(minutes=5) if filled_at is None else filled_at,
     }
 
 
@@ -227,3 +235,67 @@ def test_empty_broker_state_reports_zero_counts() -> None:
     assert portfolio.orders == [] and portfolio.fills == []
     assert portfolio.orders_count == 0
     assert portfolio.fills_count == 0
+
+
+def test_order_requested_at_is_submit_time_not_reconcile_time() -> None:
+    """requested_at must be paper_orders' submit time.
+
+    broker_orders.last_reconciled_at is bumped on EVERY reconcile, so using it
+    as requested_at made a fill look like it happened BEFORE the order that
+    produced it (the fill carries the true submit-based time).
+    """
+    order = _order_row()
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[_fill_row(order["order_id"])],
+        order_total=1,
+        fill_total=1,
+    )
+
+    portfolio = _call(conn)
+
+    reported = portfolio.orders[0]
+    assert reported.requested_at == SUBMITTED_AT
+    assert reported.requested_at != NOW
+    # The reconcile timestamp is still published, in its own field.
+    assert reported.last_reconciled_at == NOW
+    # The invariant the old mapping broke: a fill cannot precede its own order.
+    assert portfolio.fills[0].filled_at > reported.requested_at
+
+
+def test_order_reports_requested_at_independent_of_reconcile_frequency() -> None:
+    """Reconciling repeatedly must not move requested_at.
+
+    An order reconciled many times still has ONE submit time; only
+    last_reconciled_at advances. This is the regression that would reappear if
+    someone "simplified" the route back to a single timestamp column.
+    """
+    first = _order_row()
+    order_id = first["order_id"]
+    re_reconciled = _order_row()
+    re_reconciled.update(
+        {
+            "order_id": order_id,
+            "run_id": first["run_id"],
+            "signal_id": first["signal_id"],
+            "risk_decision_id": first["risk_decision_id"],
+            "client_order_id": first["client_order_id"],
+            "last_reconciled_at": NOW + timedelta(minutes=30),
+        }
+    )
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": first["run_id"]},
+        positions=[],
+        orders=[first, re_reconciled],
+        fills=[],
+        order_total=2,
+        fill_total=0,
+    )
+
+    portfolio = _call(conn)
+
+    assert [o.requested_at for o in portfolio.orders] == [SUBMITTED_AT, SUBMITTED_AT]
+    # The two rows really do differ in reconcile time, so the test has teeth.
+    assert portfolio.orders[0].last_reconciled_at != portfolio.orders[1].last_reconciled_at

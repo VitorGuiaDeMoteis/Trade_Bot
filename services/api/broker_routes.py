@@ -78,6 +78,7 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                     paper_orders.c.run_id,
                     paper_orders.c.signal_id,
                     paper_orders.c.risk_decision_id,
+                    paper_orders.c.requested_at,
                 )
                 .select_from(j)
                 .order_by(broker_orders.c.last_reconciled_at.desc())
@@ -100,7 +101,13 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                     quantity=Decimal(str(o.get("requested_quantity") or "0")),
                     filled_quantity=Decimal(str(o["filled_quantity"])),
                     status=o["status"].upper() if o.get("status") else "UNKNOWN",
-                    requested_at=o["last_reconciled_at"],
+                    # requested_at is the real submission time from paper_orders.
+                    # broker_orders.last_reconciled_at is bumped on every
+                    # reconciliation, so it must never be reported as the
+                    # request time: a fill could otherwise appear to precede
+                    # the order that produced it.
+                    requested_at=o["requested_at"],
+                    last_reconciled_at=o["last_reconciled_at"],
                     idempotency_key=uuid5(NAMESPACE_URL, o["client_order_id"]),
                     reason="Broker Order",
                     client_order_id=o["client_order_id"],

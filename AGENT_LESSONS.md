@@ -346,6 +346,53 @@ Lessons:
 
 Tests: tests/test_worker_reconcile_unknown_open_orders.py (17 pure unit tests).
 
+## Verify lint regressions by line location, not by an out-of-tree HEAD copy
+
+To check whether WIP added ruff errors to a file that already had some, a
+tempting move is `git show HEAD:<file> > $TMP/x.py && ruff check $TMP/x.py`. That
+comparison is UNSOUND: ruff resolves config (line-length, per-file ignores) from
+the nearest pyproject/ruff.toml relative to the FILE, so the temp copy loses the
+repo's config and reports a different, smaller error count. It produced 1 vs 7
+here and would have "confirmed" a clean bill of health.
+
+Cheap correct method: run ruff on the working-tree file once with
+`--output-format=concise` and read the line numbers of every finding. If they all
+fall in lines that predate the diff, the WIP added none. One command, no copy.
+
+## A reconcile timestamp is not a submit timestamp
+
+`get_broker_portfolio` mapped `PaperOrder.requested_at = o["last_reconciled_at"]`.
+That column lives on `broker_orders` and is bumped on EVERY reconciliation cycle,
+while the fills in the SAME payload carry `filled_at` derived from the true submit
+time. The result was self-contradictory output: Mission Control could render a
+fill that appears to have happened BEFORE the order that produced it, and the
+reported order time drifted forward continuously on a healthy runtime.
+
+`paper_orders.requested_at` is the immutable submit time, is `nullable=False`,
+and was already JOINed in the existing query -- the correct value was in the row
+and simply not selected.
+
+Lessons:
+
+- A "timestamp" column name is not a contract. Before binding a DB column to a
+  response field, ask WHAT WRITES it and HOW OFTEN. Anything a periodic job
+  refreshes is not a record of when an event occurred.
+- When a query already joins the table that holds the truth, treat "the field
+  comes from the wrong table" as a likely defect rather than accepting a
+  convenient column of the same type. Two fields of the same type in one row are
+  a trap, not a convenience.
+- Pin such a bug with fixtures that make the two candidate values DISTINCT by a
+  wide margin (2h apart here). If a test fixture uses one timestamp for both
+  fields, the test cannot tell a correct mapping from the wrong one -- it passes
+  against the bug.
+- Comparing timestamps as ISO STRINGS is flaky: fractional-second presence
+  differs between renderings. Parse to `datetime` in the assertion.
+
+Tests: 2 pure unit tests in tests/test_broker_portfolio_counts.py (fixture now
+carries both timestamps deliberately distinct) plus 1 DB-backed sibling in
+tests/test_broker_routes.py. The pure-unit twin is the executable coverage:
+the DB-backed file cannot run without Postgres.
+
 ## Running pytest here requires overriding two ambient env vars
 
 The agent shell exports `DATABASE_ROLE=runtime` and `EXECUTION_MODE=alpaca_paper`.

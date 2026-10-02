@@ -1,5 +1,5 @@
 import pytest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 from sqlalchemy import insert
@@ -137,6 +137,121 @@ async def test_broker_portfolio_fee_none(test_engine, override_config, monkeypat
         assert data["slippage_bps"] is None
         
     # Cleanup to avoid breaking other tests
+    with test_engine.begin() as conn:
+        conn.execute(delete(broker_fills))
+        conn.execute(delete(broker_orders))
+        conn.execute(delete(paper_orders))
+        conn.execute(delete(broker_portfolio_snapshots))
+
+
+@pytest.mark.anyio
+async def test_broker_order_requested_at_is_submit_time_not_reconcile_time(
+    test_engine, override_config, monkeypatch
+):
+    """requested_at must be the paper_orders submit time, never the reconcile time.
+
+    broker_orders.last_reconciled_at is bumped on every reconciliation, so using
+    it as requested_at made fills appear to precede the order that produced them.
+    """
+    async def mock_stop(self) -> None:
+        pass
+
+    monkeypatch.setattr("services.alpaca_paper.worker.AlpacaPaperWorker.start", lambda self: None)
+    monkeypatch.setattr("services.alpaca_paper.worker.AlpacaPaperWorker.stop", mock_stop)
+
+    from services.api.main import create_app
+
+    app = create_app()
+    run_id, s_id, rd_id = insert_baseline(test_engine)
+
+    requested_at = datetime.now(UTC) - timedelta(hours=1)
+    # Reconciliation happened long afterwards, as it always does on a live cycle.
+    reconciled_at = datetime.now(UTC)
+
+    with test_engine.begin() as conn:
+        from sqlalchemy import delete
+
+        from services.api.models import (
+            broker_fills,
+            broker_orders,
+            broker_portfolio_snapshots,
+            paper_orders,
+        )
+
+        conn.execute(delete(broker_fills))
+        conn.execute(delete(broker_orders))
+        conn.execute(delete(paper_orders))
+        conn.execute(delete(broker_portfolio_snapshots))
+
+        conn.execute(
+            insert(broker_portfolio_snapshots).values(
+                provider="alpaca",
+                status="ACTIVE",
+                cash=Decimal("100"),
+                market_value=Decimal("100"),
+                equity=Decimal("200"),
+                unrealized_pnl=Decimal("0"),
+                buying_power=Decimal("100"),
+                last_reconciled_at=reconciled_at,
+            )
+        )
+
+        order_id = uuid4()
+        conn.execute(
+            insert(paper_orders).values(
+                order_id=order_id,
+                run_id=run_id,
+                signal_id=s_id,
+                risk_decision_id=rd_id,
+                symbol="AAPL",
+                side="BUY",
+                quantity=Decimal("1"),
+                filled_quantity=Decimal("1"),
+                status="FILLED",
+                requested_at=requested_at,
+                idempotency_key=order_id,
+                reason="test",
+            )
+        )
+        conn.execute(
+            insert(broker_orders).values(
+                order_id=order_id,
+                client_order_id=str(order_id),
+                broker_order_id="b_id",
+                status="filled",
+                filled_quantity=Decimal("1"),
+                last_reconciled_at=reconciled_at,
+            )
+        )
+        filled_at = requested_at + timedelta(minutes=5)
+        conn.execute(
+            insert(broker_fills).values(
+                broker_fill_id="fill_req_at",
+                order_id=order_id,
+                quantity=Decimal("1"),
+                price=Decimal("10.0"),
+                fee=None,
+                filled_at=filled_at,
+            )
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/broker/portfolio")
+        assert response.status_code == 200
+        order = response.json()["orders"][0]
+        fill = response.json()["fills"][0]
+
+        # requested_at is the real submit time, not the reconcile time.
+        assert order["requested_at"] == requested_at.isoformat().replace("+00:00", "Z")
+        # The reconcile timestamp is surfaced in its own field instead of dropped.
+        assert order["last_reconciled_at"] is not None
+        # The invariant the bug broke: a fill can never precede its own order.
+        # Compared as datetimes, not strings: ISO renderings differ by
+        # fractional-second presence, which would make a string compare flaky.
+        assert datetime.fromisoformat(fill["filled_at"]) > datetime.fromisoformat(
+            order["requested_at"]
+        )
+
     with test_engine.begin() as conn:
         conn.execute(delete(broker_fills))
         conn.execute(delete(broker_orders))

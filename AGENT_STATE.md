@@ -333,6 +333,77 @@ length, and cover the empty-state 0 case.
 
 Validation: 3 new passed; ruff clean; mypy clean on broker_routes.py.
 
+### Cycle: broker portfolio `requested_at` is submit time, not reconcile time (FIXED)
+
+Started as RECOVERY MODE: the worktree was dirty with an uncommitted
+`requested_at` correctness fix in `services/api/broker_routes.py` plus its
+tests. The production change was right; the sibling pure-unit fixture
+predated the new column and raised `KeyError: 'requested_at'`. Completed and
+committed it.
+
+The route built `PaperOrder.requested_at=o["last_reconciled_at"]` -- i.e. it
+reported the BROKER RECONCILE time as the order's request time. But
+`broker_orders.last_reconciled_at` is bumped on every reconcile cycle, and the
+fills returned in the same payload carry `filled_at` derived from the real
+submit time. The reported order time therefore drifted forward on every
+reconcile, so Mission Control could show a fill that appears to have happened
+BEFORE the order that produced it. `paper_orders.requested_at` is the
+authoritative immutable submit time and is already joined in this query.
+
+Fix (services/api/broker_routes.py): select `paper_orders.c.requested_at` in
+the existing `broker_orders JOIN paper_orders` query and map it to
+`PaperOrder.requested_at`; keep `last_reconciled_at` in its own contract field
+(`PaperOrder.last_reconciled_at`, already optional) instead of discarding it.
+No schema change, no broker call, no trading-behavior change -- only which
+timestamp a read endpoint reports.
+
+New/updated tests:
+- tests/test_broker_portfolio_counts.py: `_order_row` now carries
+  `requested_at` deliberately DISTINCT from `last_reconciled_at` (2h apart), so
+  a test can tell which one the route reported; added 2 pure unit tests pinning
+  that `requested_at` is submit time, that a fill never precedes its own order,
+  and that re-reconciling never moves `requested_at` (file total 5 pure tests).
+- tests/test_broker_routes.py: added a DB-backed sibling regression test
+  mirroring the existing fee-none test, plus made its fill-vs-order comparison
+  parse ISO strings into datetimes (raw string compare is flaky because ISO
+  renderings differ by fractional-second presence).
+
+Validation: 16 targeted passed (test_broker_portfolio_counts.py 5 +
+test_health_paper_worker_ready.py 11); ruff clean on both files I changed
+(test_broker_routes.py retains 7 PRE-EXISTING ruff errors also present on HEAD
+-- the WIP added 1 and it was fixed; confirmed by re-running ruff against a
+`git stash`ed tree); mypy clean on broker_routes.py. The new DB-backed test in
+test_broker_routes.py COLLECTS (2 tests) but cannot execute here: the whole
+file times out at 120s because Postgres is down -- the known environmental
+condition, not a code fault. Its pure-unit equivalent in
+test_broker_portfolio_counts.py carries the executable coverage.
+
+Recovery-cycle verification re-run: 16 targeted pure tests green
+(test_broker_portfolio_counts.py 5 + test_health_paper_worker_ready.py 11),
+mypy clean on broker_routes.py, ruff clean on broker_routes.py and
+test_broker_portfolio_counts.py. The 7 ruff findings in
+tests/test_broker_routes.py all land at lines 1-82, entirely in the pre-existing
+region (the WIP starts at line 145), so the WIP added none -- confirming the
+claim above. NOTE the earlier method recorded for that check was unsound: running
+ruff on a `git show HEAD:` dump in a temp dir loses the repo pyproject config, so
+it reported 1 error instead of 7. Verify by line-number location inside the repo,
+not via an out-of-tree copy.
+
+PAPER_REVIEW (this cycle): status ACTIVE, paused=false, degraded=false,
+reconciled=true, open positions [TSLA], orders reported 0 vs actual 9, fills
+reported 0 vs actual 9, unrealized P&L 9.97 (equity 99951.32 / cash 99941.35),
+health "ok", last_reconciled_at 2026-10-02T18:21:16Z. The 0-vs-N reported-count
+mismatch persists only because the fixes are not deployed to the frozen runtime
+(deploy needs human approval) -- no new actionable Paper anomaly.
+
+One new observation worth a future cycle: every order in the observation payload
+carries `"last_reconciled_at": null` while the portfolio-level
+`last_reconciled_at` is populated. The broker route fixed by this WIP now sets
+that field, so the null most likely originates in the OBSERVATION builder path
+(services/alpaca_paper/observation.py or its snapshot builder), not in the route.
+Worth identifying which constructor emits the observation payload so a later
+deploy cannot publish another null timestamp through a second path.
+
 ### Cycle: /health no longer flaps in ALPACA PAPER (FIXED)
 
 Found by the mandatory Paper review gate, finished and committed in recovery
@@ -439,14 +510,22 @@ The Paper-reported-counts observability defect is fixed (see cycle above).
 
 Candidate next tasks (pick one in a clean cycle):
 
-- The Paper review gate keeps re-surfacing the 0-vs-7 `orders_count` mismatch
-  in `paper-latest.json` because fix 7252052 is not deployed to the frozen
-  runtime. Deployment needs human approval, so the agent-side task is instead
-  to confirm the fix is complete for the OBSERVATION payload path too
-  (`services/alpaca_paper/observation.py` / the paper snapshot builder), so a
-  later deploy cannot re-publish 0 from a second constructor.
-- `services/api/paper_queries.py:28` builds a SECOND `PaperPortfolio` (the simulator/local path). Audit it for the same class of unset-field bug: any contract field it leaves at its default while the equivalent broker route supplies it. `grep PaperPortfolio(` finds exactly these two constructors, so this is a bounded two-file check.
-- Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still holds at migration head f2c8a51d9b10 before relying on the worker cycle's raise-not-NULL decision. Grep migrations/, no DB access needed.
+- The 0-vs-7 `orders_count` observation defect is fixed on the BROKER route
+  path (7252052) and, as of this cycle, so is the broker route's
+  `requested_at` timestamp. The remaining agent-side gap is the SIMULATOR
+  constructor: `services/api/paper_queries.py:28` builds a SECOND
+  `PaperPortfolio` for the local/simulator path. Audit it for the same class of
+  unset/wrong-field bug -- any contract field it leaves at its default (or
+  fills with the wrong timestamp) while the broker route supplies it
+  correctly. `grep PaperPortfolio(` finds exactly these two constructors, so
+  this is a bounded two-file check. Note `paper_queries.py` reads
+  `PaperOrder.model_validate(dict(r))` straight off `paper_orders`, so its
+  `requested_at` is already correct by construction; the fields to scrutinize
+  are the portfolio-level ones it hardcodes (cash/equity/market_value,
+  counts, `reconciled`, `last_reconciled_at`).
+- Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still
+  holds at migration head f2c8a51d9b10 before relying on the worker cycle's
+  raise-not-NULL decision. Grep migrations/, no DB access needed.
 - `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")`
   when computed qty <= 0 (worker.py:421-422). Check whether an unreachable
   throw there would kill the whole worker cycle (`_run` turns RuntimeError into
