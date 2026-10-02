@@ -522,6 +522,57 @@ Still open from the previous cycle and CONFIRMED again here: every
 populated. Since the broker route now supplies that field, the null must come
 from the OBSERVATION builder path -- see next-task note below.
 
+### Cycle: unexecutable SELL degrades the whole worker (FIXED, recovery mode)
+
+Started as RECOVERY MODE: dirty tree with an uncommitted change to
+`services/alpaca_paper/worker.py` and 3 pure unit tests in
+`tests/test_worker_pending_sell_sizing.py`. The change was correct and
+fail-closed; this cycle validated it end-to-end and committed it.
+
+`_process_pending_submits` raised
+`RuntimeError("sell_quantity_unavailable:{symbol}")` when the computed SELL
+quantity was `<= 0` (worker.py:453). `_run` turns ANY RuntimeError into
+`_enter_degraded`, which releases NO further execution for the rest of the
+process lifetime -- so ONE unexecutable decision stopped the entire bot, not
+just that order. The raise read as a financial fail-closed, but the guard had
+already decided this order's fate upstream: it is an AVAILABILITY hazard.
+
+Root cause of reachability, found by the new test rather than by inspection:
+the guard and the worker disagree on how to aggregate positions for a symbol.
+`guard.py:80` builds `pos_map = {p["symbol"]: p for p in positions}` -- LAST row
+wins -- while `worker.py:436-443` SUMS every row for the symbol. A broker
+payload carrying two netting rows for one symbol (e.g. AAPL -10 then AAPL +10)
+therefore lets the guard see qty=+10 with nothing in flight and APPROVE, while
+the worker computes `10 - 10 = 0` and hit the raise. Negative `quantity`
+(pending SELL larger than the position) reaches the same line.
+
+Fix: skip THIS decision instead of raising -- same REJECTED write-back the
+guard's rejection branch already uses (worker.py:426-431), a warning log line,
+and `continue`. Fail-closed is preserved (nothing is submitted, the risk
+decision is recorded REJECTED with a reason an operator can read) while the
+blast radius drops from "whole worker, permanently" to "one row, next cycle
+retries". No trading permission is widened: a later cycle re-derives the same
+quantity and re-decides.
+
+New tests (tests/test_worker_pending_sell_sizing.py, now 16 pure unit tests):
+a two-netting-row payload that the guard approves and the worker computes as
+0; a negative computed quantity; and a skip that does NOT stop the loop --
+a second pending TSLA SELL still submits `quantity=5` in the same cycle. Each
+asserts `executor.submissions` content, `worker.degraded is False`, and the
+`sell_quantity_unavailable` reason on the write-back.
+
+Validation: 16 new-file tests passed; guard/worker/daily-loss siblings 73
+passed; ruff clean on both changed files; mypy clean on services/alpaca_paper.
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health ok, open positions [AAPL, SPY, TSLA] (all ~0.01-0.03 fractional shares),
+orders reported 0 vs actual 11, fills reported 0 vs actual 11, unrealized P&L
+-0.008836 (equity 99951.33 / cash 99921.37), last_reconciled_at
+2026-10-02T19:29:30Z. No new anomaly. The 0-vs-11 reported-count mismatch and
+the per-order null `last_reconciled_at` both persist ONLY because the
+agent-side fixes are not deployed to the frozen runtime (deploy requires human
+approval).
+
 ## Active blockers
 
 None known at initialization.
@@ -553,7 +604,17 @@ The Paper-reported-counts observability defect is fixed (see cycle above).
 
 Candidate next tasks (pick one in a clean cycle):
 
-- OBSERVATION path null `last_reconciled_at` (confirmed twice now in Paper):
+- The guard/worker POSITION AGGREGATION MISMATCH is the real root cause behind
+  the fix just committed, and only the crash symptom was closed.
+  `guard.py:80` builds `pos_map = {p["symbol"]: p for p in positions}` (LAST row
+  wins) while `worker.py:436-443` SUMs every row for the symbol. Alpaca normally
+  returns one row per symbol, so this is latent -- but any multi-row payload makes
+  the guard and the worker disagree about the position, in either direction
+  (guard approves a SELL the worker computes as 0, or the guard blocks a SELL the
+  worker could have sized). Bounded: decide which aggregation is canonical and
+  make both read it, or fail closed when the broker payload has >1 row per
+  symbol. Pure unit tests are possible with the existing scripted-engine pattern.
+- OBSERVATION path null `last_reconciled_at` (confirmed THREE times now in Paper):
   every `latest_orders[*]` entry in `.agent-runtime/paper-latest.json` carries
   `"last_reconciled_at": null` while the portfolio-level field is populated.
   The broker route now sets it, so find the SECOND constructor that builds the

@@ -451,7 +451,24 @@ class AlpacaPaperWorker:
                 )
                 quantity = broker_quantity - pending_sell_quantity
                 if quantity <= 0:
-                    raise RuntimeError(f"sell_quantity_unavailable:{symbol}")
+                    # There is nothing left to sell: the position is already fully
+                    # covered by in-flight SELL orders. `ExecutionGuard.evaluate`
+                    # rejects this exact state upstream (`available_qty <= 0`),
+                    # so raising here would escalate an already-decided condition
+                    # into `_enter_degraded`, which releases NO further execution for
+                    # the rest of the process lifetime -- one unexecutable decision
+                    # would stop the whole bot. Skip THIS decision instead, using
+                    # the same REJECTED write-back as the guard's rejection branch:
+                    # still fail-closed (nothing is submitted), but scoped to one row.
+                    reason = f"sell_quantity_unavailable:{symbol}"
+                    with self.engine.begin() as connection:
+                        connection.execute(
+                            update(risk_decisions)
+                            .where(risk_decisions.c.decision_id == risk.decision_id)
+                            .values(decision="REJECTED", reason=reason)
+                        )
+                    logger.warning("Skipped SELL %s: %s", symbol, reason)
+                    continue
                 notional = None
             else:
                 quantity = Decimal("0")

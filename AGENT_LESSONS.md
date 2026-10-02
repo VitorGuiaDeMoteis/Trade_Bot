@@ -573,6 +573,58 @@ decisions at worker.py:313, 359 and 423 read `degraded` /
 
 Tests: tests/test_health_paper_worker_ready.py (11 pure unit tests).
 
+## Distinguish "fail closed on this order" from "fail the whole worker"
+
+`_process_pending_submits` raised
+`RuntimeError("sell_quantity_unavailable:<symbol>")` when the computed SELL
+quantity was `<= 0`. `_run` (worker.py:97-99) maps ANY RuntimeError to
+`_enter_degraded`, and `_enter_degraded` releases NO further execution for the
+REST OF THE PROCESS LIFETIME. So one unexecutable decision stopped the whole
+bot. That is not fail-closed, it is fail-catastrophic: the condition had
+already been decided correctly upstream by `ExecutionGuard` (which rejects
+`available_qty <= 0`), so the raise escalated an ordinary, expected outcome into
+a permanent halt.
+
+Fixed by skipping the row instead: the same REJECTED write-back the guard's own
+rejection branch uses, a warning log, and `continue`. Fail-closed preserved
+(nothing submitted, reason persisted for the operator), blast radius reduced
+from "worker, permanently" to "one decision, retried next cycle".
+
+Lessons:
+
+- Audit every `raise` in a hot decision loop against what the CALLER above does
+  with it. On this worker, raise == permanent DEGRADED, not "skip this order",
+  so the blast radius of a throw is the whole trading process. Classify each
+  raise: is the condition a safety invariant (must halt) or an expected
+  per-order outcome (must skip)?
+- The two available outcomes are not symmetric: for an unexecutable order,
+  write the decision back as REJECTED with a reason and move on. That is
+  STRICTLY more informative than raising, because the halt also destroys the
+  per-order reason.
+- Reachability was found by a TEST, not by reading the raise: the guard dedupes
+  positions per symbol (`pos_map = {p["symbol"]: p for p in positions}`,
+  guard.py:80, LAST row wins) while the worker SUMS all rows for a symbol
+  (worker.py:436-443). A payload with two netting rows for one symbol makes the
+  guard approve a SELL the worker computes as 0. When two components consume the
+  same list, check that they AGGREGATE it the same way -- disagreement is silent
+  and shows up only as an impossible downstream value.
+- When the payload is something a broker can legitimately send (multiple rows
+  for one symbol), prefer writing a test with that exact payload over reasoning
+  about whether the line is reachable.
+- A test for a skip must also assert the LOOP CONTINUES: submit a second,
+  healthy pending SELL in the same cycle and assert it still reached
+  `executor.submit`. "nothing submitted" alone passes for a `return` as happily
+  as for a `continue`.
+- Frozen runtime evidence for the same window: three tiny fractional-share
+  positions (AAPL/SPY/TSLA, ~0.01-0.03 shares each) from notional BUY orders,
+  11 orders/11 fills, unrealized P&L -0.008836. Healthy but it confirms
+  dollar-notional BUYs are being converted to fractional share positions, so the
+  multi-row-per-symbol question is worth closing deliberately rather than
+  assuming Alpaca always sends one row.
+
+Tests: 3 pure unit tests added to tests/test_worker_pending_sell_sizing.py
+(now 16 pure unit tests total).
+
 ## mypy scope on this repo
 
 - `[tool.mypy] files = ["services", "packages",

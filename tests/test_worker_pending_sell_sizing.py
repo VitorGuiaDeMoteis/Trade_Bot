@@ -142,9 +142,7 @@ def _worker(
     in_flight: list[dict[str, Any]] | None = None,
     blocked_symbols: list[str] | None = None,
 ) -> tuple[AlpacaPaperWorker, _ScriptedEngine, _RecordingExecutor]:
-    engine = _ScriptedEngine(
-        pending=pending, in_flight=in_flight, blocked_symbols=blocked_symbols
-    )
+    engine = _ScriptedEngine(pending=pending, in_flight=in_flight, blocked_symbols=blocked_symbols)
     worker = AlpacaPaperWorker(engine, None, None)  # type: ignore[arg-type]
     worker.degraded = False
     worker.reconciliation_ready = True
@@ -260,6 +258,71 @@ def test_pending_sell_with_unsourceable_quantity_never_reaches_submission():
 
     assert executor.submissions == []
     assert any("in-flight desconhecida" in reason for reason in _rejection_reasons(engine))
+
+
+def test_unexecutable_sell_skips_the_decision_instead_of_degrading():
+    """One unexecutable decision must not DEGRADE the whole worker.
+
+    The guard dedupes positions with `pos_map` (LAST row per symbol wins) while
+    the worker SUMS every row for the symbol, so a broker payload carrying two
+    netting rows for the same symbol can leave the guard approving a position it
+    then computes as fully committed. Previously that reached
+    `raise RuntimeError("sell_quantity_unavailable")`, which `_run` escalates to
+    `_enter_degraded`: no further execution for the rest of the process lifetime.
+    """
+    worker, engine, executor = _worker()
+    positions = [
+        _position(qty="-10", market_value="-150"),
+        _position(qty="10", market_value="150"),
+    ]
+
+    _run(worker, positions)
+
+    assert executor.submissions == []
+    assert worker.degraded is False
+    assert any("sell_quantity_unavailable" in reason for reason in _rejection_reasons(engine))
+
+
+def test_negative_available_quantity_also_skips_instead_of_degrading():
+    """`quantity < 0` must be skipped too, not raised: still fail-closed."""
+    worker, engine, executor = _worker(
+        in_flight=[{"symbol": "AAPL", "side": "SELL", "quantity": Decimal("6")}]
+    )
+    positions = [
+        _position(qty="-5", market_value="-75"),
+        _position(qty="10", market_value="150"),
+    ]
+
+    _run(worker, positions)
+
+    assert executor.submissions == []
+    assert worker.degraded is False
+    assert any("sell_quantity_unavailable" in reason for reason in _rejection_reasons(engine))
+
+
+def test_skipped_sell_does_not_block_later_pending_decisions():
+    """The skip is scoped to its own row: the loop must keep going."""
+    worker, engine, executor = _worker(
+        pending=[
+            _pending_row("SELL", "AAPL"),
+            {
+                **_pending_row("SELL", "TSLA"),
+                "decision_id": UUID("44444444-4444-4444-4444-444444444444"),
+            },
+        ],
+        in_flight=[{"symbol": "AAPL", "side": "SELL", "quantity": Decimal("1")}],
+    )
+    positions = [
+        _position("AAPL", qty="-10", market_value="-150"),
+        _position("AAPL", qty="10", market_value="150"),
+        _position("TSLA", qty="5", market_value="250"),
+    ]
+
+    _run(worker, positions)
+
+    assert [(s["symbol"], s["quantity"]) for s in executor.submissions] == [("TSLA", Decimal("5"))]
+    assert worker.degraded is False
+    assert any("sell_quantity_unavailable" in reason for reason in _rejection_reasons(engine))
 
 
 def test_sell_without_a_position_is_rejected():
