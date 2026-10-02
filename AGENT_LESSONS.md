@@ -152,6 +152,46 @@ tests/test_guard_in_flight_fail_closed.py (10 pure guard unit tests).
 - A position dict whose `qty` cannot be read must NOT be dropped by a
   `if qty > 0` filter -- that silently removes its exposure from the cap.
 
+## Fail-closed reasons must name the failing side
+
+The daily-loss breaker has TWO independent unsourceable inputs: the baseline
+(`last_equity`) and the current `equity`. Both returned the identical string
+"Equity indisponível para checagem do Daily Breaker", so an operator could not
+tell them apart in `risk_decisions.reason` or in the guard's log line, even
+though the remediations differ (a broker account payload missing `last_equity`
+vs a payload missing `equity`).
+
+Lesson: when two distinct degraded-data conditions share one rejection reason,
+the reason is operationally useless -- fail closed is not the same as
+diagnosable. Distinguish the conditions in the message.
+
+Convention adopted: keep a shared stable prefix and append the failing side.
+
+- "Equity indisponível para checagem do Daily Breaker (baseline last_equity
+  ausente ou inválido)"
+- "Equity indisponível para checagem do Daily Breaker (equity atual ausente ou
+  inválido no snapshot da corretora)"
+
+The shared prefix matters: existing tests and log greps match on
+"Equity indisponível", and the genuine `Circuit breaker diário` message must
+stay distinguishable from a data-availability failure. Baseline is checked
+first so a fully-unavailable account produces a stable reason.
+
+Safety semantics were NOT changed by this: both paths still fail CLOSED on BUY
+and SELL is still unaffected. Tests:
+tests/test_daily_loss_breaker_reason_observability.py.
+
+## mypy scope on this repo
+
+- `[tool.mypy] files = ["services", "packages",
+  "infrastructure/docker/migrations"]` -- `tests/` is NOT in mypy's scope.
+- Running mypy on a test file by hand reports `no-untyped-def` /
+  `no-untyped-call` errors. Those are pre-existing convention, not a
+  regression: tests/test_daily_loss_equity_missing.py reports the same class of
+  error. Do not "fix" them and do not treat them as a failure.
+- Validate types with `mypy services/alpaca_paper` (the configured scope), and
+  use ruff plus pytest for the new test file.
+
 ## Testing on this Windows host
 
 - The default `python` on PATH is Hermes' own 3.14 and has NO pytest.

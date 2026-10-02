@@ -129,6 +129,23 @@ The guard in-flight/exposure fix above was finished in a prior cycle but left
 uncommitted; a recovery-mode cycle re-validated it (32 targeted tests, ruff,
 mypy) and committed it. The tree was clean at the start of the next cycle.
 
+### Cycle: daily-breaker fail-closed reason observability (DONE)
+
+- `guard.py` returned ONE string ("Equity indisponível para checagem do Daily
+  Breaker") for two distinct causes: an unsourceable baseline (`last_equity`
+  absent/zero) and an unsourceable current `equity`. An operator reading only
+  the rejection reason could not tell them apart, and they have different
+  remediations.
+- Both branches now keep the shared "Equity indisponível" prefix and append the
+  failing side: `(baseline last_equity ausente ou inválido)` vs
+  `(equity atual ausente ou inválido no snapshot da corretora)`.
+- NO safety semantics changed: both paths still fail CLOSED on BUY, SELL is
+  still unaffected, and the genuine `Circuit breaker diário` message is
+  untouched. Keeping the common prefix preserves existing log greps.
+- New tests: tests/test_daily_loss_breaker_reason_observability.py (10 pure
+  guard unit tests). Targeted 37 passed; ruff clean; mypy clean on the
+  configured production scope.
+
 ## Active blockers
 
 None known at initialization.
@@ -148,14 +165,24 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
 
-Candidate: the fail-closed guard audit is now complete (three instances found
-and fixed). Secondary candidate: add observability for a missing `last_equity`
-vs a missing current `equity`, since both currently fail closed with the same
-generic message and an operator cannot tell them apart from logs.
+Candidate: extend the same audit to worker.py's non-guard risk
+accounting. Remaining `dict.get(key, 0)` sites in
+`services/alpaca_paper/worker.py` (checked this cycle, NOT yet fixed):
 
-Second candidate: extend the same audit to worker.py's non-guard risk
-accounting (pending BUY dedupe and any other `dict.get(key, 0)` on a broker
-field), which has not been reviewed in this cycle.
+- line ~414 `self._decimal(item.get("quantity", 0), "pending_sell_quantity")` --
+  a pending SELL row with NULL quantity becomes 0, overstating
+  `available_qty`. This is the same bug class as the guard's in-flight fix, but
+  in the worker. NOTE: it is currently unreachable-as-a-bug because the guard
+  already fails closed on unsourceable in-flight SELL quantity, so fixing it is
+  defense-in-depth for the worker path, not a live fail-open.
+- line ~451 `account.get("buying_power", 0)` and line ~458
+  `remote.get("unrealized_pl", 0)` -- both feed ONLY the
+  `broker_portfolio_snapshots` observability row (`buying_power` is
+  NOT NULL in the schema). A missing field fabricates a plausible-looking 0 in
+  Mission Control. Decide deliberately: raise (`_decimal` without a default) or
+  allow NULL. This is observability accuracy, not a trading-safety path.
+- `_validate_positions` (~line 186) already raises via `_decimal` with no
+  defaults -- that path is correct and needs no change.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest.

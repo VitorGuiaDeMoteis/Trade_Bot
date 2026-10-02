@@ -107,9 +107,22 @@ class ExecutionGuard:
             # would compare a real baseline against an invented value, and for any
             # last_equity below DAILY_LOSS_LIMIT the delta stays under the limit and
             # the breaker is silently bypassed. Fail closed instead.
+            # Both fail-closed paths below keep the shared "Equity indisponível"
+            # prefix, but name WHICH side of the delta was unsourceable. The two
+            # causes have different remediations (a missing broker `last_equity`
+            # baseline vs a missing/unparsable current `equity`), and an operator
+            # reading only the rejection reason could not tell them apart.
+            if not last_equity:
+                return False, (
+                    "Equity indisponível para checagem do Daily Breaker "
+                    "(baseline last_equity ausente ou inválido)"
+                )
             equity = cls._optional_decimal(snapshot.get("equity")) if snapshot else None
-            if not last_equity or equity is None:
-                return False, "Equity indisponível para checagem do Daily Breaker"
+            if equity is None:
+                return False, (
+                    "Equity indisponível para checagem do Daily Breaker "
+                    "(equity atual ausente ou inválido no snapshot da corretora)"
+                )
             if last_equity - equity >= cls.DAILY_LOSS_LIMIT:
                 return (
                     False,
