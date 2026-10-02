@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
-from decimal import Decimal
-from typing import Literal
+from decimal import Decimal, InvalidOperation
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import Engine, select
@@ -21,6 +21,27 @@ class AlpacaPaperExecutor:
     def __init__(self, adapter: AlpacaPaperAdapter) -> None:
         self.adapter = adapter
 
+    @staticmethod
+    def _required_decimal(
+        payload: dict[str, Any], key: str, field: str | None = None
+    ) -> Decimal:
+        """Parse a REQUIRED broker numeric, failing CLOSED when it is unsourceable.
+
+        A broker payload that omits (or mangles) a numeric we must persist must
+        NOT be turned into an invented zero: `dict.get(key, 0)` would fabricate
+        one and hide a real fill behind a plausible-looking 0. Raises
+        RuntimeError("invalid_broker_<field>"), which the worker turns into
+        DEGRADED via `_enter_degraded` and retries on the next cycle.
+        """
+        label = field or key
+        try:
+            result = Decimal(str(payload.get(key)))
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise RuntimeError(f"invalid_broker_{label}") from error
+        if not result.is_finite():
+            raise RuntimeError(f"invalid_broker_{label}")
+        return result
+
     async def _handle_timeout_or_disconnect(
         self, engine: Engine, order_id: UUID, client_order_id: str
     ) -> None:
@@ -33,6 +54,9 @@ class AlpacaPaperExecutor:
             # Reconciliar estado
             broker_status = remote_order.get("status")
             status = self._map_status(broker_status)
+            # Fail closed: a missing/None filled_qty would otherwise persist a
+            # fabricated 0 and hide a real partial fill from the local ledger.
+            filled_qty = self._required_decimal(remote_order, "filled_qty")
 
             with engine.begin() as connection:
                 connection.execute(
@@ -41,7 +65,7 @@ class AlpacaPaperExecutor:
                     .values(
                         broker_order_id=remote_order.get("id"),
                         status=broker_status,
-                        filled_quantity=Decimal(str(remote_order.get("filled_qty", "0"))),
+                        filled_quantity=filled_qty,
                         last_reconciled_at=datetime.now(UTC),
                     )
                 )
@@ -239,7 +263,7 @@ class AlpacaPaperExecutor:
             return
 
         new_status = remote_order.get("status")
-        filled_qty = Decimal(str(remote_order.get("filled_qty", "0")))
+        filled_qty = self._required_decimal(remote_order, "filled_qty")
         actual_broker_id = remote_order.get("id")
 
         mapped_status = self._map_status(new_status)
@@ -267,8 +291,8 @@ class AlpacaPaperExecutor:
             activities = await self.adapter.get_fills(actual_broker_id)
             for act in activities:
                 fill_id = act.get("id")
-                qty = Decimal(str(act.get("qty", "0")))
-                price = Decimal(str(act.get("price", "0")))
+                qty = self._required_decimal(act, "qty", "fill_quantity")
+                price = self._required_decimal(act, "price", "fill_price")
 
                 # Fetch transaction_time and fee properly
                 t_time = act.get("transaction_time")

@@ -256,6 +256,48 @@ as wiring coverage of the guard's BUY branch.
 Validation: 15 new passed; guard/worker sibling suites 61 passed; ruff clean.
 mypy not run -- no production change (tests/ is outside the configured scope).
 
+### Cycle: executor broker-numeric fail-closed accounting (FIXED)
+
+The last production module holding the `dict.get(key, "0")` bug class. In the
+executor the fabricated zero was worse than cosmetic: `reconcile_order` gates
+fill persistence on `if filled_qty > 0 and actual_broker_id`, so an invented 0
+skipped the ENTIRE `get_fills` block and real fills were never written to
+`broker_fills` -- the local ledger silently under-reported execution while the
+order still showed the broker's status.
+
+Fixed via a new `AlpacaPaperExecutor._required_decimal` (raises
+`RuntimeError("invalid_broker_<field>")` on absent / None / empty / unparsable /
+non-finite) applied at four sites:
+
+- `filled_qty` in `_handle_timeout_or_disconnect` (executor.py:59) -- the
+  idempotent retry path after a submit timeout, where proving absence of the
+  order is the whole point;
+- `filled_qty` in `reconcile_order` (executor.py:266);
+- per-fill `qty`/`price` in `reconcile_order` (executor.py:294-295), labelled
+  `fill_quantity`/`fill_price` so the reason names which side failed.
+
+Both order-level parses run BEFORE `engine.begin()`, so an untrustworthy payload
+cannot half-persist a status update. Raising propagates to `worker._run`, which
+already maps any exception to `_enter_degraded` + retry next cycle, so this is
+fail-CLOSED, never permissive.
+
+Deliberately NOT changed: `filled_quantity=Decimal("0")` on the fresh-submit
+insert (executor.py:152) is a real literal meaning "no fill yet", not a parsed
+broker value; `fee` keeps its allow-None + swallow-on-parse-error handling
+because a fee is optional and `None` is meaningful in `broker_fills`.
+
+New tests: tests/test_executor_broker_numeric_fail_closed.py (11 pure unit
+tests, stub adapter + recording engine, no Postgres/broker/DB mutation).
+Validation: 11 new passed; executor + guard/worker siblings 72 passed; ruff
+clean; mypy clean on `services/alpaca_paper`. The 3 errors in
+tests/test_alpaca_executor.py are the known psycopg/Postgres environmental
+setup failures; `test_reconcile_order_partially_filled` was read to confirm its
+mocked payload supplies `filled_qty` and per-fill `qty`/`price`, so the new
+parse does not break it when Postgres is available.
+
+This closes the `dict.get(key, default)` audit across all three production
+layers (guard, worker, executor).
+
 ## Active blockers
 
 None known at initialization.
@@ -275,10 +317,10 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
 
-The `dict.get(key, 0)` broker-numeric audit is COMPLETE across both layers
-(guard d55774e/6747abe, worker cc0acf5). Both branches of the worker's order
-builder are now covered by pure unit tests (SELL sizing 04b0f9f, BUY notional
-coverage added this cycle).
+The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
+production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).
+Both branches of the worker's order builder are covered by pure unit tests
+(SELL sizing 04b0f9f, BUY notional coverage, executor numerics).
 
 Candidate next tasks (pick one in a clean cycle):
 
@@ -286,18 +328,21 @@ Candidate next tasks (pick one in a clean cycle):
   holds in the current migration head (f2c8a51d9b10) before relying on the
   raise-not-NULL decision from the worker broker-numeric cycle. Grep the
   migrations directory, no DB access needed.
-- Audit `services/alpaca_paper/executor.py` for the same bug class: any broker
-  numeric read there with a `dict.get(key, default)` default, and whether
-  `broker_order_quantity_divergence` (worker.py:255) has coverage.
-- `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")
+- `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")`
   when computed qty <= 0 (worker.py:421-422). Check whether an unreachable
   throw there would kill the whole worker cycle (`_run` turns RuntimeError into
   DEGRADED) rather than just skipping one decision -- a single bad pending SELL
   degrading the entire bot is an availability concern, unlike the intended
-  financial fail-closed.
+  financial fail-closed. The new executor raise has the same shape: one
+  untrustworthy payload for one order degrades the whole cycle.
+- `broker_order_quantity_divergence` (worker.py:255) raises on quantity
+  divergence and has no pure unit coverage; same fail-closed family, and it is
+  reachable from the reconciliation path.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
-`python` on PATH has no pytest.
+`python` on PATH has no pytest. The ambient shell exports DATABASE_ROLE=runtime
+and EXECUTION_MODE=alpaca_paper, both of which conftest refuses -- prefix test
+commands with `DATABASE_ROLE=test EXECUTION_MODE=local_paper`.
 
 ## Autonomous cycle incident (historical)
 

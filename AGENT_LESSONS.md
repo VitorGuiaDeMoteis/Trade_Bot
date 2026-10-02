@@ -229,6 +229,79 @@ Postgres/broker/DB mutation). The `dict.get(key, 0)` audit is now CLOSED across
 both guard and worker; the convention going forward is: every broker numeric
 reaches `_decimal`/`_optional_decimal` RAW, with no `, 0` default anywhere.
 
+## Executor fail-closed on required broker numerics (FIXED) -- audit CLOSED
+
+Final production layer of the `dict.get(key, default)` bug class, and the most
+damaging instance. `reconcile_order` used
+`Decimal(str(remote_order.get("filled_qty", "0")))` and then gates fill
+persistence on `if filled_qty > 0 and actual_broker_id`. A fabricated 0 therefore
+skipped the whole `get_fills` block: real fills were NEVER written to
+`broker_fills` while the order rows still showed the broker's status. The local
+ledger silently under-reported execution -- the failure mode matters more here
+than in the guard/worker instances because nothing else would reveal it.
+
+Fixed with `AlpacaPaperExecutor._required_decimal`, which raises
+`RuntimeError("invalid_broker_<field>")` on absent, None, empty, unparsable or
+non-finite input. Four call sites: `filled_qty` in both
+`_handle_timeout_or_disconnect` and `reconcile_order`, plus per-fill `qty`/`price`
+(relabelled `fill_quantity`/`fill_price` so the reason names the failing side).
+
+Lessons:
+
+- A fabricated zero is only as bad as the decision it feeds. The same syntactic
+  bug was cosmetic in an observability column and ledger-destroying where it
+  gates a `if value > 0` block. When auditing, check what the parsed value
+  CONTROLS, not just where it is written.
+- `dict.get(key, "0")` does not catch `{"k": None}` -- the key is present, so the
+  default never applies and `Decimal("None")` raises `InvalidOperation`. The
+  `, 0` default and the explicit-None case fail DIFFERENTLY, so tests must cover
+  both; a helper handling only the missing-key case looks correct and is not.
+- `Decimal("NaN")` and `Decimal("Infinity")` PARSE SUCCESSFULLY and then poison
+  every downstream comparison (`is_finite()` is required, not just no-exception).
+- Parse BEFORE opening `engine.begin()`. Both order-level parses sit ahead of
+  the first write, so a payload we cannot trust cannot half-persist a status
+  update -- proven by a stub engine asserting `touched_tables == set()`.
+- A stub engine that RECORDS statements and exposes `touched_tables` is enough to
+  assert "nothing was written" for any method; `statement.table.name` is enough,
+  no DB required.
+- Fail-closed needs a destination for the exception. Here `worker._run` catches
+  any exception and calls `_enter_degraded`, so the raise lands as DEGRADED and
+  retries next cycle -- verify that the layer ABOVE actually handles it before
+  relying on the docstring claim.
+- Do not blanket-apply the pattern. Two sites were deliberately left alone:
+  `filled_quantity=Decimal("0")` on the fresh-submit insert is a real literal
+  meaning "no fill yet", and `fee` keeps allow-None + swallow-on-parse-error
+  because a missing fee is genuinely optional and `None` is meaningful in
+  `broker_fills`. "Fail closed" applied to optional fields is just data loss.
+
+Tests: tests/test_executor_broker_numeric_fail_closed.py (11 pure unit tests, no
+Postgres/broker/DB mutation). The `dict.get(key, default)` audit is now CLOSED
+across guard, worker AND executor.
+
+## Running pytest here requires overriding two ambient env vars
+
+The agent shell exports `DATABASE_ROLE=runtime` and `EXECUTION_MODE=alpaca_paper`.
+Both make `tests/conftest.py::pytest_configure` call `pytest.exit(...)`, and the
+symptom is a confusing refusal rather than a test failure:
+
+- `DATABASE_ROLE=runtime` -> "REFUSING TO RUN TESTS AGAINST RUNTIME DATABASE"
+  (the guard is correct and must not be weakened).
+- `EXECUTION_MODE=alpaca_paper` -> the same refusal message with
+  `configuration_error: missing_alpaca_credentials`, because
+  `Settings.model_validator` requires Alpaca creds when the execution mode is
+  `alpaca_paper`. The repo has only `.env.example`, and conftest only sets
+  `MARKET_DATA_PROVIDER=simulator` in an autouse FIXTURE, which runs after
+  `pytest_configure` -- so the configure-time `Settings(_env_file=None)` check
+  fails first.
+
+Working command (no credentials needed, no .env read):
+
+    DATABASE_ROLE=test EXECUTION_MODE=local_paper MARKET_DATA_PROVIDER=simulator \
+      C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot-unified/.venv/Scripts/python.exe \
+      -m pytest tests/<file>.py -q
+
+Do not "fix" this by editing conftest or by relaxing the database guard.
+
 ## Unit-testing a DB-driven worker method without Postgres
 
 `_process_pending_submits` looks untestable without a database, but it is not.
