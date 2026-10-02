@@ -527,3 +527,46 @@ If you know the iteration limit is close and the task cannot be safely committed
 A validated uncommitted fix is acceptable.
 
 A deliberately broken or experimental worktree is NOT acceptable.
+
+## Active Alpaca Paper observation mode
+
+A separate frozen worktree is running the active Alpaca PAPER runtime.
+Treat that runtime as production-like and immutable during autonomous development.
+
+Read-only runtime observations are available at:
+
+- `.agent-runtime/paper-latest.json`
+- `.agent-runtime/paper-observations.jsonl`
+
+At the start of every CLEAN development cycle, after reading mission/state/lessons
+and checking git status, inspect `paper-latest.json` when present.
+
+Use Paper observations as engineering evidence, especially:
+
+- health or DEGRADED transitions;
+- stale or failed reconciliation;
+- broker positions, orders and fills;
+- execution anomalies or repeated guard rejection patterns;
+- P&L/accounting inconsistencies;
+- reported counts differing from real list lengths;
+- duplicate, excessive or suspicious trading behavior;
+- missing observability that prevents understanding why a trade occurred.
+
+Learning means persistent project knowledge, not model-weight retraining.
+
+Store durable conclusions in `AGENT_LESSONS.md`.
+Store concise current runtime findings and follow-up candidates in `AGENT_STATE.md`.
+
+Safety rules:
+
+- NEVER modify, stop or restart the frozen runtime.
+- NEVER write into the frozen runtime worktree.
+- NEVER mutate Alpaca orders, positions or account state.
+- NEVER mutate the runtime database.
+- NEVER POST, PUT, PATCH or DELETE against the running API.
+- NEVER read or print credentials.
+- Paper observations are evidence, not permission to trade.
+- Do not hot-tune strategy parameters from a small live Paper sample.
+- Strategy hypotheses must first be tested offline/backtested.
+- Promotion of execution/strategy changes to the frozen runtime requires human approval.
+- Continue one safe task per bounded cycle.
