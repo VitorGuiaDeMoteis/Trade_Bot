@@ -80,6 +80,28 @@ Fix:
 The earlier "baseline must survive process restarts" concern is resolved by
 using broker-provided `last_equity` instead of RAM-only state.
 
+### Cycle: daily-loss breaker fail-closed on missing equity (FIXED)
+
+Same bug class as above, one level deeper -- inside the guard itself:
+
+- `guard.py` computed `equity = Decimal(str(snapshot.get("equity", 0)))`, so a
+  broker account payload without `equity` substituted an INVENTED 0.
+- The delta `last_equity - equity` then compared a REAL baseline against a
+  fabricated value. For any `last_equity < DAILY_LOSS_LIMIT` the delta stayed
+  under the limit and the breaker was BYPASSED: a nearly-wiped account passed
+  the daily-loss check on no information at all.
+
+Fix:
+
+- Added `ExecutionGuard._optional_decimal` (None on absent/unparsable/non-finite).
+- The BUY branch now fails CLOSED when either side of the delta is unavailable:
+  missing snapshot, missing/unparsable `equity`, or missing/zero `last_equity`.
+- Fail-closed applies only to opening risk; closing SELLs are unaffected.
+- New tests: tests/test_daily_loss_equity_missing.py (8 pure guard unit tests).
+
+Both halves of the bug are now closed: the worker supplies an independent
+baseline, and the guard refuses to compute a delta it cannot source.
+
 ## Active blockers
 
 None known at initialization.
@@ -102,10 +124,11 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 Candidate: audit the remaining guard fail-closed paths and in-flight/exposure
 accounting for the same class of bug (a comparison whose two sides derive from
 the same snapshot, making the delta constant). tests/test_daily_loss_baseline.py
-documents the pattern.
+and tests/test_daily_loss_equity_missing.py document the pattern.
 
 Secondary candidate: add observability for a missing `last_equity`, since it now
-silently forces all BUYs to fail closed.
+silently forces all BUYs to fail closed with the same generic message as a
+missing current equity; an operator cannot tell the two apart from logs.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest.

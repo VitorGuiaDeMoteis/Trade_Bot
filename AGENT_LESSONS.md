@@ -95,6 +95,29 @@ payload is returned raw by AlpacaPaperAdapter.get_account, so fields such as
 `last_equity`, `daytrade_count` and `buying_power` are available without new
 DB tables or migrations.
 
+Second instance of the same class, inside the guard:
+
+- `guard.py` used `Decimal(str(snapshot.get("equity", 0)))`. The `, 0` default
+  fabricated a value, so a missing equity compared a REAL `last_equity` against
+  an INVENTED 0. For any `last_equity < DAILY_LOSS_LIMIT` the delta stayed
+  under the limit and the breaker passed on no information at all.
+
+Lesson: `dict.get(key, default)` on a broker field used in a SAFETY comparison
+is a silent fail-open. Any numeric used in a financial guard must be parsed
+through a helper that returns None on absent/unparsable/non-finite input, and
+the caller must branch on None instead of substituting a default.
+
+Fixed via `ExecutionGuard._optional_decimal`; the BUY branch now fails closed
+when either side of the delta is unavailable. Fail-closed applies to opening
+risk only -- position-closing SELLs must keep working when data is missing.
+
+## Guard fail-closed invariants worth preserving
+
+- BUY requires BOTH `last_equity` (baseline) and `snapshot["equity"]` (current).
+- `last_equity` of 0 is treated as unavailable (falsy), not as a valid baseline.
+- SELL paths never depend on the daily-loss data, so a degraded account can
+  still be flattened.
+
 ## Testing on this Windows host
 
 - The default `python` on PATH is Hermes' own 3.14 and has NO pytest.

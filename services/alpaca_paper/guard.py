@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
@@ -8,6 +8,23 @@ class ExecutionGuard:
     DAILY_LOSS_LIMIT = Decimal("5.00")
     ALLOWED_SYMBOLS = {"SPY", "AAPL", "TSLA"}
     DUST_THRESHOLD_VALUE = Decimal("1.00")
+
+    @staticmethod
+    def _optional_decimal(value: Any) -> Decimal | None:
+        """Parse an OPTIONAL broker numeric field.
+
+        Returns None when the field is absent or unparsable so callers can fail
+        closed instead of silently substituting a bogus value (e.g. 0).
+        """
+        if value is None:
+            return None
+        try:
+            result = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+        if not result.is_finite():
+            return None
+        return result
 
     @classmethod
     def evaluate(
@@ -61,16 +78,19 @@ class ExecutionGuard:
         available_qty = current_qty - pending_sells
 
         if side == "BUY":
-            if snapshot and last_equity:
-                equity = Decimal(str(snapshot.get("equity", 0)))
-                if last_equity - equity >= cls.DAILY_LOSS_LIMIT:
-                    return (
-                        False,
-                        f"Circuit breaker diário atingido (Perda >= ${cls.DAILY_LOSS_LIMIT})",
-                    )
-            elif not snapshot or not last_equity:
-                # DAILY BREAKER: FAIL CLOSED
+            # DAILY BREAKER: both sides of the delta must be independently sourced.
+            # A missing/unparsable current equity must NOT be coerced to 0: that
+            # would compare a real baseline against an invented value, and for any
+            # last_equity below DAILY_LOSS_LIMIT the delta stays under the limit and
+            # the breaker is silently bypassed. Fail closed instead.
+            equity = cls._optional_decimal(snapshot.get("equity")) if snapshot else None
+            if not last_equity or equity is None:
                 return False, "Equity indisponível para checagem do Daily Breaker"
+            if last_equity - equity >= cls.DAILY_LOSS_LIMIT:
+                return (
+                    False,
+                    f"Circuit breaker diário atingido (Perda >= ${cls.DAILY_LOSS_LIMIT})",
+                )
 
             if current_pos and current_qty > 0:
                 # "NÃO permitir novo BUY se existe qty > 0 do símbolo, mesmo que seja dust."
