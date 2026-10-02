@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from packages.contracts.paper import PaperFill, PaperOrder, PaperPortfolio, PaperPositionResponse
 from services.api.models import (
@@ -131,6 +131,15 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                 )
             )
 
+        # The lists above are capped at 100 rows, so report the real totals with
+        # COUNT over the same join instead of len(b_orders)/len(b_fills).
+        orders_count = (
+            conn.scalar(select(func.count()).select_from(j)) or 0
+        )
+        fills_count = (
+            conn.scalar(select(func.count()).select_from(broker_fills)) or 0
+        )
+
         return PaperPortfolio(
             mode="ALPACA_PAPER",
             run_id=run_id,
@@ -151,6 +160,8 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
             positions=positions,
             orders=orders,
             fills=fills,
+            orders_count=orders_count,
+            fills_count=fills_count,
             last_reconciled_at=snapshot["last_reconciled_at"],
             degraded=snapshot["status"] in ("DEGRADED", "STALE"),
         )

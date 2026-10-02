@@ -298,6 +298,41 @@ parse does not break it when Postgres is available.
 This closes the `dict.get(key, default)` audit across all three production
 layers (guard, worker, executor).
 
+### Cycle: broker portfolio reported 0 orders/fills (FIXED)
+
+Found by the mandatory Paper review gate, NOT from the backlog. The live Paper
+observation carries a deliberate mismatch check and it was failing:
+
+    orders_count_reported: 0  vs  orders_count_actual: 7
+    fills_count_reported: 0   vs  fills_count_actual: 7
+
+Runtime itself was healthy (ACTIVE, not paused, not degraded, reconciled, one
+open SPY position, unrealized P&L -0.005916), so the anomaly was purely an
+observability defect, not a trading fault.
+
+Root cause: `get_broker_portfolio` built a `PaperPortfolio` without passing
+`orders_count`/`fills_count` at all, so the contract defaults (`= 0` in
+packages/contracts/paper.py:100-101) silently published 0 while the SAME
+payload carried fully populated `orders`/`fills` lists. Any operator or agent
+reading Mission Control would conclude the paper run had never traded.
+
+The naive fix (`orders_count=len(b_orders)`) would still be wrong: both lists
+are `LIMIT 100`, so once the run exceeds 100 rows the count would silently
+freeze at 100 -- a worse lie than 0 because it looks plausible.
+
+Fix: `conn.scalar(select(func.count()).select_from(j))` for orders over the
+SAME `broker_orders JOIN paper_orders` join the list uses, and the same for
+`broker_fills`. `or 0` guards the None case. Count semantics stay aligned with
+list semantics (both unscoped by run_id, exactly as before) -- this changes no
+trading behavior, only the reported totals.
+
+New tests: tests/test_broker_portfolio_counts.py (3 pure unit tests, stub
+connection dispatching on the statement text; no Postgres/broker/DB mutation).
+They pin the real totals, assert the counts do NOT collapse to the capped list
+length, and cover the empty-state 0 case.
+
+Validation: 3 new passed; ruff clean; mypy clean on broker_routes.py.
+
 ## Active blockers
 
 None known at initialization.
@@ -321,13 +356,12 @@ The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
 production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).
 Both branches of the worker's order builder are covered by pure unit tests
 (SELL sizing 04b0f9f, BUY notional coverage, executor numerics).
+The Paper-reported-counts observability defect is fixed (see cycle above).
 
 Candidate next tasks (pick one in a clean cycle):
 
-- Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still
-  holds in the current migration head (f2c8a51d9b10) before relying on the
-  raise-not-NULL decision from the worker broker-numeric cycle. Grep the
-  migrations directory, no DB access needed.
+- `services/api/paper_queries.py:28` builds a SECOND `PaperPortfolio` (the simulator/local path). Audit it for the same class of unset-field bug: any contract field it leaves at its default while the equivalent broker route supplies it. `grep PaperPortfolio(` finds exactly these two constructors, so this is a bounded two-file check.
+- Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still holds at migration head f2c8a51d9b10 before relying on the worker cycle's raise-not-NULL decision. Grep migrations/, no DB access needed.
 - `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")`
   when computed qty <= 0 (worker.py:421-422). Check whether an unreachable
   throw there would kill the whole worker cycle (`_run` turns RuntimeError into

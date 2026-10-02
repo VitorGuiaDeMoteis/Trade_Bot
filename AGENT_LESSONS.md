@@ -278,6 +278,44 @@ Tests: tests/test_executor_broker_numeric_fail_closed.py (11 pure unit tests, no
 Postgres/broker/DB mutation). The `dict.get(key, default)` audit is now CLOSED
 across guard, worker AND executor.
 
+## Pydantic defaults silently publish zeros in API contracts
+
+`PaperPortfolio.orders_count` / `fills_count` default to `0`
+(packages/contracts/paper.py:100-101). `get_broker_portfolio` never passed
+them, so the ALPACA PAPER portfolio reported `orders_count_reported: 0` while
+carrying 7 populated orders in the SAME payload -- observed live in
+`.agent-runtime/paper-latest.json`, where the deliberate
+reported-vs-actual mismatch check was failing on both fields.
+
+Lessons:
+
+- A defaulted response field is indistinguishable from a measured zero. When a
+  constructor omits a field, the contract does NOT complain -- it publishes the
+  default as if it were data. Grep every constructor of a response model and
+  compare its kwargs against the model's fields, not just against what the
+  endpoint's narrative claims.
+- Two independent facts in one payload must be cross-checked. "0 orders" plus
+  "7 orders listed" is a self-contradiction that any observer can catch, so
+  publish totals and lists together and keep them consistent.
+- When a list is `LIMIT`-capped, `len(list)` is NOT a count. It silently freezes
+  at the cap, which is a more dangerous lie than 0 because it looks plausible.
+  Use `select(func.count()).select_from(<the same join>)` so the count and the
+  list are derived from one definition. Also: COUNT semantics must match list
+  semantics (same join, same filters, same scoping) or the two fields disagree
+  for a different reason.
+- This is the OBSERVABILITY twin of the `dict.get(key, 0)` fail-open class
+  already recorded for guard/worker/executor: there, an invented zero entered a
+  safety comparison; here, an invented zero entered the operator's dashboard.
+  Same root cause -- a default substituted for a measurement.
+- Pure unit tests are possible for an API route without a DB: call the route
+  function directly with a stub `app.state.database` whose stub connection
+  dispatches on `str(statement)` (`"broker_fills" in text`, etc.) and serves
+  canned rows. `asyncio.run(route(...))` is enough; no TestClient, no Postgres.
+  Record the statements so the test can assert a COUNT query was actually
+  issued, which is what pins the regression.
+
+Tests: tests/test_broker_portfolio_counts.py (3 pure unit tests).
+
 ## Running pytest here requires overriding two ambient env vars
 
 The agent shell exports `DATABASE_ROLE=runtime` and `EXECUTION_MODE=alpaca_paper`.
