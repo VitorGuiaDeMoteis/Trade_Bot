@@ -393,6 +393,48 @@ carries both timestamps deliberately distinct) plus 1 DB-backed sibling in
 tests/test_broker_routes.py. The pure-unit twin is the executable coverage:
 the DB-backed file cannot run without Postgres.
 
+## Sort keys are claims too: a heartbeat column is not an event time
+
+Third member of the "wrong column, right type" family on this route (the first
+two were `requested_at` bound to a reconcile timestamp and unset contract
+fields). `get_broker_portfolio` ordered `portfolio.orders` by
+`broker_orders.last_reconciled_at DESC`. That column is re-stamped on EVERY
+reconciliation write (executor.py:69, :89, :153, :215) -- it is a liveness
+heartbeat, not a record of when the order happened. Two consequences, both
+operator-visible:
+
+- an order still working at the broker carries the newest timestamp forever and
+  is pinned to the top of the list, so a "newest first" order list was not
+  newest first, and it contradicted the `requested_at` reported in the same
+  row (fixed in the previous cycle);
+- under `LIMIT 100`, old still-open orders crowd out genuinely newer trades.
+
+Fix: order by `paper_orders.requested_at DESC` plus `symbol` and `order_id` as
+tiebreakers. `paper_orders.order_id` is the PRIMARY KEY and `symbol` /
+`requested_at` are NOT NULL (migration 0008), so the ordering is a TOTAL order
+and the capped window is deterministic instead of shuffling.
+
+Lessons:
+
+- Audit `ORDER BY` keys with the same suspicion as response-field bindings:
+  ask what WRITES the column and HOW OFTEN. A column refreshed every cycle is
+  useless as an ordering key no matter how natural the name looks.
+- An `ORDER BY` is a claim about importance ("newest first") that the payload
+  then contradicts. If the list is presented in an order, that order must be
+  derived from the same field it reports.
+- `LIMIT` + a non-unique sort key = an unstable window. Add tiebreakers up to a
+  unique/PK column so pagination cannot reshuffle between identical queries.
+  Confirm the tiebreaker's uniqueness and nullability in the migration, not by
+  assumption.
+- `last_reconciled_at` is still worth REPORTING per order (it answers "is the
+  broker picture current for this order?") -- it is only wrong as a SORT key.
+  Fixing the mapping does not mean the field is useless.
+
+Tests: 2 pure unit tests in tests/test_broker_portfolio_counts.py. They read
+the compiled SQL out of the stub connection's recorded statements and split on
+`ORDER BY`, because the projection itself mentions `last_reconciled_at` via
+`broker_orders.*` -- asserting on the whole statement text would be ambiguous.
+
 ## Running pytest here requires overriding two ambient env vars
 
 The agent shell exports `DATABASE_ROLE=runtime` and `EXECUTION_MODE=alpaca_paper`.

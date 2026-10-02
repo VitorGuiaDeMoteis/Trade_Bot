@@ -81,7 +81,16 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                     paper_orders.c.requested_at,
                 )
                 .select_from(j)
-                .order_by(broker_orders.c.last_reconciled_at.desc())
+                # Ordered by SUBMIT time, not by reconcile time: last_reconciled_at
+                # is bumped on every cycle for an order still working at the broker,
+                # so sorting by it floats stale open orders above genuinely newer
+                # ones and the list contradicts the requested_at it reports.
+                # The symbol/order_id tiebreakers keep the LIMIT 100 window stable.
+                .order_by(
+                    paper_orders.c.requested_at.desc(),
+                    paper_orders.c.symbol,
+                    paper_orders.c.order_id,
+                )
                 .limit(100)
             )
             .mappings()

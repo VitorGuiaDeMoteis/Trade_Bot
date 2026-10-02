@@ -479,6 +479,49 @@ unparsable remote size surfacing as `invalid_broker_open_order_notional`.
 Validation: 17 new passed; worker sibling suites 35 passed; ruff clean. mypy
 not run -- no production change (`tests/` is outside the configured scope).
 
+### Cycle: broker portfolio orders sorted by reconcile time (FIXED, recovery mode)
+
+Started as RECOVERY MODE: dirty tree with an uncommitted ORDER BY fix in
+services/api/broker_routes.py plus 2 pure unit tests. The change was right;
+this cycle verified it end-to-end and committed it.
+
+The query sorted `portfolio.orders` by
+`broker_orders.last_reconciled_at DESC` -- a field that is a PER-CYCLE
+HEARTBEAT, re-stamped every reconciliation (executor.py:69, :89, :153, :215),
+not a record of when anything happened. An order still working at the broker
+therefore keeps the newest timestamp forever and floats to the top of the list
+permanently, so Mission Control's newest-first order list was not newest-first
+at all -- and it directly contradicted the `requested_at` this same payload
+reports (fixed in a previous cycle). With `LIMIT 100`, a run with old orders
+still open can also have its genuinely newest trades pushed out of the window.
+
+Fix: order by `paper_orders.requested_at DESC` (the immutable submit time
+already selected for the response field), plus `paper_orders.symbol` and
+`paper_orders.order_id` as tiebreakers. `paper_orders.order_id` is the PRIMARY
+KEY and `symbol`/`requested_at` are NOT NULL (migration 0008), so the sort is a
+total order and the LIMIT 100 window is deterministic rather than shuffled.
+Read-only query change: no schema change, no broker call, no trading behavior.
+
+New tests (tests/test_broker_portfolio_counts.py, now 7 pure unit tests): the
+ORDER BY must start at `paper_orders.requested_at DESC` and must NOT mention
+`last_reconciled_at`; and the window must carry a total-order tiebreaker.
+
+Validation: 7 new-file tests passed; broker portfolio + health siblings 18
+passed; ruff clean on both changed files; mypy clean on broker_routes.py.
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health ok, open positions [TSLA], orders reported 0 vs actual 9, fills reported
+0 vs actual 9, unrealized P&L -0.0235810000 (equity 99951.32 / cash 99941.35),
+last_reconciled_at 2026-10-02T18:35:17Z. The 0-vs-N mismatch persists only
+because the agent-side fixes are not deployed to the frozen runtime (deploy
+needs human approval) -- no new actionable Paper anomaly.
+
+Still open from the previous cycle and CONFIRMED again here: every
+`latest_orders[*]` entry in the observation payload has
+`"last_reconciled_at": null` while the portfolio-level `last_reconciled_at` is
+populated. Since the broker route now supplies that field, the null must come
+from the OBSERVATION builder path -- see next-task note below.
+
 ## Active blockers
 
 None known at initialization.
@@ -510,6 +553,15 @@ The Paper-reported-counts observability defect is fixed (see cycle above).
 
 Candidate next tasks (pick one in a clean cycle):
 
+- OBSERVATION path null `last_reconciled_at` (confirmed twice now in Paper):
+  every `latest_orders[*]` entry in `.agent-runtime/paper-latest.json` carries
+  `"last_reconciled_at": null` while the portfolio-level field is populated.
+  The broker route now sets it, so find the SECOND constructor that builds the
+  observation payload (services/alpaca_paper/observation.py or the Mission
+  Control snapshot builder) and check whether it omits `last_reconciled_at` or
+  reads it from the wrong table -- the same class as the route defect fixed in
+  the last two cycles. Bounded: grep the `PaperOrder(`/`PaperPortfolio(`
+  constructors in services/alpaca_paper/ and services/api/observation*.
 - The 0-vs-7 `orders_count` observation defect is fixed on the BROKER route
   path (7252052) and, as of this cycle, so is the broker route's
   `requested_at` timestamp. The remaining agent-side gap is the SIMULATOR

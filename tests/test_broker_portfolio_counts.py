@@ -299,3 +299,57 @@ def test_order_reports_requested_at_independent_of_reconcile_frequency() -> None
     assert [o.requested_at for o in portfolio.orders] == [SUBMITTED_AT, SUBMITTED_AT]
     # The two rows really do differ in reconcile time, so the test has teeth.
     assert portfolio.orders[0].last_reconciled_at != portfolio.orders[1].last_reconciled_at
+
+
+def _orders_order_by(conn: _StubConnection) -> str:
+    """The ORDER BY of the SELECT that feeds `portfolio.orders`.
+
+    It is the only statement joining broker_orders to paper_orders with an
+    ORDER BY; the totals use COUNT instead. Split off everything before the
+    clause, because the projection itself mentions `last_reconciled_at`
+    (broker_orders.* expands every column).
+    """
+    statement = next(s for s in conn.statements if "broker_orders" in s and "ORDER BY" in s)
+    return statement.split("ORDER BY", 1)[1].strip()
+
+
+def test_orders_sorted_by_submit_time_not_reconcile_time() -> None:
+    """The list order must agree with the requested_at the payload reports.
+
+    Sorting by broker_orders.last_reconciled_at floats an order that keeps
+    being reconciled above genuinely newer ones, so the newest row of the
+    response was not the newest trade.
+    """
+    order = _order_row()
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    _call(conn)
+
+    order_by = _orders_order_by(conn)
+    assert order_by.startswith("paper_orders.requested_at DESC")
+    assert "last_reconciled_at" not in order_by
+
+
+def test_orders_window_has_a_stable_tiebreaker() -> None:
+    """LIMIT 100 needs a total order, or the window itself can shuffle."""
+    order = _order_row()
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    _call(conn)
+
+    order_by = _orders_order_by(conn)
+    assert "paper_orders.symbol, paper_orders.order_id" in order_by
