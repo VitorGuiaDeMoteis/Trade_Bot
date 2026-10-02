@@ -107,7 +107,22 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                     risk_decision_id=o["risk_decision_id"],
                     symbol=o["symbol"],
                     side=o["side"],
-                    quantity=Decimal(str(o.get("requested_quantity") or "0")),
+                    # A notional order stores requested_quantity as NULL by
+                    # design: the share count is not knowable until the broker
+                    # fills it. Coercing that NULL to 0 published a fabricated
+                    # "quantity: 0" beside a real filled_quantity, so a
+                    # consumer sizing from `quantity` saw a trade that traded
+                    # nothing. Fall back to the only real share count the row
+                    # has. Never invent a zero: a missing requested_quantity on
+                    # a non-notional row is a real inconsistency, and reporting
+                    # 0 would hide it rather than surface it.
+                    quantity=Decimal(
+                        str(
+                            o["requested_quantity"]
+                            if o["requested_quantity"] is not None
+                            else o["filled_quantity"]
+                        )
+                    ),
                     filled_quantity=Decimal(str(o["filled_quantity"])),
                     status=o["status"].upper() if o.get("status") else "UNKNOWN",
                     # requested_at is the real submission time from paper_orders.

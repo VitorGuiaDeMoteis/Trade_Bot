@@ -353,6 +353,60 @@ Lessons:
 
 Tests: tests/test_broker_portfolio_counts.py (3 pure unit tests).
 
+## NULL is a legal value; coerce it only after knowing why it is NULL
+
+`get_broker_portfolio` published `PaperOrder.quantity` from
+`broker_orders.requested_quantity`, but `executor.py:151` writes
+`requested_quantity=quantity if notional is None else None` -- a NOTIONAL BUY
+is denominated in dollars, so the share count is unknowable until the broker
+fills and NULL there is correct BY DESIGN, not missing data. The route's
+`Decimal(str(o["requested_quantity"] or 0))` turned that deliberate NULL into
+`quantity: "0"` on FILLED trades; the live snapshot showed three FILLED orders
+(AAPL/SPY/TSLA) at `"quantity": "0"` opening positions of 0.0299 / 0.0129 /
+0.0268 real shares. Fallback to `filled_quantity` when `requested_quantity` is
+NULL restores the truth, and a partially filled notional order reports its
+filled share count rather than zero.
+
+Lessons:
+
+- Before coercing a NULL to a default, find the writer and ask whether the NULL
+  is a MEANINGFUL state. One grep of the INSERT that owns the column
+  (`grep requested_quantity` -> executor.py) settles it; guessing "missing
+  data" would have preserved the lie.
+- Distinguish "absent" from "not applicable". `requested_quantity is None` is
+  not the same claim as `requested_quantity == 0`, and `or` / `??` treats them
+  as identical -- so a legitimately-zero quantity and an unset one cannot share
+  a branch. Test the None case explicitly.
+- A zero in a response is a claim. If the code cannot distinguish "traded
+  nothing" from "does not know how much", it must not emit `0` -- publishing an
+  invented zero is the same root cause as `dict.get(key, 0)` reaching a safety
+  comparison, just aimed at the operator instead of the guard.
+
+## A WIP test can be red because its FIXTURE was never extended
+
+Three new tests in tests/test_broker_portfolio_counts.py passed
+`requested_quantity=` / `filled_quantity=` / `status=` to `_order_row`, a helper
+whose signature still accepted only `requested_at`. All three raised
+`TypeError` at the fixture call -- never reaching an assertion -- so the suite
+was red for a reason unrelated to the defect under test, and the correct fix was
+one line of fixture plumbing, not the production logic.
+
+Lessons:
+
+- `TypeError` on a helper argument is a fixture gap, not a product defect. Read
+  the error's origin before assuming the production change is wrong; changing
+  `broker_routes.py` to satisfy it would have hidden the real NULL-coercion bug
+  behind a green test.
+- When extending a shared fixture helper, keep every existing default
+  byte-compatible (keyword-only, with the old default) so the 18 prior callers
+  are provably unaffected -- then run the WHOLE file, not just the new tests,
+  to prove it.
+- A docstring on the helper is where the fixture's legality is argued. Note
+  explicitly WHY a NULL/None value is reachable in the real system, or the next
+  reader will "clean it up" back into a fabricated number.
+
+Tests: tests/test_broker_portfolio_counts.py (21 pure unit tests).
+
 ## A test fixture can contradict the contract it is meant to pin
 
 `_assert_open_orders_known` matches a remote open order with

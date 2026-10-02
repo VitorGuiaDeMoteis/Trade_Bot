@@ -637,6 +637,37 @@ reported-count mismatch and the per-order null `last_reconciled_at` persist ONLY
 because the agent-side fixes are not deployed to the frozen runtime (deploy
 requires human approval).
 
+### Cycle: notional order published as quantity=0 (FIXED, recovery mode)
+
+Started this cycle with a dirty tree (broker route + its tests), so RECOVERY
+MODE: no new task was chosen. The production change was already written and
+correct; the TEST FIXTURE was not. `_order_row` still only accepted
+`requested_at`, while the three new tests passed `requested_quantity=...` /
+`filled_quantity=...` / `status=...`, so every one of them died with a
+`TypeError` on the helper before reaching an assertion. The whole WIP was red
+for a reason unrelated to the defect it was written to pin.
+
+The defect: `get_broker_portfolio` mapped the response `quantity` from
+`requested_quantity`, and `executor.py:151` deliberately stores that column as
+NULL for a NOTIONAL order (`requested_quantity=quantity if notional is None
+else None`) because a dollar-denominated BUY has no knowable share count until
+the broker fills it. Coercing that NULL to `Decimal(0)` published a FILLED
+trade beside `quantity: "0"` -- visible in the live snapshot, where three
+FILLED notional BUYs (AAPL, SPY, TSLA) carry `"quantity": "0"` while the
+positions they opened hold real fractional shares (0.0299 / 0.0129 / 0.0268).
+The route now falls back to `filled_quantity` when `requested_quantity` is
+NULL, and only then; a zero is published when it is true (an open notional
+order with no fill genuinely traded nothing), never invented.
+
+Recovery changes: extended `_order_row` with keyword-only
+`requested_quantity` / `filled_quantity` / `status`, documented why NULL is a
+legitimate fixture value, and left every default byte-compatible so the 18
+pre-existing callers are unchanged.
+
+Validated: 21 passed in tests/test_broker_portfolio_counts.py +
+tests/test_health_paper_worker_ready.py (full file, not a subset), ruff clean,
+mypy clean on the route. No production file was modified during recovery.
+
 ## Active blockers
 
 None known at initialization.
@@ -706,6 +737,23 @@ Candidate next tasks (pick one in a clean cycle):
 - `broker_order_quantity_divergence` (worker.py:255) raises on quantity
   divergence and has no pure unit coverage; same fail-closed family, and it is
   reachable from the reconciliation path.
+
+NOTE on the second candidate above (the SIMULATOR `PaperPortfolio` in
+services/api/paper_queries.py:28): that is now the strongest remaining lead,
+because this cycle proved the BROKER route's `quantity` mapping was wrong for
+notional orders. `paper_queries.py` reads `PaperOrder.model_validate(dict(r))`
+straight off `paper_orders`, so it cannot hit the NULL-coercion bug -- but it
+is the second constructor of the same contract and deserves the same
+constructor-vs-contract-field audit.
+
+- `PaperOrder.filled_quantity` is NOT NULL-defaulted to `Decimal(0)`
+  (packages/contracts/paper.py:17). Confirm the SIMULATOR `paper_queries.py`
+  path actually populates it rather than relying on that default, since a
+  default-filled `filled_quantity: 0` is the mirror of the bug fixed this
+  cycle. Bounded: read the one constructor.
+
+- `broker_portfolio_snapshots.buying_power` NOT NULL assumption at migration
+  head f2c8a51d9b10 (still open, unchanged).
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest. The ambient shell exports DATABASE_ROLE=runtime

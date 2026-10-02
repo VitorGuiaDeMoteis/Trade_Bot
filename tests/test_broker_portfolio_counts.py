@@ -22,12 +22,22 @@ NOW = datetime.now(UTC)
 SUBMITTED_AT = NOW - timedelta(hours=2)
 
 
-def _order_row(*, requested_at: datetime | None = None) -> dict[str, Any]:
+def _order_row(
+    *,
+    requested_at: datetime | None = None,
+    requested_quantity: Decimal | str | None = Decimal("1"),
+    filled_quantity: Decimal | str = Decimal("1"),
+    status: str = "filled",
+) -> dict[str, Any]:
     """One joined broker_orders+paper_orders row.
 
     `requested_at` is paper_orders' immutable submit time; `last_reconciled_at`
     is broker_orders' timestamp, bumped on EVERY reconcile cycle. They are kept
     deliberately distinct so a test can tell which one the route reported.
+
+    `requested_quantity` defaults to a real share count but accepts None,
+    because a NOTIONAL order (the BUY branch sends dollars, not shares) stores
+    NULL there by design -- see the route's quantity mapping.
     """
     return {
         "order_id": uuid4(),
@@ -36,9 +46,9 @@ def _order_row(*, requested_at: datetime | None = None) -> dict[str, Any]:
         "risk_decision_id": uuid4(),
         "symbol": "SPY",
         "side": "BUY",
-        "requested_quantity": Decimal("1"),
-        "filled_quantity": Decimal("1"),
-        "status": "filled",
+        "requested_quantity": requested_quantity,
+        "filled_quantity": filled_quantity,
+        "status": status,
         "requested_at": SUBMITTED_AT if requested_at is None else requested_at,
         "last_reconciled_at": NOW,
         "client_order_id": f"cid-{uuid4()}",
@@ -235,6 +245,68 @@ def test_empty_broker_state_reports_zero_counts() -> None:
     assert portfolio.orders == [] and portfolio.fills == []
     assert portfolio.orders_count == 0
     assert portfolio.fills_count == 0
+
+
+def test_notional_order_reports_real_share_count_not_fabricated_zero() -> None:
+    """A notional order must never be published as quantity=0.
+
+    executor.py stores requested_quantity as NULL for a notional BUY because
+    the share count is unknowable until the broker fills it. The route used to
+    coerce that NULL to 0, so the API advertised "quantity: 0" beside a real
+    filled_quantity -- a trade that appears to have traded nothing.
+    """
+    order = _order_row(requested_quantity=None, filled_quantity="0.0007")
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    portfolio = _call(conn)
+
+    published = portfolio.orders[0]
+    assert published.quantity == Decimal("0.0007")
+    assert published.quantity != 0
+    assert published.filled_quantity == Decimal("0.0007")
+
+
+def test_share_order_keeps_requested_quantity() -> None:
+    """A share-denominated order must still report what was requested."""
+    order = _order_row(requested_quantity="0.002", filled_quantity="0.002")
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    portfolio = _call(conn)
+
+    assert portfolio.orders[0].quantity == Decimal("0.002")
+
+
+def test_unfilled_notional_order_reports_zero_because_it_traded_nothing() -> None:
+    """An open notional order with no fill has 0 real shares -- that zero is true."""
+    order = _order_row(requested_quantity=None, filled_quantity="0", status="NEW")
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    portfolio = _call(conn)
+
+    published = portfolio.orders[0]
+    assert published.quantity == 0
+    assert published.status == "NEW"
 
 
 def test_order_requested_at_is_submit_time_not_reconcile_time() -> None:
