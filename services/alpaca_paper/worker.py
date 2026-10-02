@@ -166,6 +166,23 @@ class AlpacaPaperWorker:
             raise RuntimeError(f"invalid_broker_{field}")
         return result
 
+    @staticmethod
+    def _optional_decimal(value: Any) -> Decimal | None:
+        """Parse an OPTIONAL broker numeric field.
+
+        Returns None when the field is absent or unparsable so that callers can
+        fail closed instead of silently substituting a bogus value.
+        """
+        if value is None:
+            return None
+        try:
+            result = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+        if not result.is_finite():
+            return None
+        return result
+
     def _validate_positions(self, positions: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
         for position in positions:
@@ -296,7 +313,14 @@ class AlpacaPaperWorker:
         if account is None or positions is None:
             raise RuntimeError("broker_state_not_supplied_to_execution")
 
-        last_equity = self._decimal(account.get("equity"), "equity")
+        # The daily-loss breaker compares the CURRENT equity against the START-OF-DAY
+        # baseline. Using the current `equity` here would make the comparison always 0
+        # and silently disable the breaker. Alpaca's account payload exposes `last_equity`
+        # (equity at the previous trading-day close), which is a baseline that survives
+        # process restarts and rolls over automatically at the broker's session boundary.
+        # If it is missing we pass None so ExecutionGuard fails CLOSED on BUY while
+        # still allowing position-closing SELLs.
+        last_equity = self._optional_decimal(account.get("last_equity"))
         snapshot_time = datetime.now(UTC)
 
         for row in pending:

@@ -57,36 +57,63 @@ Continuously improve TradingBot toward a safe, reliable, observable long-running
 
 ## Work completed by autonomous agent
 
-None yet.
+### Cycle: daily-loss circuit breaker baseline (FIXED)
+
+Root cause of the previously "unresolved" suspected bug:
+
+- services/alpaca_paper/worker.py derived the breaker baseline from the SAME
+  account snapshot used for current equity:
+  `last_equity = self._decimal(account.get("equity"), "equity")`
+- Guard computes `last_equity - equity`, so the delta was ALWAYS 0.
+  The daily-loss circuit breaker was effectively DEAD CODE in production,
+  while its unit tests still passed (tests inject a distinct baseline).
+
+Fix:
+
+- Baseline now comes from the broker account's `last_equity`
+  (previous trading-day close), which survives process restarts and rolls
+  over at the broker session boundary. No new DB table or migration needed.
+- Added `_optional_decimal` helper; a missing/unparsable baseline yields None
+  and ExecutionGuard fails CLOSED on BUY while still allowing closing SELLs.
+- New tests: tests/test_daily_loss_baseline.py
+
+The earlier "baseline must survive process restarts" concern is resolved by
+using broker-provided `last_equity` instead of RAM-only state.
 
 ## Active blockers
 
 None known at initialization.
 
+## Known environmental test failures (do NOT re-investigate each cycle)
+
+Postgres is not running in the agent environment, so DB-backed tests fail at
+fixture setup. These are NOT caused by agent code changes:
+
+- psycopg OperationalError / ConnectionTimeout (test_paper_audit,
+  test_alpaca_paper_incident, many others)
+- RuntimeError: alpaca_paper_startup_refused_schema_not_at_head
+- tests/test_alpaca_provider.py network smoke tests
+- tests/test_replay_live.py: Windows FileNotFoundError (no ComSpec/SystemRoot)
+
+Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
+
 ## Next task
 
-Inspect the repository and select the highest-value small safe improvement.
+Candidate: audit the remaining guard fail-closed paths and in-flight/exposure
+accounting for the same class of bug (a comparison whose two sides derive from
+the same snapshot, making the delta constant). tests/test_daily_loss_baseline.py
+documents the pattern.
 
-Do not blindly trust historical TODO or handoff documents when Git HEAD or current runtime evidence contradicts them.
+Secondary candidate: add observability for a missing `last_equity`, since it now
+silently forces all BUYs to fail closed.
 
-## Autonomous cycle incident
+To run tests, use the project venv python (see AGENT_LESSONS.md); the default
+`python` on PATH has no pytest.
 
-First autonomous cycle interrupted before completion.
+## Autonomous cycle incident (historical)
 
-What happened:
-
-- A suspected daily-loss circuit-breaker bug was investigated.
-- Investigation expanded too far.
-- Full-suite pytest baseline consumed excessive time.
-- Session context was compressed repeatedly.
-- Hermes reached its iteration budget before completing validation.
-- Temporary experimental code was left in the worktree.
-- The incomplete cycle was manually discarded back to the previous clean commit.
-
-Important:
-
-The suspected daily-equity baseline issue remains UNRESOLVED and must be re-investigated in a future SMALL cycle.
-
-Do not assume the interrupted implementation was correct.
-
-Next investigation should be narrow and should specifically consider whether a daily equity baseline must survive process restarts rather than existing only in RAM.
+First autonomous cycle was interrupted before completion: investigation
+expanded too far, a full-suite pytest baseline consumed excessive time, and
+temporary experimental code was left in the worktree. It was discarded back to a
+clean commit. The cycle size rules in AGENT_MISSION.md exist because of this.
+The suspected daily-equity baseline issue it raised is now RESOLVED above.
