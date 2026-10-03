@@ -1479,3 +1479,126 @@ deployment, not code. Next code task worth taking on a clean cycle:
 `[{symbol, quantity}]` list -- give it the same treatment the other anomaly keys
 already get (a counted, attributed summary) so the paper pages can show it
 without parsing a raw list, with a test pinning the count.
+
+================================================================================
+CYCLE 2026-10-03 (worktree clean -> new task)
+
+TASK: `get_session_analytics` could never report a non-zero session return.
+
+The `equity_initial` and `equity_final` figures were BOTH read from
+`broker_portfolio_snapshots`, but that table is not a time series. `provider` is
+its primary key (services/api/models.py:226) and the worker maintains it with
+`insert(...).values(provider="alpaca", ...)` +
+`on_conflict_do_update(index_elements=["provider"])` (services/alpaca_paper/worker.py:564),
+so it holds exactly ONE row per provider carrying CURRENT broker state. The two
+reads were therefore returning the same value: `equity_initial == equity_final`
+on every session, and `return_pct` divided by the current equity instead of the
+session's starting cash. The old code even asked for the OLDEST row
+(`ORDER BY last_reconciled_at ASC LIMIT 1`), an ordering that cannot help when
+only one row exists.
+
+CHANGES (1 production file, 1 new test file):
+- services/api/analytics.py: dropped the `snap_first` query entirely and take the
+  opener from `run_row["initial_cash"]`, the run's own starting cash, which is
+  `nullable=False` in models.py. The live snapshot is still read once for
+  `equity_final`, and the no-snapshot fallback to starting cash is preserved. This
+  also makes the code match the documented contract in docs/M4_CORE.md:67,
+  `return_pct = (equity final - initial cash) / initial cash * 100`.
+- tests/test_session_analytics_equity_initial.py (new, 4 tests): opener is the
+  run's starting cash and not the live equity; a +20 round trip on 1000 of
+  starting cash returns 2.0% and explicitly NOT the old 20/1042.5; a control that
+  `equity_final` still tracks the live snapshot; and the pre-first-reconcile
+  fallback where both ends equal the starting cash.
+
+VALIDATION: RED first -- 3 of the 4 new tests failed on the unfixed code
+(`assert '1042.5' != '1042.5'`, and `assert 1.9184652278177459 == 2.0` showing
+the live-equity denominator), with only the fallback test passing. GREEN after
+the fix: 10 passed across the new file and
+tests/test_session_analytics_unmatched_sells.py. Lint baseline proven rather
+than assumed: `git show HEAD:services/api/analytics.py` carries 13 ruff errors
+and the same 2 mypy `var-annotated` errors (`fifo_buys`, `rejections`), while the
+edited file carries 11 ruff errors and the identical 2 mypy errors -- so this
+cycle REMOVED 2 pre-existing lint findings and added none. The file was
+deliberately not reformatted (that would be a drive-by refactor of a
+pre-existing violation).
+
+Two unrelated pre-existing failures surfaced in a broader keyword slice and were
+confirmed NOT mine: tests/test_alpaca_provider.py::
+test_opted_in_smoke_closed_session_is_bounded_and_skips_stream fails on
+`<module 'scripts.smoke_test'> has no attribute 'Settings'`, and
+tests/test_alpaca_deepseek.py::test_analytics_run_isolation_and_realized_pnl
+errors on a SQLAlchemy DB connection (the documented environmental class).
+Neither reaches the analytics payload.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle):
+  health.status=degraded, paper.status=ACTIVE, paused=false, degraded=false,
+  reconciled=true, last_reconciled_at=2026-10-03T13:36:25Z, market_data
+  state=market_closed. Open positions AAPL, SPY, TSLA, all micro-sized ~$10.
+  orders_count_reported=0 vs actual=13 (list len 10); fills_count_reported=0 vs
+  actual=11 (list len 10). unrealized_pnl=-0.0366820000, equity=99951.28,
+  cash=99921.35, market_value=29.93.
+
+Same shape and same totals as the previous cycle, so this is the already
+documented undeployed pre-fix reading, not a new anomaly: the counted-report
+fix is committed but the frozen runtime predates it, and `health.status=degraded`
+is the known execution-gate flap. `_actual` unchanged at 13/11. Nothing here
+justifies overriding the backlog.
+
+Next candidate task: `return_pct` now uses the correct denominator but still
+numerates from `total_pnl` (realized + unrealized), while docs/M4_CORE.md:67
+defines it as `(equity final - initial cash) / initial cash * 100`. The two
+disagree whenever cash moved for a reason other than PnL (fees settling, a
+deposit, an unpriced dust lot). Reconcile the code to the documented formula,
+with a test that pins a session whose cash and PnL diverge.
+
+================================================================================
+CYCLE 2026-10-03 (worktree DIRTY at start -> RECOVERY MODE, work finished & committed)
+
+TASK: none chosen. The cycle started with a dirty tree
+(`M AGENT_STATE.md`, `M services/api/analytics.py`,
+`?? tests/test_session_analytics_equity_initial.py`), so per the mission's
+dirty-worktree rule this cycle only reviewed, re-validated and committed the
+previous cycle's unfinished work: `get_session_analytics` could never report a
+non-zero session return because `equity_initial` and `equity_final` were BOTH
+read from `broker_portfolio_snapshots`, a single-row-per-provider upsert table
+(`provider` is the PK, models.py:226; worker.py:564 uses
+`on_conflict_do_update`). The removed query even asked for the oldest row, an
+ordering that cannot mean anything when only one row exists.
+
+REVIEW OF THE WIP: no temporary or intentionally-broken code present. The fix
+takes the opener from `run_row["initial_cash"]` (NOT NULL in models.py, with
+`ck_paper_run_money` requiring `> 0`), keeps the live snapshot for `equity_final`
+and preserves the no-snapshot fallback. The new test drives
+`get_session_analytics` against a stub connection, so no Postgres is needed.
+
+VALIDATION (re-run independently this cycle, not taken on trust):
+- 10 passed in 0.07s across tests/test_session_analytics_equity_initial.py and
+  tests/test_session_analytics_unmatched_sells.py.
+- Lint baseline re-proven by feeding HEAD's file to ruff on stdin:
+  `git show HEAD:services/api/analytics.py | ruff check --stdin-filename
+  services/api/analytics.py -` -> 13 errors; the worktree file -> 11. The change
+  removed 2 pre-existing findings and added none.
+- mypy on the file: the same 2 pre-existing `var-annotated` errors
+  (`fifo_buys`:58, `rejections`:150), both untouched by this diff.
+
+PAPER_REVIEW: degraded/no-new-actionable-finding
+  Read-only from the frozen runtime, observed_at=2026-10-03T13:52:37Z.
+  health.status=degraded, health.database=up, market_data state=market_closed,
+  paper.status=ACTIVE, paused=false, paper.degraded=false, reconciled=true,
+  last_reconciled_at=2026-10-03T13:52:30Z. Open position symbols AAPL, SPY,
+  TSLA, all still micro-sized ~$10 each. orders_count_reported=0 vs
+  orders_count_actual=13; fills_count_reported=0 vs fills_count_actual=11.
+  unrealized_pnl=-0.0366820000, equity=99951.28, cash=99921.35,
+  market_value=29.93.
+
+Same shape and same totals as the two previous cycles, so this remains the
+already documented undeployed pre-fix reading rather than a new anomaly: the
+counted-report fix is committed but the frozen runtime predates it, and
+`health.status=degraded` is the known execution-gate flap. The newest pair is
+the expected intraday SELL of the AAPL and TSLA micro-lots -- no duplicate
+execution, no broker/local divergence, no accounting inconsistency. Nothing here
+overrides the backlog.
+
+Next candidate task (unchanged, carried forward): reconcile `return_pct` with
+docs/M4_CORE.md:67 -- it still numerates from `total_pnl` instead of
+`equity_final - initial_cash`.

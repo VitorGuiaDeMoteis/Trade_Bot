@@ -33,9 +33,12 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     unrealized_pnl = sum([Decimal(str(p["unrealized_pnl"])) for p in positions])
     market_value = sum([Decimal(str(p["market_value"])) for p in positions])
     
-    snap_first = conn.execute(text("SELECT cash, equity FROM broker_portfolio_snapshots ORDER BY last_reconciled_at ASC LIMIT 1")).mappings().first()
-    initial_cash = Decimal(str(snap_first["equity"])) if snap_first else Decimal(str(run_row["initial_cash"]))
-    
+    # broker_portfolio_snapshots holds ONE row per provider (provider is the PK and the
+    # worker upserts on conflict), so it is current-state, not a time series: reading it
+    # for the session opener would echo the current equity into `equity_initial` and make
+    # it equal to `equity_final`. The run's own starting cash is the only correct opener.
+    initial_cash = Decimal(str(run_row["initial_cash"]))
+
     snap = conn.execute(text("SELECT cash, equity FROM broker_portfolio_snapshots LIMIT 1")).mappings().first()
     final_equity = Decimal(str(snap["equity"])) if snap else initial_cash
 

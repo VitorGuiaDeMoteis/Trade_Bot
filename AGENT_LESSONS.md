@@ -1243,3 +1243,33 @@ handler, so a raise alone is not a signal.
   sibling proves the abort is not per-order (it passes its own checks); the
   control proves the assert is not simply raising on everything, which would
   leave the gate permanently shut.
+
+## `broker_portfolio_snapshots` is CURRENT state, not a history
+
+`provider` is the primary key (services/api/models.py:226) and the worker
+maintains the table with `insert(...).values(provider="alpaca", ...)` plus
+`on_conflict_do_update(index_elements=["provider"])`. It therefore holds exactly
+ONE row per provider, overwritten every reconcile.
+
+- Consequence: an `ORDER BY last_reconciled_at ASC LIMIT 1` "oldest row" query
+  on this table cannot mean what it looks like -- there is only one row, so the
+  ordering is decorative. `get_session_analytics` used it to pick the session's
+  opening equity and returned the CURRENT equity for both ends of the session,
+  making `equity_initial == equity_final` on every session and putting live
+  equity in the denominator of `return_pct`.
+- The correct opener is `paper_runs.initial_cash` for the run (`nullable=False`,
+  with `ck_paper_run_money` requiring `initial_cash > 0`); the live snapshot
+  stays the closer. Before the first reconcile both ends equal the start cash.
+- When auditing any "first vs last" report pair in this repo, first check whether
+  the table has a time dimension at all. A single-row upsert table read twice
+  returns the same answer twice and looks like a plausible number, not an error.
+- Proving the fix without reverting tracked code: run the HEAD version of the
+  module loaded from scratch against the same stub connection and compare
+  payloads. Here the RED evidence was 3 of 4 new tests failing on HEAD, with
+  `return_pct` = 1.9184652278177459 (the live-equity denominator) instead of 2.0.
+- Lint baseline was proven rather than assumed: `ruff check --stdin-filename
+  services/api/analytics.py - < <(git show HEAD:services/api/analytics.py)`
+  avoids writing the baseline into the repo (a temp path outside the tree also
+  works, but not `$TMPDIR` if it resolves outside an existing directory).
+  HEAD carried 13 errors, the worktree file 11 -- the change removed 2
+  pre-existing findings and added none.
