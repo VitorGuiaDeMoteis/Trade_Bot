@@ -1407,3 +1407,75 @@ evidence the DB side of the run is healthy. No broker/local divergence, no
 duplicate execution, no stale reconciliation, no accounting inconsistency.
 
 Nothing here justifies overriding the backlog.
+
+## Cycle: recovery mode -- finish the SELL-size blast-radius test
+
+Cycle started dirty (RECOVERY MODE, no new task chosen): one modified file,
+`tests/test_worker_unknown_order_aborts_whole_cycle.py` (+69), adding
+`test_sell_quantity_divergence_aborts_the_cycle_despite_healthy_siblings`. No
+production code in the WIP, so there was no temporary breakage to revert.
+
+The WIP was coherent and right about the production contract: a SELL whose
+broker `qty` differs from the approved `requested_quantity` raises
+`broker_order_quantity_divergence` out of `_assert_open_orders_known`
+(worker.py:150), which is unwrapped on purpose, so the cycle aborts before
+`_save_broker_snapshot` even though two of the three open orders verify
+cleanly. Only the assertions were wrong: the WIP asserted
+`worker.has_reconciled is False` and `health_ready() is False` straight after
+`reconcile_once()` raised, i.e. 1 failed, 5 passed.
+
+Root cause of the failure: `reconcile_once` deliberately clears only the
+per-cycle bits; the DURABLE latch `has_reconciled` is cleared solely by
+`_enter_degraded`, the handler `_run` wraps the call in. `health_ready()`
+additionally excuses the `reconciliation_in_progress` sentinel, so it stays
+True right after a raise. That split is already pinned by
+`test_divergence_leaves_no_verified_picture_after_degrading`; the WIP had
+duplicated the latch assertion into a test that never reaches the handler, so it
+asserted a behaviour the design forbids. Fixed in the TEST, not the worker:
+assert the mid-cycle state (`reconciliation_ready` False, `degraded` True,
+`degraded_reason == "reconciliation_in_progress"`), then call
+`_enter_degraded("broker_order_quantity_divergence:b-3")` before asserting
+`has_reconciled is False` and `health_ready() is False`.
+
+Non-vacuity proven WITHOUT editing any tracked file: a scratch test outside the
+repo monkeypatched `_assert_open_orders_known` at runtime to neutralise only the
+SELL size comparison (rewriting each remote `qty` to the approved 10) and reran
+the identical three-order scenario. Result: `snapshot_writes=1, gate=True,
+has_reconciled=True` -- without the size check the divergent book is
+snapshotted and the execution gate OPENS. So the committed abort is doing real
+work. Scratch file deleted; `git status` shows only the intended change.
+
+Validation: 35 passed across tests/test_worker_unknown_order_aborts_whole_cycle.py,
+tests/test_worker_reconcile_unknown_open_orders.py and
+tests/test_worker_reconcile_isolates_bad_order.py; ruff clean on the modified
+test file. No production file touched, so no production lint/type delta. The
+known psycopg ConnectionTimeout failures in the Postgres-dependent test files
+remain the documented environmental class.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle):
+  health.status=degraded, health.database=up, market_data state=market_closed,
+  paper.status=ACTIVE, paused=false, paper.degraded=false, reconciled=true,
+  last_reconciled_at=2026-10-03T13:29:23Z. Open positions AAPL, SPY, TSLA, all
+  still micro-sized ~$10 each. orders_count_reported=0 vs actual=13;
+  fills_count_reported=0 vs actual=11. unrealized_pnl=-0.0366820000,
+  equity=99951.28, cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: `health.status` is back to `degraded` (it was `ok`), which
+is the execution-gate flap recorded in earlier cycles -- the frozen runtime does
+not have the committed `health_ready()` fix deployed. The sample was taken
+13:29:27Z, ~4s after a successful reconcile at 13:29:23Z, i.e. inside the next
+cycle's 3s fail-closed window, which is exactly the shape that fix addresses.
+`paper.degraded` is false and reconciliation is current, so this is the known
+in-progress-window flap, not a proven fault. Reported-vs-actual counts are the
+same documented undeployed pre-fix reading; `_actual` still 13/11, and the two
+newest orders are the expected intraday SELL pair, no duplicate execution, no
+broker/local divergence, no accounting inconsistency. Nothing here justifies
+overriding the backlog.
+
+Next candidate task: the reported-vs-actual mismatch is fixed in the committed
+code but still visible in the frozen runtime, so what remains there is
+deployment, not code. Next code task worth taking on a clean cycle:
+`get_session_analytics` reports `anomalies.unmatched_sells` as a bare
+`[{symbol, quantity}]` list -- give it the same treatment the other anomaly keys
+already get (a counted, attributed summary) so the paper pages can show it
+without parsing a raw list, with a test pinning the count.

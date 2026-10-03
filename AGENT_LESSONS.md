@@ -1205,3 +1205,41 @@ would be a worse bug than the shortfall it hides.
   BOTH versions through the same stub scenarios. Printed the HEAD payload key
   set vs the worktree one (`unmatched_sells` absent at HEAD), plus
   `git grep -c <symbol> HEAD` returning 0.
+
+## Two blast radii in `AlpacaPaperWorker`: per-order vs account-wide
+
+`_run` drives `reconcile_once` and catches everything in one handler. Inside it
+the steps deliberately differ:
+
+- `_reconcile_active_orders` CATCHES per order. One order whose broker numerics
+  cannot be sourced must not stop the others: it keeps its ACTIVE status, writes
+  no fabricated 0.
+- `_assert_open_orders_known` (worker.py:150) is NOT wrapped and must not be. It
+  answers "is the whole open-order book known to us?", and every one of its
+  failure modes (unknown order, status/symbol/side/size divergence, two broker
+  orders claiming one local row) is account-wide by construction: sizing the
+  next order without knowing what is already outstanding is the fail-OPEN.
+
+`reconcile_once` clears only the per-cycle bits (`reconciliation_ready`,
+`degraded`, `degraded_reason = "reconciliation_in_progress"`). The DURABLE latch
+`has_reconciled` is cleared solely by `_enter_degraded`, i.e. by `_run`'s
+handler, so a raise alone is not a signal.
+
+- When a test drives `reconcile_once` directly, a raise leaves `has_reconciled`
+  at whatever it was and `health_ready()` STILL True (it excuses the
+  in-progress sentinel by design, to stop /health flapping every 3s cycle).
+  Asserting `has_reconciled is False` straight after the raise tests a
+  behaviour the design forbids -- `test_divergence_leaves_no_verified_picture_
+  after_degrading` already pins the split. A new blast-radius test must assert
+  the mid-cycle state, then call `_enter_degraded` to reach the latch.
+- Non-vacuity for this step without touching tracked files: monkeypatch
+  `_assert_open_orders_known` at RUNTIME in a scratch test to neutralise only
+  the comparison under test (e.g. rewrite `qty` to the approved size), rerun the
+  same scenario. If the divergent book is then snapshotted and the gate opens,
+  the assertion is doing real work. Confirmed: neutralising the SELL size check
+  gave `snapshot_writes=1, gate=True, has_reconciled=True` on the exact inputs
+  the committed test expects to abort.
+- Pin both a healthy SIBLING and a healthy CONTROL in an account-wide test. The
+  sibling proves the abort is not per-order (it passes its own checks); the
+  control proves the assert is not simply raising on everything, which would
+  leave the gate permanently shut.

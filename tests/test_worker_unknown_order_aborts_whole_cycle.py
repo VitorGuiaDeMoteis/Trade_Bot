@@ -300,6 +300,77 @@ def test_divergence_leaves_no_verified_picture_after_degrading():
     assert worker.health_ready() is False
 
 
+def test_sell_quantity_divergence_aborts_the_cycle_despite_healthy_siblings():
+    """The SELL size branch is account-wide too, not per-order.
+
+    `_assert_open_orders_known` compares `qty` against `requested_quantity` in
+    the SAME per-order loop as the notional check, and it is not wrapped the way
+    `_reconcile_active_orders` is. That is deliberate, and this pins WHY for the
+    size branch specifically: an open SELL working at the broker for a size other
+    than the one approved corrupts the position the bot derives from it, which
+    feeds every remaining order's sizing -- not just that one order's outcome.
+
+    The two healthy siblings matter: they pass their own checks, so only the
+    whole-cycle abort stops them. Without it the broker's real exposure for this
+    symbol is unverified while the book still reads as reconciled.
+    """
+    local_rows = [
+        _local_row(
+            broker_order_id="b-1",
+            client_order_id="c-1",
+            symbol="AAPL",
+            side="BUY",
+            requested_notional=Decimal("100"),
+        ),
+        _local_row(
+            broker_order_id="b-2",
+            client_order_id="c-2",
+            symbol="SPY",
+            side="SELL",
+            status="NEW",
+            requested_quantity=Decimal("10"),
+        ),
+        _local_row(
+            broker_order_id="b-3",
+            client_order_id="c-3",
+            symbol="TSLA",
+            side="SELL",
+            status="NEW",
+            requested_quantity=Decimal("10"),
+        ),
+    ]
+    open_orders = [
+        _remote_order(order_id="b-1", client_order_id="c-1", symbol="AAPL", notional="100"),
+        _remote_order(
+            order_id="b-2", client_order_id="c-2", symbol="SPY", side="SELL", qty="10"
+        ),
+        # The broker works TSLA at 11, the local risk decision approved 10.
+        _remote_order(
+            order_id="b-3", client_order_id="c-3", symbol="TSLA", side="SELL", qty="11"
+        ),
+    ]
+    worker, snapshot_writes = _worker(local_rows, open_orders)
+
+    with pytest.raises(RuntimeError, match="broker_order_quantity_divergence:b-3"):
+        asyncio.run(worker.reconcile_once())
+
+    assert snapshot_writes == [], (
+        "the two orders that matched must not be snapshotted either: the book is "
+        "only as trustworthy as its worst open order"
+    )
+    # Mid-cycle state only: `reconcile_once` fails closed at its top and clears
+    # the per-cycle bits, but it deliberately does NOT clear the durable latch
+    # -- that is `_enter_degraded`'s job, the handler `_run` wraps this in.
+    assert worker.reconciliation_ready is False
+    assert worker.degraded is True
+    assert worker.degraded_reason == "reconciliation_in_progress"
+
+    asyncio.run(worker._enter_degraded("broker_order_quantity_divergence:b-3"))
+
+    assert worker.has_reconciled is False
+    assert worker.health_ready() is False
+
+
 def test_known_order_still_snapshots_and_opens_the_gate():
     """The control: a verified book still completes and is published.
 
