@@ -19,6 +19,9 @@ So each branch below is a trading-safety guarantee, not a diagnostic:
   double-exposure shape;
 - notional/quantity divergence means the order actually working at the broker
   has a different size than the one the risk decision approved;
+- one local row claimed by two distinct broker orders means the bot counts one
+  exposure where the broker holds two, which is the order-side twin of
+  `broker_position_split_across_rows`;
 - a missing remote numeric is treated as divergence, never as "equal", because
   an unsourceable size must not be assumed to match.
 
@@ -228,6 +231,80 @@ def test_sell_quantity_missing_on_broker_side_raises():
         _assert(
             [_local_row(side="SELL", requested_quantity=Decimal("10"))],
             [_remote_order(side="SELL")],
+        )
+
+
+def test_two_distinct_local_rows_each_matched_once_pass():
+    """Two DIFFERENT orders, one broker order each: the normal multi-order case.
+
+    The duplicate guard keys on the local row, not on the broker, so a cycle that
+    legitimately has several working orders must still reconcile.
+    """
+    _assert(
+        [
+            _local_row(
+                broker_order_id="b-1", client_order_id="c-1", requested_notional=Decimal("100")
+            ),
+            _local_row(
+                broker_order_id="b-2", client_order_id="c-2", requested_notional=Decimal("250")
+            ),
+        ],
+        [
+            _remote_order(order_id="b-1", client_order_id="c-1", notional="100"),
+            _remote_order(order_id="b-2", client_order_id="c-2", notional="250"),
+        ],
+    )
+
+
+def test_two_broker_orders_for_one_local_row_raises():
+    """The broker holds two live orders where the bot recorded ONE decision.
+
+    `_reconcile_active_orders` drives exposure off local rows and
+    `_process_pending_submits` reuses them as the guard's `in_flight`, so a row
+    claimed twice reads as a single order while the broker can fill twice. Each
+    remote order passes the per-order symbol/side/size checks on its own, which
+    is why this has to be caught across the batch rather than per order.
+    """
+    with pytest.raises(
+        RuntimeError, match=f"broker_open_order_duplicate_for_local_order:{CLIENT_ID}"
+    ):
+        _assert(
+            [_local_row(requested_notional=Decimal("100"))],
+            [
+                _remote_order(order_id="b-123", notional="100"),
+                _remote_order(order_id="b-456", notional="100"),
+            ],
+        )
+
+
+def test_second_order_matching_on_client_id_only_also_raises():
+    """The two matching paths must not become a bypass for each other.
+
+    The first order matches on `broker_order_id`; the second matches the same row
+    on `client_order_id`. Resolving the row by either key lands on the same
+    index, so the duplicate is still refused.
+    """
+    with pytest.raises(
+        RuntimeError, match=f"broker_open_order_duplicate_for_local_order:{CLIENT_ID}"
+    ):
+        _assert(
+            [_local_row(requested_notional=Decimal("100"))],
+            [
+                _remote_order(order_id="b-123", notional="100"),
+                _remote_order(order_id="b-other", notional="100"),
+            ],
+        )
+
+
+def test_duplicate_detection_does_not_mask_the_first_order_missing_locally():
+    """Fail-closed ordering: an unknown order still reports as unknown."""
+    with pytest.raises(RuntimeError, match="unknown_broker_open_order:b-unknown"):
+        _assert(
+            [_local_row(requested_notional=Decimal("100"))],
+            [
+                _remote_order(order_id="b-123", notional="100"),
+                _remote_order(order_id="b-unknown", client_order_id="c-other", notional="100"),
+            ],
         )
 
 

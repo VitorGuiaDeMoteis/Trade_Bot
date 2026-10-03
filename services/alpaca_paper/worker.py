@@ -255,16 +255,37 @@ class AlpacaPaperWorker:
                 .all()
             )
 
-        by_broker_id = {row["broker_order_id"]: row for row in rows if row["broker_order_id"]}
-        by_client_id = {row["client_order_id"]: row for row in rows}
+        # Index the rows rather than holding the mappings themselves: two
+        # DISTINCT broker orders can resolve to the SAME local row (one matching
+        # on broker_order_id, another on client_order_id), and the exposure the
+        # bot derives counts local rows, so a row claimed twice means N live
+        # orders read as one. `_validate_positions` already refuses the same
+        # shape for positions (`broker_position_split_across_rows`); refuse it
+        # here too instead of letting each remote order pass on its own.
+        by_broker_id = {
+            row["broker_order_id"]: index
+            for index, row in enumerate(rows)
+            if row["broker_order_id"]
+        }
+        by_client_id = {row["client_order_id"]: index for index, row in enumerate(rows)}
+        claimed: set[int] = set()
         for remote in open_orders:
             broker_id = remote.get("id")
             client_id = remote.get("client_order_id")
-            local = by_broker_id.get(broker_id) or by_client_id.get(client_id)
-            if local is None:
+            index = by_broker_id.get(broker_id)
+            if index is None:
+                index = by_client_id.get(client_id)
+            if index is None:
                 raise RuntimeError(
                     f"unknown_broker_open_order:{broker_id or client_id or 'missing_id'}"
                 )
+            if index in claimed:
+                raise RuntimeError(
+                    "broker_open_order_duplicate_for_local_order:"
+                    f"{client_id or broker_id or 'missing_id'}"
+                )
+            claimed.add(index)
+            local = rows[index]
             if str(remote.get("symbol", "")).upper() != local["symbol"]:
                 raise RuntimeError(f"broker_order_symbol_divergence:{broker_id or client_id}")
             if str(remote.get("side", "")).upper() != local["side"]:

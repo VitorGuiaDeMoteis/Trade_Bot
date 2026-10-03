@@ -1070,14 +1070,14 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 
 ## Next task
 
-The tree was DIRTY at the start of the most recent cycle, so that cycle ran in
-RECOVERY MODE and closed the paper PAGE-mode contract WIP: `PaperPositionsPage`
-/ `PaperOrdersPage` / `PaperFillsPage` can now carry `ALPACA_PAPER`, and
-services/api/paper_routes.py threads the portfolio's real `mode` into all
-three. The cycle after it also ran in RECOVERY MODE and committed the
-`buying_power` NOT NULL contract test (no production change pending; the WIP
-was validated and closed). The tree is clean again, so the next cycle picks a
-candidate from the list below.
+The three most recent cycles all ran in RECOVERY MODE and each closed and
+committed one WIP: (1) the paper PAGE-mode contract
+(`PaperPositionsPage`/`PaperOrdersPage`/`PaperFillsPage` now carry
+`ALPACA_PAPER`, threaded from the portfolio's real `mode` in
+services/api/paper_routes.py), (2) the `buying_power` NOT NULL contract test
+(no production change), (3) the duplicate broker-order-claimed-on-one-local-row
+guard in `_assert_open_orders_known` (see the cycle note below). The tree is
+clean again, so the next cycle picks a candidate from the list below.
 
 The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
 production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).
@@ -1125,6 +1125,13 @@ Candidate next tasks (pick one in a clean cycle):
   blast radius and is now fixed too: one bad `reconcile_order` no longer escapes
   the loop, so it can no longer degrade the whole worker. Both members of that
   fail-closed-vs-availability family are closed.
+- Two broker open orders resolving to ONE local row in `_assert_open_orders_known`
+  -- NOW CLOSED. The dicts now hold row INDEXES plus a `claimed` set, so a second
+  claim raises `broker_open_order_duplicate_for_local_order:<id>`; the
+  `index is None` (unknown) check still runs FIRST, so an unknown order is never
+  misreported as a duplicate. Pinned by four tests including the positive
+  control (two distinct rows must still reconcile) and the fail-closed ordering.
+  Do NOT re-audit the mapping; a violation now fails a test.
 - `broker_order_quantity_divergence` (worker.py:255) raises on quantity
   divergence and has no pure unit coverage; same fail-closed family, and it is
   reachable from the reconciliation path. STILL OPEN -- and note it is a
@@ -1198,13 +1205,94 @@ so its `filled_quantity` is populated by the row, not the `Decimal(0)` default
   constructor in that family. A `Literal` in the observation payload that
   admits only `REPLAY` would be the exact shape of the bug just fixed.
   Before editing, grep the observation contract for its `mode`/`status`
-  Literals and compare them against `ck_paper_run_mode`'s two admitted values
-  -- a Literal narrower than the CHECK constraint is the tell.
+    Literals and compare them against `ck_paper_run_mode`'s two admitted values
+    -- a Literal narrower than the CHECK constraint is the tell.
+    CONFIRMED STILL OPEN this cycle: `'mode' in paper` is False on the live
+    observation, so the field is genuinely absent from the payload, not null.
+    The constructor audit is done; this observation-side gap is what remains.
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest. The ambient shell exports DATABASE_ROLE=runtime
 and EXECUTION_MODE=alpaca_paper, both of which conftest refuses -- prefix test
 commands with `DATABASE_ROLE=test EXECUTION_MODE=local_paper`.
+
+## Cycle: recovery mode -- duplicate broker order claimed on one local row
+
+`git status` at cycle start showed two modified tracked files
+(`services/alpaca_paper/worker.py`, `tests/test_worker_reconcile_unknown_open_orders.py`),
+so this was RECOVERY MODE: no new task was chosen.
+
+The WIP was coherent and complete, and it closes the order-side twin of a fault
+already fixed for positions. `_assert_open_orders_known`
+(services/alpaca_paper/worker.py:240, deliberately NOT wrapped -- see the
+blast-radius lesson below) resolves each broker open order onto a local
+`broker_orders JOIN paper_orders` row via `by_broker_id` then `by_client_id`.
+It used to hold the ROWS in those dicts, so two DISTINCT broker orders could
+resolve to the SAME row -- one matching on `broker_order_id`, the other on
+`client_order_id` -- and each remote order then passed the symbol/side/size
+checks on its own, so the batch reconciled "successfully". The exposure the bot
+derives counts local ROWS (`_process_pending_submits` reuses them as the guard's
+`in_flight`), so N live broker orders read as one: the order-side twin of
+`_validate_positions`' `broker_position_split_across_rows`, which already
+refuses the same shape for positions.
+
+Fix: index the dicts (`row -> index`) instead of holding the rows, plus a
+`claimed: set[int]`. A second claim of an already-claimed index raises
+`broker_open_order_duplicate_for_local_order:<client_id or broker_id>`.
+Fail-closed ordering is preserved: the `index is None` check still runs FIRST, so
+an unknown order still reports `unknown_broker_open_order` rather than being
+misreported as a duplicate.
+
+Validation: 22 passed in tests/test_worker_reconcile_unknown_open_orders.py;
+34 passed across that file plus its two sibling blast-radius files
+(tests/test_worker_unknown_order_aborts_whole_cycle.py,
+tests/test_worker_reconcile_isolates_bad_order.py); ruff clean.
+
+Two defects were found in the WIP, both in the test file, none in production
+code:
+
+1. ruff E501 x2 (104 > 100) in the new control test's `_local_row(...)` calls.
+   Wrapped the calls; ruff clean afterwards. The WIP had not been linted.
+2. Non-vacuity was unproven, so it was proven WITHOUT editing tracked files
+   (mission forbids restoring a known bug in-tree): a scratch replay of both
+   resolution strategies on the duplicate shape printed
+   `OLD: distinct rows matched = 2 raised = None` vs
+   `NEW: distinct rows claimed = 1 raised = broker_open_order_duplicate_for_local_order`,
+   plus the two-distinct-rows control `claimed = 2 raised = None`.
+   `git show HEAD:services/alpaca_paper/worker.py | grep -c claimed` returns 0,
+   confirming the guard is genuinely new.
+
+The new tests also pin two things worth keeping: the two-row control (so the
+guard cannot be "fixed" later by refusing all multi-order cycles) and the
+fail-closed ordering (an unknown order is still reported as unknown).
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle):
+  health.status=degraded, paper.status=ACTIVE, paused=false, degraded=false,
+  reconciled=true, last_reconciled_at=2026-10-03T11:25:45Z, market_data
+  state=market_closed. Open positions: AAPL, SPY, TSLA (all three micro-sized).
+  orders_count_reported=0 vs orders_count_actual=13 (list len 10);
+  fills_count_reported=0 vs fills_count_actual=11 (list len 10).
+  unrealized_pnl=-0.0366820000, equity=99951.28, cash=99921.35,
+  market_value=29.93.
+
+Both reported-vs-actual mismatches and the `health.status=degraded` reading are
+ALREADY-DIAGNOSED and expected on the frozen runtime, not new anomalies:
+
+- `orders_count_reported=0` is the pre-fix behavior from the cycle that added
+  `orders_count`/`fills_count` to `get_broker_portfolio`. The fix is committed
+  here but the frozen runtime is undeployed (deploy needs human approval), so
+  the observation keeps reporting 0. The `actual` values now grow (7 -> 13)
+  precisely because the DB is being written to, which confirms the DB side of
+  the run is healthy.
+- `health.status=degraded` while `paper.degraded=false` is the `/health`
+  execution-gate flap already diagnosed and fixed in a prior cycle; same
+  undeployed-runtime cause. Confirmed in 14/41 then 15/25 samples previously.
+- `latest_orders` list len 10 vs actual 13 is the documented `LIMIT 100` cap
+  semantics, not a truncation bug at this scale.
+- No broker/local divergence, no duplicate execution, no stale reconciliation,
+  no accounting inconsistency in this sample.
+
+Nothing here justifies overriding the backlog.
 
 ## Autonomous cycle incident (historical)
 
