@@ -1005,6 +1005,48 @@ KNOWN-UNDEPLOYED anomaly set (fixes committed on this branch, frozen runtime
 not rebuilt) -- do not re-investigate. `health.status` moving degraded -> ok on
 its own is NOT a new finding.
 
+### Cycle: `buying_power` NOT NULL contract pinned executably (DONE, recovery mode)
+
+Started as RECOVERY MODE: dirty tree with a single untracked WIP test file,
+`tests/test_broker_snapshot_not_null_contract.py`. No production change was
+pending -- this cycle's whole job was to decide whether the WIP was worth
+committing, and it was, so it was validated and committed.
+
+The open candidate it closes: AGENT_STATE.md records a DELIBERATE decision that
+`AlpacaPaperWorker._save_broker_snapshot` RAISES (`invalid_broker_buying_power`)
+rather than writing NULL when the broker omits `buying_power`, precisely BECAUSE
+`broker_portfolio_snapshots.buying_power` is NOT NULL. That decision was
+previously only backed by a GREP plus prose, so the two sides of the contract
+(model code and schema) could drift apart silently, in two directions:
+relaxing the column and swapping `_decimal` for `_optional_decimal` would
+re-introduce the exact `dict.get(key, 0)` fail-open class this worker's numerics
+already got wrong once; keeping the raise but relaxing the column would make the
+documented decision no longer describe the schema. Neither raises at the time it
+lands.
+
+The test pins all four sides: the write site must actually fill `buying_power`
+(so the other two cannot pass vacuously), every column the write site fills must
+be NOT NULL in the model metadata, `buying_power` must be NOT NULL in the model
+metadata, the creating migration `db6f20ef0e19` must declare it
+`nullable=False`, and no OTHER migration may touch `broker_portfolio_snapshots`
+at head (a future `op.alter_column` could relax the column without editing the
+file the other test reads). Pure unit tests: a stub engine records the real
+insert without opening a connection, so no Postgres, no broker, no DB mutation,
+no migration run.
+
+Validation: 5 new tests pass; ruff clean on the file; mypy findings are the
+`no-untyped-def` class that AGENT_LESSONS.md:749-757 records as pre-existing
+convention for `tests/` (out of mypy's configured `files` scope) -- not a
+regression. Non-vacuity was PROVEN, not assumed: a memory-only mutation setting
+`c.buying_power.nullable = True` fails the two metadata tests, a temp-dir fake
+later migration fails the "only author of this table" test, and rewriting the
+creating migration's declaration to `nullable=True` fails the migration test
+with its intended message. The write site fills all 8 table columns, so the
+nullable-column check has no blind spot. Sibling run
+`tests/test_worker_broker_numeric_fail_closed.py` stayed green; the 13
+`tests/test_paper_audit.py` errors are the known environmental psycopg
+ConnectionTimeout (see below), not from this WIP.
+
 ## Active blockers
 
 None known at initialization.
@@ -1032,8 +1074,10 @@ The tree was DIRTY at the start of the most recent cycle, so that cycle ran in
 RECOVERY MODE and closed the paper PAGE-mode contract WIP: `PaperPositionsPage`
 / `PaperOrdersPage` / `PaperFillsPage` can now carry `ALPACA_PAPER`, and
 services/api/paper_routes.py threads the portfolio's real `mode` into all
-three. It is committed and validated; the tree is clean again, so the next
-cycle picks a candidate from the list below.
+three. The cycle after it also ran in RECOVERY MODE and committed the
+`buying_power` NOT NULL contract test (no production change pending; the WIP
+was validated and closed). The tree is clean again, so the next cycle picks a
+candidate from the list below.
 
 The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
 production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).
@@ -1068,9 +1112,13 @@ Candidate next tasks (pick one in a clean cycle):
   `requested_at` is already correct by construction; the fields to scrutinize
   are the portfolio-level ones it hardcodes (cash/equity/market_value,
   counts, `reconciled`, `last_reconciled_at`).
-- Verify `broker_portfolio_snapshots.buying_power` NOT NULL assumption still
-  holds at migration head f2c8a51d9b10 before relying on the worker cycle's
-  raise-not-NULL decision. Grep migrations/, no DB access needed.
+- `broker_portfolio_snapshots.buying_power` NOT NULL assumption at migration
+  head f2c8a51d9b10 -- NOW CLOSED. Verified and pinned executably by
+  tests/test_broker_snapshot_not_null_contract.py (see the cycle note above):
+  the creating migration still declares nullable=False, no other migration
+  touches the table at head, and the worker's raise decision is now guarded
+  against drift instead of resting on prose. Do NOT re-verify by grep; a
+  violation now fails a test.
 - `_process_pending_submits` raises `RuntimeError("sell_quantity_unavailable")`
   when computed qty <= 0 -- ALREADY FIXED (skip-the-row with a REJECTED
   write-back, see the cycle note above). Its RECONCILIATION twin had the same
@@ -1106,9 +1154,6 @@ so its `filled_quantity` is populated by the row, not the `Decimal(0)` default
   Before editing, grep the observation contract for its `mode`/`status`
   Literals and compare them against `ck_paper_run_mode`'s two admitted values
   -- a Literal narrower than the CHECK constraint is the tell.
-
-- `broker_portfolio_snapshots.buying_power` NOT NULL assumption at migration
-  head f2c8a51d9b10 (still open, unchanged).
 
 To run tests, use the project venv python (see AGENT_LESSONS.md); the default
 `python` on PATH has no pytest. The ambient shell exports DATABASE_ROLE=runtime

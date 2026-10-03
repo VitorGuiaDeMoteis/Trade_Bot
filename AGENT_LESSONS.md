@@ -939,3 +939,35 @@ every other case, and nothing in the code or the type system says so.
   iterating `.mappings()` directly, so a stub with only the named accessors
   raises `TypeError: '_Mappings' object is not iterable` and masks every
   assertion in the test. Iterate the stub the way production does.
+
+## A grep-verified schema assumption is not a contract; pin it as a test
+
+The worker's `_save_broker_snapshot` deliberately RAISES on a missing broker
+`buying_power` instead of writing NULL, and that is only correct while
+`broker_portfolio_snapshots.buying_power` is NOT NULL. The column was created
+NOT NULL in `db6f20ef0e19` and the "nothing later alters it" half was verified
+by grep and recorded in prose only -- the two sides of a cross-file contract
+(runtime code in services/, schema in infrastructure/docker/migrations/) can
+drift with nothing failing at the time.
+
+- When a decision in AGENT_STATE.md depends on a schema property, convert the
+  prose claim into a test that FAILS when the property is gone. A grep result
+  recorded once is a snapshot, not a guard.
+- Cover BOTH sides of such a contract plus the "nothing else touched it" hole:
+  the model metadata, the creating migration's declaration, and a scan that no
+  other migration in `versions/` references the table (a future
+  `op.alter_column` relaxes the column without editing the creating file).
+- Keep the anti-vacuity test. "Every column the write fills is NOT NULL" passes
+  trivially if the write stops filling them, so pin one known field explicitly
+  (`buying_power`) and, on this repo, remember `_save_broker_snapshot` fills ALL
+  8 columns, so the generic check has no blind spot.
+- Prove non-vacuity by mutation instead of reasoning: flip
+  `c.buying_power.nullable = True` in memory, and for the file-reading tests
+  copy the migration into a temp dir and repoint the module constant. Never edit
+  `infrastructure/docker/migrations/` or any tracked file to test the guard --
+  a stub engine that records `connection.execute` needs no database at all.
+  Worth doing: the memory-only mutation and the temp-dir migration mutation
+  each caught that the corresponding test really does fail.
+- `on_conflict_do_update` compiles the SET clause's `excluded.<col>` references
+  into `statement.compile().params` too, so filter the param names against the
+  table's real columns (`name in <table>.c`) before asserting on them.
