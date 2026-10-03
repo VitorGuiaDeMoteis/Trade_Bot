@@ -1132,6 +1132,52 @@ Candidate next tasks (pick one in a clean cycle):
   whether the raise is reachable per order (then it belongs inside the loop's
   guard) or only for a payload-wide mismatch (then degrading is correct).
 
+## Cycle: recovery mode (worktree was dirty)
+
+`git status` at cycle start showed one untracked file,
+`tests/test_worker_unknown_order_aborts_whole_cycle.py`, with no matching
+production change. So this was a RECOVERY cycle: finish and validate that WIP,
+choose no new task. The file was a pure unit test pinning the OTHER half of the
+blast-radius pair fixed in 8f31343 (`_reconcile_active_orders` isolates a bad
+order per order; `_assert_open_orders_known` at worker.py:240 is deliberately
+NOT wrapped and must abort the whole cycle, since its failure modes are
+account-wide: an unknown live order, a terminal-status divergence, or a
+symbol/side divergence all corrupt sizing for every remaining order, and
+reaching `_save_broker_snapshot` would open `reconciliation_ready`/
+`has_reconciled` on a disproven picture -- a fail-OPEN).
+
+The WIP did not run. Two defects, both in the test, none in production code:
+
+1. `_ScriptedAdapter.get_account` returned `{"status": "ACTIVE"}`. The control
+   tests need a cycle that REACHES `_save_broker_snapshot`, and that writer
+   reads cash/equity/portfolio_value/buying_power unconditionally and fails
+   closed on a missing one -- so 3 tests died on `invalid_broker_cash` and were
+   asserting the writer's failure instead of the assert's blast radius. Stub
+   now returns all four fields.
+2. `test_divergence_does_not_mark_the_picture_reconciled` asserted
+   `has_reconciled is False` directly after the raise. That CONTRADICTS the
+   durable-latch design: `reconcile_once` (worker.py:133-135) clears only the
+   per-cycle bits, and `_enter_degraded` (worker.py:295-301) is what latches
+   `has_reconciled = False`. A raise alone is not a signal -- `_run` decides
+   what to do with it. Rewritten as
+   `test_divergence_leaves_no_verified_picture_after_degrading`, which pins the
+   real two-step path: mid-cycle state is fail-closed but still attributed to
+   the in-progress sentinel, THEN `_enter_degraded` clears the latch and
+   `health_ready()` goes False. The safety reason it now documents is the one
+   from AGENT_LESSONS: without the durable latch the next cycle's
+   "reconciliation_in_progress" sentinel self-heals a runtime failing every
+   cycle.
+
+Validation: 12 passed across the new file and its sibling
+tests/test_worker_reconcile_isolates_bad_order.py; ruff clean. A broader
+`-k "worker or health or reconcil"` selection was ABANDONED at 180s -- those
+tests hit DB fixtures. Pre-existing/environmental, recorded here once rather
+than rediscovered.
+
+Note: `broker_order_quantity_divergence` (above) is now reachable from TWO pure
+unit tests in the new file's family, so its remaining gap is the SELL-side
+divergence, not the whole raise.
+
 NOTE on the candidate below, updated this cycle: the SIMULATOR constructor
 `services/api/paper_queries.py:portfolio` is now FIXED -- it publishes
 `run["mode"]` instead of the contract's `"REPLAY"` default. That closes the

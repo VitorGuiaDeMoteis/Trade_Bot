@@ -971,3 +971,59 @@ drift with nothing failing at the time.
 - `on_conflict_do_update` compiles the SET clause's `excluded.<col>` references
   into `statement.compile().params` too, so filter the param names against the
   table's real columns (`name in <table>.c`) before asserting on them.
+
+## Two blast radii in one loop: read WHICH raise you are wrapping
+
+`_reconcile_active_orders` catches a RuntimeError PER ORDER;
+`_assert_open_orders_known` two steps later is not wrapped and must not be. Same
+cycle, same class of fault, opposite blast radius, on purpose:
+
+- a per-order fault ("this order's numerics cannot be sourced") has a safe
+  local answer -- leave it ACTIVE, fabricate nothing, keep going;
+- the account-wide assert answers "is the broker's whole open-order book known
+  to us?", and every one of its failure modes is account-wide by construction
+  (unknown live order, terminal-status divergence, symbol/side divergence).
+  Scoping any of those to one order leaves the rest verified against a picture
+  already proven wrong, and then the cycle reaches `_save_broker_snapshot` and
+  flips `reconciliation_ready`/`has_reconciled` True -- a fail-OPEN, strictly
+  worse than degrading.
+
+Reusable rules:
+
+- When you add a try/except around a fault, first write down whether the fault
+  is per-item or per-collection. "Catch and continue" is only correct for the
+  first. Wrapping the second deletes the fail-closed guarantee silently,
+  because every assertion still passes on the healthy path.
+- Pin BOTH halves of a deliberate asymmetry. Pinning only the per-order half
+  (here `test_worker_reconcile_isolates_bad_order.py`) leaves the account-wide
+  half unpinned, and the next cycle can read the missing test as permission to
+  wrap it. See tests/test_worker_unknown_order_aborts_whole_cycle.py.
+- A control test ("the verified path still works") is what stops the fail-closed
+  test from passing vacuously. It must reach the real downstream writer, so its
+  stub must satisfy that writer: `_save_broker_snapshot` reads cash, equity,
+  portfolio_value and buying_power unconditionally and raises
+  `invalid_broker_<field>` on a missing one. A stub returning
+  `{"status": "ACTIVE"}` makes the control assert the writer's failure instead
+  of the property under test. Build the stub from what the called code reads,
+  not from what the test cares about.
+
+## A test asserting a flag the design clears ELSEWHERE is a design misunderstanding
+
+The WIP version of that test asserted `has_reconciled is False` immediately
+after `reconcile_once` raised. It failed, and the failure was correct:
+`reconcile_once` clears only the per-cycle bits
+(`reconciliation_ready`/`degraded`/`degraded_reason`), and `_enter_degraded`
+(worker.py:295-301) is the thing that latches `has_reconciled = False`. A raise
+alone is not a signal; `_run` decides what to do with it.
+
+- When a test disagrees with the code, decide which of the two encodes the
+  intent BEFORE editing either. Here the split was deliberate and already
+  recorded in AGENT_LESSONS: the durable latch exists so the next cycle's
+  "reconciliation_in_progress" sentinel -- which `health_ready()` deliberately
+  excuses -- cannot self-heal a runtime that fails every cycle. Removing the
+  latch to satisfy the test would have reintroduced exactly that bug.
+- The fix is to pin the real path, not to relax the assertion: raise, then
+  `_enter_degraded`, then assert the latch and `health_ready()`. That keeps the
+  guarantee AND documents why it is two steps.
+- Half a contract is a trap in either direction. Asserting the mid-cycle state
+  alone would pass under an implementation that never degrades at all.
