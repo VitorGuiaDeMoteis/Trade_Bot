@@ -1348,3 +1348,62 @@ PAPER_REVIEW: no `.agent-runtime/` in this worktree (frozen runtime is a
 separate worktree), so no observation was available this cycle. Nothing in the
 runtime contradicts the committed work; the last recorded findings stand
 (undeployed-fix reported-vs-actual mismatches, documented, not new anomalies).
+
+## Cycle: recovery mode -- session analytics dropped SELLs with no BUY lot
+
+Cycle started with a dirty worktree (RECOVERY MODE, no new task chosen):
+`services/api/analytics.py` (+11) and the untracked
+`tests/test_session_analytics_unmatched_sells.py` (160 lines). No
+temporary/intentional breakage present; the WIP was coherent and needed only
+validation, one lint fix and bookkeeping.
+
+The WIP: `get_session_analytics` runs a per-symbol FIFO match over the run's
+fills to build `closed_trades`/`pnl_realized`. A SELL whose BUY lot is not in
+the same run (position opened in an earlier run, or a sell larger than this
+run's buys) left a nonzero `sell_qty` after the `while` loop, which was then
+discarded: no closed trade, no realized P&L, and no record that anything was
+dropped. Reported session P&L under-stated reality with nothing in the payload
+to explain the gap. The fix accumulates the leftover per symbol and reports it
+as `anomalies.unmatched_sells`, deliberately WITHOUT inventing a cost basis,
+so `pnl_realized` stays derived only from genuinely matched lots.
+
+This is the analytics-side twin of the reconciliation class of defects fixed in
+recent cycles (rows keyed on raw broker strings, two orders claiming one local
+row): the local view cannot see a lot the broker knows about.
+
+Two defects were found in the WIP, both in the test file, none in production:
+1. ruff E501 x2 (102 and 105 > 100) on the stub connection's signature and one
+   `_Result(...)` literal. Wrapped both; ruff clean afterwards.
+2. Non-vacuity was unproven. Proven WITHOUT editing tracked files: a scratch
+   harness loaded `git show HEAD:services/api/analytics.py` as a standalone
+   module and ran both versions through the same stub scenarios --
+   HEAD anomalies keys `['api_reconciliation_errors','dust_positions']`,
+   WORK keys add `unmatched_sells`; sell-without-buy and partial-match report
+   `[{symbol, quantity}]` while the fully-matched control reports `[]`;
+   `git grep -c unmatched_sells HEAD` = 0 matches.
+
+Validation: 6 passed in tests/test_session_analytics_unmatched_sells.py;
+ruff clean on the new test file; ruff/mypy on analytics.py unchanged from HEAD
+(13 ruff errors incl. I001/F401/E501 and 2 mypy var-annotated errors are all
+PRE-EXISTING, reproduced on the HEAD blob in a scratch copy, deliberately left
+alone to keep the diff to this task). tests/test_alpaca_deepseek.py also calls
+`get_session_analytics` but needs Postgres (down) -- known environmental class.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle):
+  health.status=ok, health.database=up, paper.status=ACTIVE, paused=false,
+  degraded=false, reconciled=true, last_reconciled_at=2026-10-03T13:12:19Z,
+  market_data state=market_closed. Open positions: AAPL, SPY, TSLA (all three
+  still micro-sized ~$10 each). orders_count_reported=0 vs actual=13;
+  fills_count_reported=0 vs actual=11. unrealized_pnl=-0.0366820000,
+  equity=99951.28, cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: `health.status` is `ok`, not `degraded`. The execution-
+gate flap noted in 14/41 then 15/25 samples did not reproduce in this sample,
+consistent with the already-committed fix (still undeployed in the frozen
+runtime) plus market_closed timing. The reported-vs-actual mismatches remain
+the documented pre-fix reading of an undeployed runtime, not new anomalies; the
+`_actual` values keep growing (13 orders / 11 fills), which is positive
+evidence the DB side of the run is healthy. No broker/local divergence, no
+duplicate execution, no stale reconciliation, no accounting inconsistency.
+
+Nothing here justifies overriding the backlog.

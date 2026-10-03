@@ -54,6 +54,7 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
 
     fifo_buys = {}
     completed_trades = []
+    unmatched_sells: dict[str, Decimal] = {}
     session_realized_pnl = Decimal("0")
     total_wins = 0
     total_losses = 0
@@ -110,6 +111,14 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
                 buy["fee"] -= chunk_buy_fee
                 if buy["qty"] <= 0:
                     fifo_buys[sym].pop(0)
+
+            # A SELL with no (or not enough) BUY lot in THIS run has no known
+            # cost basis, so its realized P&L cannot be computed without
+            # inventing a price. Record the unmatched quantity per symbol
+            # instead of dropping it, otherwise the shortfall is invisible
+            # and pnl_realized silently under-reports.
+            if sell_qty > 0:
+                unmatched_sells[sym] = unmatched_sells.get(sym, Decimal("0")) + sell_qty
 
     realized_pnl = session_realized_pnl
     total_pnl = realized_pnl + unrealized_pnl
@@ -187,6 +196,10 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
         "closed_trades": completed_trades,
         "anomalies": {
             "api_reconciliation_errors": errors,
-            "dust_positions": dust
+            "dust_positions": dust,
+            "unmatched_sells": [
+                {"symbol": sym, "quantity": str(qty)}
+                for sym, qty in sorted(unmatched_sells.items())
+            ],
         }
     }

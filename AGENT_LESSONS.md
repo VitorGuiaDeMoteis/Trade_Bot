@@ -1173,3 +1173,35 @@ Verified by scratch replay of HEAD vs worktree (no tracked file touched):
 - Keep an uppercase-only CONTROL alongside the new case. Confirmed here that
   `OLD` and `NEW` produce identical maps and identical BUY verdicts for
   `"AAPL"`, so the fix changes behaviour only on the casing it was meant to.
+
+## Report the unmatched remainder; never invent the missing price
+
+A per-run FIFO matcher over fills (`get_session_analytics`) silently DISCARDED
+the `sell_qty` left over when a SELL had no (or not enough) BUY lot in the same
+run. No closed trade, no realized P&L, and no trace of the drop -- reported
+session P&L under-stated reality with nothing in the payload to explain the gap.
+
+The fix records the leftover per symbol as `anomalies.unmatched_sells` and
+deliberately does NOT estimate a cost basis, so `pnl_realized` remains derived
+only from genuinely matched lots. The anomaly is the signal; a fabricated price
+would be a worse bug than the shortfall it hides.
+
+- "The local view cannot see what the broker knows" is a recurring class here,
+  not a one-off: the same root shape produced rows keyed on raw broker symbol
+  casing and two broker orders claiming one local row. When a matcher, join or
+  netting pass is bounded to one run/session, ask what it does with the part of
+  the input it cannot match, and make that an OUTPUT.
+- A droppable remainder is the silent-failure shape to grep for: `while ... and
+  queue`, then a loop variable reused as the cursor and never read again after
+  the loop. The leftover is the whole finding.
+- Never convert an unknown cost basis into a number to make a report tidy. The
+  unmatched quantity is honest data; a guessed entry price is a fabricated fact
+  that later feeds win-rate and profit-factor statistics.
+- Include a CONTROL case (fully matched -> `[]`) next to the new anomaly. It
+  pins against over-reporting, which is how this fix could later be "improved"
+  into noise on every healthy session.
+- Proving a NEW anomaly key is non-vacuous does not require reverting tracked
+  code: load `git show HEAD:<file>` as a standalone module in scratch and run
+  BOTH versions through the same stub scenarios. Printed the HEAD payload key
+  set vs the worktree one (`unmatched_sells` absent at HEAD), plus
+  `git grep -c <symbol> HEAD` returning 0.
