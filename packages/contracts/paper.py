@@ -5,6 +5,15 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+# One source of truth for every payload that names its executor. The paginated
+# pages used to declare `Literal["REPLAY"]` of their own, so a live alpaca_paper
+# run was published as REPLAY by /paper/orders|fills|positions while
+# /paper/portfolio -- built from the same `portfolio()` call -- reported
+# ALPACA_PAPER for the same book. `paper_runs.mode` is CHECK-constrained to
+# exactly these two values, so widening the page Literal accepts the run's real
+# mode instead of hardcoding the default.
+PaperMode = Literal["REPLAY", "ALPACA_PAPER"]
+
 
 class PaperOrder(BaseModel):
     order_id: UUID
@@ -73,7 +82,7 @@ class PaperLink(BaseModel):
 
 class PaperPortfolio(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
-    mode: Literal["REPLAY", "ALPACA_PAPER"] = "REPLAY"
+    mode: PaperMode = "REPLAY"
     currency: Literal["USD"] = "USD"
     run_id: UUID | None = None
     status: str = "EMPTY"
@@ -106,7 +115,7 @@ class PaperPortfolio(BaseModel):
 
 class PaperOrdersPage(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
-    mode: Literal["REPLAY"] = "REPLAY"
+    mode: PaperMode = "REPLAY"
     run_id: UUID | None
     step: int
     items: list[PaperOrder]
@@ -114,7 +123,7 @@ class PaperOrdersPage(BaseModel):
 
 class PaperFillsPage(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
-    mode: Literal["REPLAY"] = "REPLAY"
+    mode: PaperMode = "REPLAY"
     run_id: UUID | None
     step: int
     items: list[PaperFill]
@@ -122,7 +131,7 @@ class PaperFillsPage(BaseModel):
 
 class PaperPositionsPage(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
-    mode: Literal["REPLAY"] = "REPLAY"
+    mode: PaperMode = "REPLAY"
     run_id: UUID | None
     step: int
     items: list[PaperPositionResponse]

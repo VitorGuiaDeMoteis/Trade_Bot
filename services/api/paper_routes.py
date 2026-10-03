@@ -40,7 +40,7 @@ def get_portfolio(request: Request, response: Response) -> PaperPortfolio:
 @router.get("/positions", response_model=PaperPositionsPage)
 def get_positions(request: Request, response: Response) -> PaperPositionsPage:
     p = read_portfolio(request, response)
-    return PaperPositionsPage(run_id=p.run_id, step=p.step, items=p.positions)
+    return PaperPositionsPage(mode=p.mode, run_id=p.run_id, step=p.step, items=p.positions)
 
 
 @router.get("/orders", response_model=PaperOrdersPage)
@@ -48,7 +48,7 @@ def get_orders(
     request: Request, response: Response, limit: Annotated[int, Query(ge=1, le=200)] = 50
 ) -> PaperOrdersPage:
     p = read_portfolio(request, response, limit)
-    return PaperOrdersPage(run_id=p.run_id, step=p.step, items=p.orders)
+    return PaperOrdersPage(mode=p.mode, run_id=p.run_id, step=p.step, items=p.orders)
 
 
 @router.get("/fills", response_model=PaperFillsPage)
@@ -56,7 +56,7 @@ def get_fills(
     request: Request, response: Response, limit: Annotated[int, Query(ge=1, le=200)] = 50
 ) -> PaperFillsPage:
     p = read_portfolio(request, response, limit)
-    return PaperFillsPage(run_id=p.run_id, step=p.step, items=p.fills)
+    return PaperFillsPage(mode=p.mode, run_id=p.run_id, step=p.step, items=p.fills)
 
 
 def require_local_stop(request: Request) -> None:

@@ -39,6 +39,36 @@ Reusable rules:
   reachable. Rewrite them to pin the stronger invariant (the two components
   agree) rather than deleting them, and say in the commit/state why.
 
+## Contract Literals must be no narrower than the DB CHECK constraint
+
+When a pydantic `Literal` enumerates a value that a DB CHECK constraint also
+enumerates, the two lists must match. A `Literal` narrower than the constraint
+cannot be filled from a valid row: the API layer either silently publishes the
+wrong default or raises `ValidationError` on legal data, and both look like
+application bugs. Here `mode` was `Literal["REPLAY"]` in the page contracts
+while `ck_paper_run_mode` admits `('REPLAY','ALPACA_PAPER')` — so the deployed
+mode was unrepresentable. When you touch a `Literal`, read the migration's
+CHECK constraint in the same breath; if you cannot find the constraint, the
+Literal is a guess.
+
+Corollary: a field with a hardcoded default in a contract is a silent
+lie-generator. Any endpoint serving a live run must pass the real value
+explicitly, and a test must assert the non-default value — asserting the
+default proves nothing.
+
+## Test fixtures must match the shape of the thing they stub (recurring)
+
+Third occurrence of one class. A stub that is subtly unlike the real object
+makes its own test unfalsifiable or wrongly red, and you cannot tell a fixture
+bug from a product bug without reading the contract. Three variants hit in a
+row: a stub lacking `__iter__` where production iterates; a fixture omitting a
+required field with no default so pydantic rejects it before any assertion
+runs; a stub minting a FRESH object per call so per-call state (a `run_id`)
+disagreed with the assertion's own reference. Rule: when a WIP test is red,
+read the contract's field list and the stub's construction before touching
+production code — a red test is not evidence about production. Build the stub's
+object ONCE, outside the fake, and serve that single instance.
+
 ## Repository
 
 - Agent branch: agent/autonomous-dev

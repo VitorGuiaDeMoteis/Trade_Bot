@@ -953,6 +953,58 @@ ZERO occurrences of `mode`, so the observation builder never populates it. Same
 constructor-vs-contract-field class as this cycle's fix, one file over. See the
 next-task note.
 
+### Cycle: paper PAGE contracts could not name the live mode (FIXED, recovery mode)
+
+Started as RECOVERY MODE: dirty tree carrying a production fix plus an untracked
+WIP test (`tests/test_paper_page_mode.py`) for the paper PAGE contracts.
+
+The defect: `PaperPositionsPage` / `PaperOrdersPage` / `PaperFillsPage` in
+packages/contracts/paper.py declared `mode: Literal["REPLAY"]`, and
+services/api/paper_routes.py built all three WITHOUT passing `mode`. The
+contract default therefore published `"REPLAY"` for every page, and the
+`Literal` could not even express `"ALPACA_PAPER"` -- which is what this
+deployment runs. Same money, same run, three endpoints all claiming REPLAY
+while the sibling portfolio route (fixed in the previous cycle) published the
+run's real mode.
+
+Fix: widen the Literal to `Literal["REPLAY", "ALPACA_PAPER"]` -- the exact
+uppercase pair the `ck_paper_run_mode` CHECK constraint admits, so the contract
+can no longer reject a mode the database permits -- and thread
+`book.mode` from the already-read `PaperPortfolio` into each of the three page
+constructors. Read-only mapping change: no schema change, no broker call, no
+trading behavior.
+
+Recovery work on the WIP (two fixture defects, NOT production defects):
+- `PaperOrder.status` is a required contract field with NO default
+  (packages/contracts/paper.py), and the `_order` fixture omitted it, so
+  pydantic rejected every row before a single assertion ran. Added
+  `status="FILLED"`.
+- The stub built a FRESH `PaperPortfolio` on every `read_portfolio` call, each
+  with a new `run_id`. The three route calls therefore served three different
+  books, and the regression test comparing `page.run_id` to its own book could
+  not pass for any implementation. The stub now builds ONE book at install
+  time and serves it to every call. This is the same class of fixture bug
+  recorded twice already this session (a stub that does not match the shape of
+  the thing it stubs) -- third instance, and the one that actually masked the
+  fix.
+
+Validation: 3 new-file tests + 53 sibling tests (broker-portfolio-counts,
+paper-stop, health) = 56 passed; ruff clean on all three touched files; mypy
+clean on packages/contracts/paper.py and services/api/paper_routes.py. No
+tracked production file was left temporarily broken: the WIP production fix
+was already correct as found and was kept as-is.
+
+PAPER_REVIEW: status ACTIVE, paused=false, degraded=false, reconciled=true,
+health.status=ok (UP from the degraded flap last cycle), observed_at
+2026-10-03T03:48:17Z, open positions AAPL / SPY / TSLA (TSLA avg 371.958 vs
+370.590, market_value 9.953258, unrealized -0.036742), orders reported 0 vs
+actual 13, fills reported 0 vs actual 11, equity 99951.30.
+
+The reported-count mismatch and the per-order null `last_reconciled_at` are the
+KNOWN-UNDEPLOYED anomaly set (fixes committed on this branch, frozen runtime
+not rebuilt) -- do not re-investigate. `health.status` moving degraded -> ok on
+its own is NOT a new finding.
+
 ## Active blockers
 
 None known at initialization.
@@ -977,10 +1029,11 @@ Confirm any suspicious failure is DB/network at setup BEFORE blaming code.
 ## Next task
 
 The tree was DIRTY at the start of the most recent cycle, so that cycle ran in
-RECOVERY MODE and closed the `_reconcile_active_orders` per-order isolation WIP
-(reconciling one malformed order no longer degrades the whole worker). It is now
-committed and validated; the tree is clean again, so the next cycle picks a
-candidate from the list below.
+RECOVERY MODE and closed the paper PAGE-mode contract WIP: `PaperPositionsPage`
+/ `PaperOrdersPage` / `PaperFillsPage` can now carry `ALPACA_PAPER`, and
+services/api/paper_routes.py threads the portfolio's real `mode` into all
+three. It is committed and validated; the tree is clean again, so the next
+cycle picks a candidate from the list below.
 
 The `dict.get(key, 0)` broker-numeric audit is COMPLETE across all three
 production layers (guard d55774e/6747abe, worker cc0acf5, executor this cycle).
@@ -1046,6 +1099,13 @@ so its `filled_quantity` is populated by the row, not the `Decimal(0)` default
   check whether it has a `mode` field that is never assigned, or whether the
   consumer (mission-control.html / the observation JSON schema) expects one.
   Same class as the last two cycles' `last_reconciled_at` null.
+  TOP CANDIDATE: the last TWO cycles both found the same constructor-vs-field
+  defect on the portfolio/page contracts, and this is the third and last
+  constructor in that family. A `Literal` in the observation payload that
+  admits only `REPLAY` would be the exact shape of the bug just fixed.
+  Before editing, grep the observation contract for its `mode`/`status`
+  Literals and compare them against `ck_paper_run_mode`'s two admitted values
+  -- a Literal narrower than the CHECK constraint is the tell.
 
 - `broker_portfolio_snapshots.buying_power` NOT NULL assumption at migration
   head f2c8a51d9b10 (still open, unchanged).
