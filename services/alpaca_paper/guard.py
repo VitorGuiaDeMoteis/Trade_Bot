@@ -49,6 +49,17 @@ class ExecutionGuard:
                 # Unattributable row: `evaluate` rejects the payload before
                 # reaching here, so netting it is defensive only.
                 continue
+            # Key on the NORMALISED symbol, matching `PaperAlpacaWorker`, which
+            # upper-cases the broker symbol in BOTH `_validate_positions` and
+            # `_save_broker_snapshot`. Keying on the raw string let the broker's
+            # casing decide whether a held position was found: a row reported as
+            # "aapl" netted under "aapl" while `evaluate` looks up "AAPL", so
+            # `current_pos` came back None and the BUY pyramiding check (which
+            # is skipped when there is no position) never fired -- a second BUY
+            # on an already-held symbol. Two components holding two different
+            # definitions of the SAME position is exactly what netting was
+            # introduced to prevent.
+            symbol = symbol.upper()
             entry = netted.setdefault(
                 symbol,
                 {

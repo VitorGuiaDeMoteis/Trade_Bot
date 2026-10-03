@@ -1132,3 +1132,44 @@ alone is not a signal; `_run` decides what to do with it.
   guarantee AND documents why it is two steps.
 - Half a contract is a trap in either direction. Asserting the mid-cycle state
   alone would pass under an implementation that never degrades at all.
+
+## Normalise the JOIN KEY at the boundary, not at the lookup that misses
+
+`ExecutionGuard._net_positions` keyed its map on the RAW broker symbol string
+while `evaluate` looked the position up under the DECISION's symbol. When the
+broker's casing disagreed (`"aapl"` vs `"AAPL"`), `current_pos` came back
+`None` and every rule derived from it silently stopped applying. One
+`symbol = symbol.upper()` in the netting loop closed it.
+
+The failure was silent in BOTH directions at once, which is what makes it worth
+recording:
+
+- BUY: the pyramiding check is guarded by `if current_pos and current_qty > 0`,
+  so an ABSENT position skips the check instead of tripping it. The guard
+  approved a second BUY on a symbol already held -- it failed OPEN on the one
+  rule written to prevent exactly that.
+- SELL: the same None hit `if not current_pos` and refused to close a position
+  the broker actually held, with a message blaming a short.
+
+Verified by scratch replay of HEAD vs worktree (no tracked file touched):
+`BUY OLD: (True, None)` vs `NEW: (False, 'Máximo 1 posição...')`; `SELL OLD:
+(False, '...vendida a descoberto (SHORT)...')` vs `NEW: (True, None)`.
+
+- Normalise where the map is BUILT, not where it is read. Fixing only the
+  `net_positions.get(symbol)` call would have left the exposure sum iterating
+  mixed-case keys and the map still holding two definitions of one position.
+- `if current_pos and ...` is a fail-OPEN guard shape. A missing entry and a
+  zero position mean different things, and only one of them is safe; a
+  membership lookup that can silently miss will pick the unsafe one. Prefer
+  asserting membership explicitly where absence must block.
+- "The broker always sends uppercase" is an assumption about a THIRD PARTY.
+  The same file already normalised symbols two lines away, so the invariant
+  existed in the codebase and only the netting loop ignored it. When two
+  components normalise the same broker field, grep for the third that does not.
+- Pin mixed-case legs as their OWN test (`_net_positions` collapsing `"AAPL"` +
+  `"aapl"` into one entry), not only the end-to-end verdict. The end-to-end test
+  passes even if netting splits them as long as the lookup happens to hit one;
+  only the map-level test proves the position has a single definition.
+- Keep an uppercase-only CONTROL alongside the new case. Confirmed here that
+  `OLD` and `NEW` produce identical maps and identical BUY verdicts for
+  `"AAPL"`, so the fix changes behaviour only on the casing it was meant to.

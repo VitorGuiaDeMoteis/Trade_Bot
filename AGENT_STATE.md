@@ -1301,3 +1301,50 @@ expanded too far, a full-suite pytest baseline consumed excessive time, and
 temporary experimental code was left in the worktree. It was discarded back to a
 clean commit. The cycle size rules in AGENT_MISSION.md exist because of this.
 The suspected daily-equity baseline issue it raised is now RESOLVED above.
+
+## Cycle: recovery mode -- guard netting keyed on raw broker symbol casing
+
+Cycle started with a dirty worktree (RECOVERY MODE, no new task chosen):
+`services/alpaca_paper/guard.py` (+11) and `tests/test_alpaca_guard.py` (+61).
+
+The WIP was coherent and complete. `ExecutionGuard._net_positions` keyed its map
+on the RAW broker symbol while `evaluate` looks the position up under the
+DECISION's symbol (`net_positions.get(symbol)`, guard.py:136). `PaperAlpacaWorker`
+already upper-cases in BOTH `_validate_positions` (worker.py:218) and
+`_save_broker_snapshot` (worker.py:542), and `_assert_open_orders_known`
+compares with `.upper()` (worker.py:289) -- the guard was the only component
+holding a raw broker string.
+
+Silent in BOTH directions when the broker's casing disagreed:
+
+- BUY: pyramiding is guarded by `if current_pos and current_qty > 0`, so a
+  missed lookup SKIPS the check. The guard approved a second BUY on a symbol
+  already held -- failing OPEN on the rule meant to prevent exactly that.
+- SELL: the same None hit `if not current_pos` and refused to close a real
+  held position, reporting "vendida a descoberto (SHORT)".
+
+Fix (1 production line): normalise in the netting loop, `symbol = symbol.upper()`
+(guard.py:62), so the map is built with one definition per position. Fixing the
+lookup instead would have left the exposure sum iterating mixed-case keys.
+
+Non-vacuity proven by scratch replay of HEAD vs worktree source (no tracked
+file modified, mission-compliant):
+  BUY  OLD: (True, None)   NEW: (False, 'Máximo 1 posição aberta por símbolo (no pyramiding)')
+  SELL OLD: (False, 'Operação vendida a descoberto (SHORT) proibida na V1 (qty indisponível)')
+       NEW: (True, None)
+  mixed-case legs OLD keys ['AAPL','aapl'] qty 1/2 -> NEW keys ['AAPL'] qty 3 mv 30
+  control, distinct symbols: NEW keys ['AAPL','SPY'] (no over-merge)
+  control, uppercase-only: OLD and NEW maps and BUY verdicts identical
+
+Validation: 35 passed across the five guard/decision test files; ruff clean on
+`services/alpaca_paper/guard.py`; mypy clean on it. The 2 failures in
+tests/test_alpaca_paper_incident.py are the known psycopg ConnectionTimeout
+(Postgres down) -- the documented environmental class, not this WIP. The ruff
+I001 on tests/test_alpaca_guard.py:1 is PRE-EXISTING at HEAD (reproduced on
+`git show HEAD:tests/test_alpaca_guard.py`) and was deliberately left alone to
+keep the diff to this task.
+
+PAPER_REVIEW: no `.agent-runtime/` in this worktree (frozen runtime is a
+separate worktree), so no observation was available this cycle. Nothing in the
+runtime contradicts the committed work; the last recorded findings stand
+(undeployed-fix reported-vs-actual mismatches, documented, not new anomalies).

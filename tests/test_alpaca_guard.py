@@ -106,3 +106,62 @@ def test_dust_residual():
         last_equity=Decimal("1000")
     )
     assert approved
+
+def test_lowercase_broker_symbol_still_blocks_pyramiding():
+    """A position held under the broker's own casing must still block a 2nd BUY.
+
+    `_net_positions` keys its map on the symbol string it is handed, while
+    `evaluate` looks the position up under the decision's symbol. When those
+    two disagreed on casing ("aapl" vs "AAPL") the netting key never matched,
+    `current_pos` came back None, and BOTH position-derived rules silently
+    stopped applying: the pyramiding check is guarded by `if current_pos and
+    current_qty > 0`, so a held position bought a SECOND time, and the
+    exposure sum never counted the position being opened on top of.
+    `PaperAlpacaWorker` already upper-cases in `_validate_positions` and
+    `_save_broker_snapshot`, so the guard was the odd component out.
+    """
+    approved, reason = ExecutionGuard.evaluate(
+        side="BUY",
+        symbol="AAPL",
+        positions=[{"symbol": "aapl", "quantity": "1", "market_value": "10"}],
+        snapshot={"equity": "1000"},
+        last_equity=Decimal("1000")
+    )
+    assert not approved
+    assert "Máximo 1 posição" in reason
+
+def test_lowercase_broker_symbol_still_closes_an_open_position():
+    """The same mismatch must not make a real position look absent to a SELL.
+
+    This is the fail-closed direction of the same bug: with `current_pos`
+    None, the SELL branch reported "qty indisponivel" and refused to close a
+    position the broker actually held. The bot would leave the position open
+    forever and could not stop adding exposure to the symbol.
+    """
+    approved, reason = ExecutionGuard.evaluate(
+        side="SELL",
+        symbol="AAPL",
+        positions=[{"symbol": "aapl", "quantity": "1", "market_value": "10"}],
+        snapshot={"equity": "1000"},
+        last_equity=Decimal("1000")
+    )
+    assert approved
+
+def test_net_positions_collapses_mixed_case_legs_of_one_symbol():
+    """Two rows for one symbol differing only in case are ONE position.
+
+    Before normalisation these netted as two entries, and the exposure sum
+    added each leg separately while the pyramiding rule looked at a key that
+    matched neither request symbol.
+    """
+    netted = ExecutionGuard._net_positions(
+        [
+            {"symbol": "AAPL", "quantity": "1", "market_value": "10"},
+            {"symbol": "aapl", "quantity": "2", "market_value": "20"},
+        ]
+    )
+    assert list(netted) == ["AAPL"]
+    assert netted["AAPL"]["qty"] == Decimal("3")
+    assert netted["AAPL"]["market_value"] == Decimal("30")
+    assert netted["AAPL"]["qty_known"]
+    assert netted["AAPL"]["market_value_known"]
