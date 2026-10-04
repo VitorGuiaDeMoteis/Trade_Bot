@@ -456,6 +456,42 @@ def test_orders_window_has_a_stable_tiebreaker() -> None:
     assert "paper_orders.symbol, paper_orders.order_id" in order_by
 
 
+def _fills_order_by(conn: _StubConnection) -> str:
+    """The ORDER BY of the SELECT that feeds `portfolio.fills`.
+
+    The totals use COUNT, so the only `broker_fills` SELECT with an ORDER BY is
+    the one that materialises the list.
+    """
+    statement = next(s for s in conn.statements if "broker_fills" in s and "ORDER BY" in s)
+    return statement.split("ORDER BY", 1)[1].strip()
+
+
+def test_fills_window_has_a_stable_tiebreaker() -> None:
+    """LIMIT 100 needs a total order, or the window itself can shuffle.
+
+    `broker_fills.filled_at` is NOT unique, so ordering by it alone leaves the
+    contents of the LIMIT window undefined: two identical queries can return
+    different rows at the boundary, dropping an execution from the reported
+    fills while `fills_count` still counts it. broker_fill_id is the PRIMARY
+    KEY, so it completes the order.
+    """
+    order = _order_row()
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order["run_id"]},
+        positions=[],
+        orders=[order],
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    _call(conn)
+
+    order_by = _fills_order_by(conn)
+    assert order_by.startswith("broker_fills.filled_at DESC")
+    assert "broker_fills.broker_fill_id" in order_by
+
+
 def test_order_status_is_the_mapped_local_value_not_an_uppercased_broker_string() -> None:
     """`status` must come from paper_orders, never be re-derived from broker text.
 

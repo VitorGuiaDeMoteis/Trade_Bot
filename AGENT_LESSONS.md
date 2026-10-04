@@ -1529,3 +1529,30 @@ Reusable rules:
   gate must be able to print the verdict unconditionally.
 - Test the classifier with an injected `git` callable. No repository, runtime or
   database is needed, so the whole parity contract is testable in milliseconds.
+
+2026-10-04 (RECOVERY cycle)
+- A deterministic id is not evidence of a repeated event. `order_id` is
+  `uuid5(run_id, str(decision_id))` by design, so seeing one order_id on many
+  lines of observation history proves only that the id is reproducible -- the
+  thing that proves repetition is a stable COUNT (`orders_count_actual`), and it
+  stayed at 13. Check the count before reading recurring ids as duplicate work.
+- "Recurring record with a changing field" is a read-path smell, not an insert bug.
+  `requested_at` is written once at insert and never updated on conflict, so a
+  stable order_id carrying a fresh timestamp cannot come from a second
+  submission. Suspect the join/serialization side instead of the writer; rewriting
+  `requested_at` to make the symptom disappear would destroy the real submission
+  time, and weakening the uuid5 derivation would destroy idempotency.
+- Confirm the ordering/tiebreaker question against the SCHEMA, not against taste:
+  the fill-window fix was justified only after checking that `filled_at` is
+  non-unique while `broker_fill_id` is the `broker_fills` primary key
+  (services/api/models.py:268), and the sibling REPLAY query already used that
+  same tiebreaker. One query settled what would otherwise have been a guess.
+- Respect the turn budget even when the lead is interesting. Root cause of the
+  new anomaly was NOT established before the budget ran low; the correct move was
+  to commit the already-validated WIP and hand the open question over in
+  AGENT_STATE.md rather than start a second investigation inside a cycle scoped
+  to one small task. A clean tree with an honest open question beats a dirty tree
+  with a half-proven theory.
+- `python -c` is BLOCKED in this session (exit -1). Read JSON artifacts directly
+  with read_file instead of scripting extraction -- do not burn calls retrying a
+  blocked interpreter path.

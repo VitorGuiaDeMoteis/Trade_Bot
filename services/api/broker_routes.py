@@ -186,8 +186,22 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                 )
             )
 
+        # Ordered by fill time, with broker_fill_id as the tiebreaker: the
+        # window is LIMIT 100 and `filled_at` is NOT unique (a single order can
+        # fill across several executions, and one cycle can record several fills
+        # sharing a timestamp). Sorting on a non-unique key alone leaves the set
+        # of rows inside the window undefined, so two identical queries can drop
+        # different rows at the boundary and an execution can vanish from the
+        # reported fills while fills_count still counts it. The tiebreaker makes
+        # the window a TOTAL order and therefore reproducible. It is safe to add:
+        # broker_fill_id is the PRIMARY KEY (NOT NULL, unique), matching the
+        # orders window above and the REPLAY constructor (paper_queries.py).
         b_fills = (
-            conn.execute(select(broker_fills).order_by(broker_fills.c.filled_at.desc()).limit(100))
+            conn.execute(
+                select(broker_fills)
+                .order_by(broker_fills.c.filled_at.desc(), broker_fills.c.broker_fill_id)
+                .limit(100)
+            )
             .mappings()
             .all()
         )

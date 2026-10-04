@@ -2096,3 +2096,80 @@ REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:1
 is the route that joins it. Determine which payload the frozen observation actually
 reads BEFORE changing anything, and do not add a column/migration without
 justification.
+
+================================================================================
+CYCLE 2026-10-04 (RECOVERY MODE)
+================================================================================
+Worktree was DIRTY at cycle start, so RECOVERY MODE applied and NO new task was
+chosen. Existing WIP was coherent and was finished, validated and committed as-is.
+
+TASK (carried over from the interrupted cycle): make broker fill-window selection
+deterministic when two fills share a `filled_at`, by ordering on the unique
+`broker_fill_id` as the tiebreaker. The WIP diff was already written; this cycle
+confirmed the premise, validated it, and recorded findings.
+
+PREMISE CONFIRMED (why the fix is correct, not merely tidy):
+- `broker_fill_id` is the PRIMARY KEY of `broker_fills` (services/api/models.py:268).
+- `filled_at` is NOT unique, so ordering by it alone leaves window contents
+  non-deterministic when two fills share a timestamp.
+- The sibling REPLAY fill query already used exactly this tiebreaker
+  (`filled_at DESC, fill_id`), which is what makes broker_routes.py the one
+  inconsistent site rather than an arbitrary choice.
+
+CHANGES: none authored this cycle beyond the pre-existing WIP --
+- services/api/broker_routes.py: fill-window ordering tiebreaker.
+- tests/test_broker_portfolio_counts.py: regression coverage for it.
+No production file was left temporarily broken at any point.
+
+VALIDATION (re-run this cycle, all green):
+- `pytest tests/test_broker_portfolio_counts.py -q` -> 29 passed in 0.41s.
+- `pytest tests/test_broker_portfolio_counts.py tests/test_broker_routes.py
+   tests/test_paper_portfolio_reconciled.py tests/test_paper_portfolio_mode.py -q`
+  -> 40 passed.
+- `ruff check` on both changed files -> All checks passed.
+- `mypy services/api/broker_routes.py` -> Success.
+No full suite was run (correct for a small cycle).
+
+NEW FINDING THIS CYCLE -- deterministic order_id vs moving requested_at
+(root cause NOT established; recorded, deliberately not "fixed"):
+
+In `.agent-runtime/paper-observations.jsonl`, order_id
+`7ee2294c-8d5a-5e0e-beda-e246a78e4cec` (newest AAPL SELL) occurs on 664 lines.
+Across the last four observations the SAME order_id, broker_order_id and
+idempotency_key repeat, while `requested_at` advances by ~60s per cycle.
+
+That combination contradicts the write path and must NOT be read as duplicate
+execution:
+- services/alpaca_paper/worker.py:507 builds
+  `order_id = uuid5(run_id, str(risk.decision_id))` -- DETERMINISTIC, so the same
+  (run_id, decision_id) always yields the same id across cycles by design.
+- worker.py:517 sets `requested_at=datetime.now(UTC)` at submission.
+- services/alpaca_paper/executor.py:139 inserts `requested_at` on first insert and
+  does NOT update it on conflict; a repeat insert is rejected as a duplicate
+  rather than rewriting the timestamp.
+- `orders_count_actual` has stayed 13 across every sample, and the prior cycle's
+  review already reads "total still 13, so no duplicate execution". There is NO
+  evidence of 664 executions.
+
+So a stable order_id carrying a moving requested_at is a READ-path or aggregation
+artifact (a join/fan-out, or an observation writer re-emitting the row with a
+recomputed timestamp), not a second submission. The open question is which side
+moves the timestamp -- the observation writer, or the portfolio query that builds
+`latest_orders`. Do not "fix" this by touching `requested_at`, by changing the
+uuid5 derivation, or by deduplicating the observation file: each would destroy the
+real submission time or the idempotency guarantee the order_id exists to provide.
+
+Next candidate task (NEW, first in line -- supersedes the null
+`last_reconciled_at` hunt, which is unchanged but now second):
+Locate which code path emits a recurring order_id with a moving requested_at.
+Concrete first step: grep the observation writer for where
+`latest_orders[*].requested_at` is serialized, and check whether the portfolio
+query fans one paper_orders row out across broker_orders/reconciliation rows.
+Confirm it is a read artifact BEFORE touching anything.
+
+Second candidate task (carried forward, still open, now ELEVEN samples):
+`latest_orders[*].last_reconciled_at` is still null in every Paper sample while the
+portfolio-level field is populated. Prior analysis stands: `paper_orders` has no
+`last_reconciled_at` column (only `broker_orders` does, models.py:262), so
+determine which payload the frozen observation reads before changing anything, and
+do not add a column or migration without justification.
