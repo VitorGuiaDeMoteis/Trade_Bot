@@ -1,20 +1,18 @@
-import pytest
-import asyncio
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
-from datetime import datetime, UTC, timedelta
+
+import pytest
 from sqlalchemy import text
+from test_market_integration import market as market
 
 from packages.domain.risk import RiskDecision
-from services.alpaca_paper.adapter import AlpacaPaperAdapter
+from services.alpaca_paper.adapter import AlpacaPaperAdapter, AlpacaPaperError
 from services.alpaca_paper.executor import AlpacaPaperExecutor
 from services.alpaca_paper.guard import ExecutionGuard
 from services.alpaca_paper.worker import AlpacaPaperWorker
-from services.alpaca_paper.adapter import AlpacaPaperError
-from services.api.database import create_database_engine
-from services.api.config import Settings
 from services.api.analytics import get_session_analytics
-from test_market_integration import market as market
+
 
 @pytest.fixture
 def test_engine(market):
@@ -115,7 +113,13 @@ async def test_worker_calls_execution_guard(test_engine):
     run_id, candle_id, signal_id, dec_id = uuid4(), uuid4(), uuid4(), uuid4()
     
     with test_engine.begin() as conn:
-        from services.api.models import system_controls, paper_runs, candles, signals, risk_decisions
+        from services.api.models import (
+            candles,
+            paper_runs,
+            risk_decisions,
+            signals,
+            system_controls,
+        )
         conn.execute(paper_runs.insert().values(run_id=run_id, created_at=datetime.now(UTC), mode='REPLAY', provider='alpaca', status='RUNNING', initial_cash=1000, cash=1000, step=1, fee_bps=0, fees=0, realized_pnl=0, slippage_bps=0, dataset=[], dataset_hash=''))
         conn.execute(system_controls.insert().values(control_id=1, paused=False, active_run_id=run_id, updated_at=datetime.now(UTC)))
         conn.execute(candles.insert().values(candle_id=candle_id, stream_id=uuid4(), sequence=1, symbol='AAPL', timeframe='1h', provider='alpaca', open_time=datetime(2026, 1, 1, tzinfo=UTC), close_time=datetime(2026, 1, 1, 1, tzinfo=UTC), open=1, high=2, low=1, close=2, volume=10, is_closed=True))
@@ -237,7 +241,13 @@ async def test_worker_sell_uses_exact_quantity_and_no_notional(test_engine):
     run_id, candle_id, signal_id, dec_id = uuid4(), uuid4(), uuid4(), uuid4()
     
     with test_engine.begin() as conn:
-        from services.api.models import system_controls, paper_runs, candles, signals, risk_decisions
+        from services.api.models import (
+            candles,
+            paper_runs,
+            risk_decisions,
+            signals,
+            system_controls,
+        )
         conn.execute(paper_runs.insert().values(run_id=run_id, created_at=datetime.now(UTC), mode='REPLAY', provider='alpaca', status='RUNNING', initial_cash=1000, cash=1000, step=1, fee_bps=0, fees=0, realized_pnl=0, slippage_bps=0, dataset=[], dataset_hash=''))
         conn.execute(system_controls.insert().values(control_id=1, paused=False, active_run_id=run_id, updated_at=datetime.now(UTC)))
         conn.execute(candles.insert().values(candle_id=candle_id, stream_id=uuid4(), sequence=1, symbol='TSLA', timeframe='1h', provider='alpaca', open_time=datetime(2026, 1, 1, tzinfo=UTC), close_time=datetime(2026, 1, 1, 1, tzinfo=UTC), open=1, high=2, low=1, close=2, volume=10, is_closed=True))
@@ -295,7 +305,13 @@ async def test_worker_inflight_prevents_pyramiding(test_engine):
     run_id, candle_id, sig1, sig2, dec1, dec2 = uuid4(), uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     
     with test_engine.begin() as conn:
-        from services.api.models import system_controls, paper_runs, candles, signals, risk_decisions
+        from services.api.models import (
+            candles,
+            paper_runs,
+            risk_decisions,
+            signals,
+            system_controls,
+        )
         conn.execute(paper_runs.insert().values(run_id=run_id, created_at=datetime.now(UTC), mode='REPLAY', provider='alpaca', status='RUNNING', initial_cash=1000, cash=1000, step=1, fee_bps=0, fees=0, realized_pnl=0, slippage_bps=0, dataset=[], dataset_hash=''))
         conn.execute(system_controls.insert().values(control_id=1, paused=False, active_run_id=run_id, updated_at=datetime.now(UTC)))
         conn.execute(candles.insert().values(candle_id=candle_id, stream_id=uuid4(), sequence=1, symbol='SPY', timeframe='1h', provider='alpaca', open_time=datetime(2026, 1, 1, tzinfo=UTC), close_time=datetime(2026, 1, 1, 1, tzinfo=UTC), open=1, high=2, low=1, close=2, volume=10, is_closed=True))
@@ -321,7 +337,6 @@ async def test_worker_inflight_prevents_pyramiding(test_engine):
             positions=[],
         )
         with test_engine.begin() as conn:
-            from services.api.models import paper_orders
             # Only 1 order should be in paper_orders
             count = len(conn.execute(text("SELECT * FROM paper_orders")).mappings().all())
             assert count == 1
@@ -360,7 +375,13 @@ async def test_worker_inflight_double_sell(test_engine):
     run_id, candle_id, sig1, sig2, dec1, dec2 = uuid4(), uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     
     with test_engine.begin() as conn:
-        from services.api.models import system_controls, paper_runs, candles, signals, risk_decisions
+        from services.api.models import (
+            candles,
+            paper_runs,
+            risk_decisions,
+            signals,
+            system_controls,
+        )
         conn.execute(paper_runs.insert().values(run_id=run_id, created_at=datetime.now(UTC), mode='REPLAY', provider='alpaca', status='RUNNING', initial_cash=1000, cash=1000, step=1, fee_bps=0, fees=0, realized_pnl=0, slippage_bps=0, dataset=[], dataset_hash=''))
         conn.execute(system_controls.insert().values(control_id=1, paused=False, active_run_id=run_id, updated_at=datetime.now(UTC)))
         conn.execute(candles.insert().values(candle_id=candle_id, stream_id=uuid4(), sequence=1, symbol='AAPL', timeframe='1h', provider='alpaca', open_time=datetime(2026, 1, 1, tzinfo=UTC), close_time=datetime(2026, 1, 1, 1, tzinfo=UTC), open=1, high=2, low=1, close=2, volume=10, is_closed=True))
@@ -387,7 +408,6 @@ async def test_worker_inflight_double_sell(test_engine):
             ],
         )
         with test_engine.begin() as conn:
-            from services.api.models import paper_orders
             count = len(conn.execute(text("SELECT * FROM paper_orders")).mappings().all())
             assert count == 1
             
@@ -432,7 +452,12 @@ async def test_submit_timeout_path_reconciles_by_client_order_id(test_engine):
                 "filled_avg_price": "0",
             }
 
-    from services.api.models import broker_orders, candles, paper_orders, paper_runs, risk_decisions, signals
+    from services.api.models import (
+        candles,
+        paper_runs,
+        risk_decisions,
+        signals,
+    )
 
     run_id, order_id = uuid4(), uuid4()
     candle_id, signal_id, dec_id = uuid4(), uuid4(), uuid4()

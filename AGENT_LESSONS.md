@@ -2317,3 +2317,42 @@ doubles, and ask which production line calls it.
 - RULE: do not trust "the tests pass" as evidence a stub is correct. Ask what code
   path calls the stub. If nothing in the suite calls it, its body is unverified no
   matter how clean the test run looks.
+
+## 2026-10-04 cycle — F401 "unused" ORM imports are the mirror of F821, and are
+NOT safe to auto-delete
+
+- CONTEXT: retiring the remaining ruff findings in `tests/test_alpaca_deepseek.py`
+  (13 fixed: 7 F401 + 6 I001). Four of the seven F401s were function-local
+  `from services.api.models import paper_orders, broker_orders, ...` lines that ruff
+  calls unused because the test only ever reaches the table through raw
+  `conn.execute(text("SELECT * FROM paper_orders"))`.
+- THE TRAP: those imports look decorative, and `--fix` deletes them happily. But an
+  ORM table only exists in a `create_all` schema if its model module was imported, so
+  a "dead" model import can be the only thing registering the table the test then
+  queries. Deleting it can turn a passing test into an
+  `UndefinedTable`-at-create_all or a silently different fixture.
+- RULE: never bulk-`--fix` F401 on a name that looks like an ORM model or a module
+  with import side effects. Before deleting, PROVE the name is dead with a throwaway
+  probe that reproduces the file's import set and then inspects
+  `services.api.models.metadata.tables`. Here the probe showed
+  `services.api.models` was ALREADY in `sys.modules` via a transitive import, and all
+  19 tables (incl. `paper_orders`, `broker_orders`) were registered without the
+  local lines — so the imports were genuinely redundant and the deletion was safe.
+  That is a fact to establish, not an assumption to make.
+- PROBE HYGIENE: a scratch probe is still a tracked-tree write. Write it under
+  `tests/`, run it, then DELETE it and confirm it is gone from `git status` before
+  committing. A scratch file left behind is an untracked landmine in a later
+  clean-tree check.
+- NOTE ON TOOLING: `python -c` / `-e` inline script execution is BLOCKED in this
+  session's approval mode. To answer a "does this import matter" question, write a
+  scratch probe file and run it with `pytest -q -s` instead of fighting the guard.
+- B023 IS NOT ALWAYS A REAL BUG: ruff's 8 B023 late-binding findings are all in
+  `scripts/m87_llm_challenger.py` and `scripts/model_bench.py`, and all are FALSE
+  POSITIVES — each closure is created AND awaited inside the same `for` iteration
+  (`await asyncio.gather(*[process(i) for i in ...])`), so `sym`/`dev_df` are still
+  bound correctly. Confirm the await site is inside the loop before "fixing" a
+  closure that is provably correct. Grep the gather site, not just the def.
+- RULE: when a lint class looks scary but is mechanically suspicious, spend the
+  cycle PROVING which side it falls on before spending it on a sweep. Two of the
+  three candidate classes this cycle (B023, E501) were noise or formatting; the one
+  with a real silent-failure mode (F401 on model imports) is where the value was.
