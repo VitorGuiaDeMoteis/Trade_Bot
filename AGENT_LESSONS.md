@@ -6,7 +6,39 @@ Durable engineering memory for autonomous development.
 
 `scripts/paper_runtime_parity.py` maps a committed FIX to the SYMPTOM it
 retires, so a later cycle reading `paper-latest.json` does not re-derive an
-already-understood anomaly as if it were new. Its tests anchored fixtures on
+already-understood anomaly as if it were new.
+
+The second instance of this same failure mode: `test_every_known_fix_is_classified_independently`
+asserted `report.anomalies_explained_by_lag == (count_fix.symptom,)` — equality
+against the WHOLE collection. That was correct with two registry entries and
+failed the moment a third was appended (the `/health` flap, `b6b2802`). The
+tempting repair is to shrink the registry back to two entries, i.e. delete a
+real finding because a test was positional. Assert MEMBERSHIP per entry
+(`symptom in excused` / `not in excused`) plus the set-equality identity
+`set(excused) == {f.symptom for f in report.fixes if f.state == EXPLAINED_BY_LAG}`,
+which stays true as the registry grows.
+
+The higher-order rule this exposes: **an unregistered symptom and a positional
+test are the same defect.** A symptom that appears in nearly every observation
+but is absent from the registry costs every future cycle the full
+re-derivation; a test that asserts the full shape of a growable collection
+guarantees the next cycle's first move is to delete the new finding. Neither is
+a coding slip — both are "I knew the size, so I encoded the size."
+
+Cheap way to notice a missing registration: when the Paper review gate reads
+`health.status=degraded` next to `paper.degraded=false, reconciled=true`, that
+pairing is a runtime-lag artefact, not a live fault. Confirm with
+`./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` and check whether
+the report excuses it; if it does not, the fix exists but is unregistered —
+register it rather than re-deriving the cause.
+
+`paper-observations.jsonl` is directly greppable and is the cheapest evidence in
+the repo: `grep -c '"status": "degraded"'` gave 670 of 1138 lines for the flap,
+against `grep -c '"reconciled": true'` = 1131. Frequency from that file
+distinguishes "newly broken" from "always was", which the single latest sample
+cannot.
+
+That entry's own tests anchored fixtures on
 `KNOWN_FIXES[0]` -- and the fixture only made `KNOWN_FIXES[0]`'s sha an ancestor
 of the branch. Adding a second entry therefore left it unanchored, so it would
 have classified as `unknown-fix`: the report would quietly stop EXUSING that

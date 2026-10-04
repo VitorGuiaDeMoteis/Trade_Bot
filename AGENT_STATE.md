@@ -79,6 +79,14 @@ Each line is pinned by an executable check; a violation now fails a test.
 - Paper `orders_count_reported=0 while actual>0` symptom — CLOSED as an agent-side
   defect. Registered in `scripts/paper_runtime_parity.py:94` as a known symptom;
   `tests/test_paper_runtime_parity.py:295` pins the registration.
+- `health.status=degraded` while `paper.degraded=false, reconciled=true` — CLOSED
+  as an agent-side defect and now REGISTERED (this cycle). The runtime ran the
+  pre-`health_ready()` `/health`, which read the per-cycle execution gate; the fix
+  is `b6b2802`, which is branch-only (runtime is 41 commits behind), so it is
+  `explained-by-runtime-lag`. Evidence: 670 of 1138 lines in
+  `paper-observations.jsonl` carry it while 1131 have `reconciled: true`.
+  Verified this cycle with `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity`
+  → `fix b6b2802: explained-by-runtime-lag`. Do NOT re-derive it as a live fault.
 - `latest_orders[*].last_reconciled_at: null` — CLOSED as an agent-side defect. The
   nulls are the frozen runtime lagging HEAD (`explained-by-runtime-lag`). Pinned by
   `tests/test_paper_order_reconciled_at_contract.py`, which asserts the single
@@ -101,6 +109,28 @@ Each line is pinned by an executable check; a violation now fails a test.
 - None currently verified open. Every previously listed item resolved to CLOSED
   above. A clean cycle must therefore re-derive its own candidate from Paper
   evidence or from a targeted grep, and record the verification command here.
+
+### Latest cycle (2026-10-04, worktree was clean at start)
+
+- Task: register the `/health` execution-gate flap as a parity-known symptom, and
+  make the parity test survive registry growth.
+- Change: `KNOWN_FIXES` gained `b6b2802` in `scripts/paper_runtime_parity.py`.
+  Evidence: 670 of 1138 lines in `paper-observations.jsonl` carry
+  `health.status=degraded` while 1131 carry `reconciled: true`; the runtime
+  (frozen at 76813fd) predates `health_ready()`, so it publishes degraded from
+  the per-cycle execution gate. Now reported as `explained-by-runtime-lag`.
+- Follow-on defect found and fixed in the same cycle: `test_every_known_fix_is_classified_independently`
+  asserted whole-tuple equality, so it failed the moment a third entry was
+  appended. Rewritten to per-entry membership plus a set-identity assertion that
+  holds as the registry grows (the trap was "delete the new finding to make the
+  test pass").
+- Validation: 32 passed (`tests/test_paper_runtime_parity.py`,
+  `tests/test_health_paper_worker_ready.py`); ruff and mypy clean on
+  `scripts/paper_runtime_parity.py`.
+- Next candidate: extend the same identity-over-position treatment to the
+  remaining positional fixture (`KNOWN_FIXES[0]` ancestry in `_behind_report`,
+  `tests/test_paper_runtime_parity.py:198`) — verify it still classifies every
+  entry independently before touching it.
 
 ### Working commands this repo (verified on this host)
 

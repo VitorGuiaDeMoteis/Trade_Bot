@@ -270,11 +270,17 @@ def test_fix_present_on_runtime_is_not_called_runtime_lag() -> None:
 
 
 def test_every_known_fix_is_classified_independently() -> None:
-    """A second entry must not be judged by the first entry's ancestry.
+    """Each entry must be judged by its OWN ancestry, not the registry's first.
 
-    The runtime here has the first fix but NOT the count fix, so exactly one
-    symptom is excused.  Classification that collapsed across entries would
-    either excuse a live defect or re-open a settled one.
+    The runtime here has the first fix but NOT the count fix, so the count
+    symptom is excused while the first entry's is not.  Classification that
+    collapsed across entries would either excuse a live defect or re-open a
+    settled one.
+
+    Membership is asserted per entry rather than against the whole tuple: an
+    equality check over the full collection fails the next time a fix is
+    appended, which teaches the next cycle to "fix" the fixture instead of
+    extending the registry.
     """
     count_fix = next(f for f in KNOWN_FIXES if f.commit == "7252052")
     report = _behind_report(also_on_runtime={KNOWN_FIXES[0].commit})
@@ -282,7 +288,15 @@ def test_every_known_fix_is_classified_independently() -> None:
     states = {provenance.commit: provenance.state for provenance in report.fixes}
     assert states[KNOWN_FIXES[0].commit] == LIVE_ON_RUNTIME
     assert states[count_fix.commit] == EXPLAINED_BY_LAG
-    assert report.anomalies_explained_by_lag == (count_fix.symptom,)
+    excused = report.anomalies_explained_by_lag
+    assert count_fix.symptom in excused
+    assert KNOWN_FIXES[0].symptom not in excused
+    # Every excused symptom belongs to a fix the runtime genuinely lacks, and
+    # every such fix is excused: no entry is dropped from the report.
+    assert set(excused) == {
+        f.symptom for f in report.fixes if f.state == EXPLAINED_BY_LAG
+    }
+    assert set(excused) == {f.symptom for f in KNOWN_FIXES if f.commit != KNOWN_FIXES[0].commit}
 
 
 def test_count_symptom_is_registered_against_its_own_fix() -> None:
@@ -297,6 +311,27 @@ def test_count_symptom_is_registered_against_its_own_fix() -> None:
 
     report = _behind_report()
     provenance = next(f for f in report.fixes if f.commit == "7252052")
+    assert provenance.state == EXPLAINED_BY_LAG
+    assert symptom in report.anomalies_explained_by_lag
+    assert symptom in report.render()
+
+
+def test_health_flap_symptom_is_registered_against_its_own_fix() -> None:
+    """The /health flap must name the commit that fixed it.
+
+    `health.status=degraded` beside `paper.degraded=false, reconciled=true` is
+    the most frequent anomaly in the observation history (670 of 1138 samples)
+    and reads exactly like a live fault.  `health_ready()` (b6b2802) fixed it on
+    this branch and the frozen runtime never ran that commit, so an unregistered
+    symptom costs every future cycle the whole re-derivation.
+    """
+    symptom = next(f.symptom for f in KNOWN_FIXES if f.commit == "b6b2802")
+    assert "health.status=degraded" in symptom
+    assert "paper.degraded=false" in symptom
+    assert "paper.reconciled=true" in symptom
+
+    report = _behind_report()
+    provenance = next(f for f in report.fixes if f.commit == "b6b2802")
     assert provenance.state == EXPLAINED_BY_LAG
     assert symptom in report.anomalies_explained_by_lag
     assert symptom in report.render()

@@ -95,6 +95,18 @@ KNOWN_FIXES: tuple[KnownFix, ...] = (
             "(same for fills_count_reported vs fills_count_actual)"
         ),
     ),
+    # `/health` read the worker's EXECUTION gate, which `reconcile_once` closes
+    # for a moment of every 3s cycle, so a healthy runtime published
+    # status=degraded (HTTP 503). It is the single most frequent anomaly in the
+    # observation history -- 670 of 1138 samples carry it -- and it looks like a
+    # live fault unless a reader knows the runtime predates `health_ready()`.
+    KnownFix(
+        commit="b6b2802",
+        symptom=(
+            "health.status=degraded while paper.degraded=false, paper.paused=false "
+            "and paper.reconciled=true (the /health execution-gate flap)"
+        ),
+    ),
 )
 
 
