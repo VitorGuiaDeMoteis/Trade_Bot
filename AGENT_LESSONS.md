@@ -1626,3 +1626,21 @@ Reusable rules:
   reports the exit code of `tail`, so a failing run looks like `exit_code: 0`.
   Use `| tail -25; echo "EXIT=${PIPESTATUS[0]}"`, or drop the pipe. A green
   exit code that came from the wrong process is worse than no exit code.
+
+- A backlog task's stated PREMISE must be verified against the code before it is
+  implemented. The carried task "give `anomalies.unmatched_sells` the same
+  counted, attributed summary the other anomaly keys get" asserted a symmetry
+  that does not exist: all three anomaly keys (`api_reconciliation_errors`,
+  `dust_positions`, `unmatched_sells`) are bare `[{symbol, quantity}]` lists at
+  analytics.py:298-305, and the counted/attributed summaries (`sig_count`,
+  `dec_count`, `rejections`) are TOP-LEVEL response keys, not anomaly entries.
+  Executing it as written would have given the anomalies block three different
+  shapes instead of one, in the name of making it uniform. Read the constructor
+  you are about to change and confirm the comparison it is based on; a carried
+  task written by an earlier cycle is a hypothesis, not a specification.
+- Provenance of a recurring "pre-existing" lint finding belongs in state, not in
+  every future cycle's caveat. Recording "analytics.py carries 13 ruff errors and
+  2 mypy var-annotated errors" made each cycle re-baseline it instead of clearing
+  it. Naming the exact fix (`fifo_buys: dict[str, list[dict[str, Any]]]`,
+  `rejections: dict[str, int]`) lets the next cycle verify it is gone by running
+  mypy instead of by re-reading `git show HEAD`.

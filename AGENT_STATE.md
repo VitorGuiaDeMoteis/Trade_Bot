@@ -2366,3 +2366,83 @@ signature of the pre-fix `health_ready()` fail-closed window. `latest_orders` le
 broker/local divergence, no stale reconciliation, no duplicate execution, no
 accounting inconsistency beyond the known counts. No new Paper work; do not
 re-investigate these two.
+
+================================================================================
+CYCLE 2026-10-04 (worktree clean -> new task)
+
+PAPER_REVIEW: runtime ACTIVE / paused False / degraded False / reconciled True,
+last_reconciled_at 2026-10-04T06:45:00Z; open positions AAPL, SPY, TSLA;
+unrealized P&L -0.036682 (equity 99951.28, cash 99921.35); orders_count_reported
+0 vs actual 13, fills_count_reported 0 vs actual 11; two fresh `ACCEPTED`
+unfilled SELLs (AAPL, TSLA) at 06:44 UTC with the market closed.
+
+BOTH count mismatches and every null `latest_orders[*].last_reconciled_at` are
+the ALREADY-FIXED, NOT-YET-DEPLOYED items recorded in prior cycles; the parity
+report's KNOWN_FIXES (scripts/paper_runtime_parity.py:81, commit 5ee4f29) claims
+the reconcile stamp symptom, so the deployed runtime predates the fix. The two
+open SELLs are the expected intraday pair, no duplicate execution, no broker/local
+divergence. Paper gate is CLEAN: no new Paper work, do not re-investigate.
+
+TASK: clear the 2 pre-existing mypy `var-annotated` errors in
+services/api/analytics.py, which four consecutive cycles had to caveat rather
+than fix (second candidate task in the backlog).
+
+The backlog's FIRST-in-line task was REJECTED, not skipped: its premise is false.
+"Give `anomalies.unmatched_sells` the same counted, attributed summary the other
+anomaly keys get" -- but at analytics.py:298-305 all three anomaly keys
+(`api_reconciliation_errors`, `dust_positions`, `unmatched_sells`) are already
+bare `[{symbol, quantity}]` lists, and the counted/attributed summaries
+(`sig_count`, `dec_count`, `rejections`) are TOP-LEVEL response keys, not anomaly
+entries. There is no asymmetry to remove; implementing it as written would have
+given the anomalies block three different shapes while claiming to unify it.
+Recorded in lessons so the next cycle does not retry it.
+
+CHANGES (1 production file, 2 lines, no behaviour change):
+- services/api/analytics.py:74 `fifo_buys: dict[str, list[dict[str, Any]]] = {}`
+  -- the real shape is symbol -> list of per-lot dicts holding qty/price/
+  timestamp/fee.
+- services/api/analytics.py:248 `rejections: dict[str, int] = {}` -- reason -> count.
+  `Any` was already imported at line 4, so no import change was needed.
+
+VALIDATION:
+- mypy: `Success: no issues found in 1 source file` (was exactly 2
+  `var-annotated` errors on lines 74 and 248).
+- ruff: 9 findings BEFORE and AFTER, byte-identical -- proven by stashing the WIP
+  and re-running against HEAD, not assumed. No new lint introduced.
+- pytest: 28 passed across the five `tests/test_session_analytics_*.py` files;
+  40 passed, 610 deselected on `-k "analytics or exposure or drawdown"`.
+- Diff is 2 insertions / 2 deletions in one file: annotations only, zero
+  behaviour change, so no regression surface.
+
+Next candidate task (first in line): `broker_order_quantity_divergence`
+(services/alpaca_paper/worker.py:255) has NO pure unit coverage. It belongs to
+the fail-closed family (rejecting a broker/local divergence rather than silently
+correcting it), and a test can drive it against a stub without touching Postgres
+or the broker. Pin what happens when a fill's cumulative `filled_quantity` does
+not reconcile against the broker's own order state, so the guard cannot be
+silently weakened later.
+
+Second candidate task: `AGENT_STATE.md` is now 2390+ lines and its carried
+candidate tasks have already produced one false-premise task; consider moving the
+per-cycle narrative into dated sections and keeping a short current-backlog
+summary at the top.
+
+--------------------------------------------------------------------------------
+CYCLE 2026-10-04 b (RECOVERY MODE: this cycle found the tree dirty)
+
+No Paper review gate was required: the mission gates it on a CLEAN cycle, and
+the PAPER_REVIEW line above is from the same date and still current.
+
+Re-validated the carried WIP before committing, in this repo's own `.venv`
+(the Hermes shell `python` on PATH is NOT this project's interpreter):
+- `.venv/Scripts/python.exe -m mypy services/api/analytics.py` ->
+  `Success: no issues found in 1 source file`.
+- `.venv/Scripts/python.exe -m pytest tests/test_session_analytics_*.py -q`
+  -> 28 passed in 0.17s.
+- `.venv/Scripts/python.exe -m ruff check --output-format=concise` -> 9 findings
+  (1x I001, 1x F401 `json` unused, 7x E501). None sit on the touched lines 74
+  or 248, so the change introduced no lint. `--output-format=concise` is the
+  cheap way to prove that: one line per finding with its column, versus the
+  default format's per-finding source echo.
+
+Committed the 2-annotation change plus these state/lessons updates. Tree clean.

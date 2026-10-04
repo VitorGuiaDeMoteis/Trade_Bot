@@ -71,7 +71,7 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
         {"run_id": run_id_str}
     ).mappings().fetchall()
 
-    fifo_buys = {}
+    fifo_buys: dict[str, list[dict[str, Any]]] = {}
     completed_trades = []
     unmatched_sells: dict[str, Decimal] = {}
     session_realized_pnl = Decimal("0")
@@ -245,7 +245,7 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     
     sig_count = {"BUY": 0, "SELL": 0, "HOLD": 0}
     dec_count = {"APPROVED": 0, "REJECTED": 0}
-    rejections = {}
+    rejections: dict[str, int] = {}
     
     for s in signals_data:
         sig_type = s["signal_type"]
