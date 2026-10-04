@@ -1773,3 +1773,40 @@ Reusable rules:
   unattended single-query mode on this host. Validate with
   `./.venv/Scripts/python.exe -m pytest ...` instead, and read JSON evidence with
   read_file / search_files rather than a python one-liner.
+
+## A finished investigation that stayed prose becomes a FOUR-cycle tax
+- `latest_orders[*].last_reconciled_at: null` sat in the Paper backlog for four
+  cycles under three successive theories ("find the SECOND `PaperOrder(` ctor",
+  "the column was relaxed", "audit the SIMULATOR read sites"). All three were
+  FALSE. There is exactly ONE production `PaperOrder(` keyword constructor
+  (`services/api/broker_routes.py`), it already forwards the stamp, the column is
+  NOT NULL in both the model and migration `b990f1234567`, and the nulls come from
+  the frozen runtime lagging HEAD -- the standing explanation, already documented
+  in "A null in an observation is not a defect until parity is checked".
+- The waste was not the wrong conclusion, it was that the conclusion was only ever
+  PROSE. Markdown is not re-checked by anything, so each cycle re-ran the same
+  three greps, reached the same answer, and re-filed it. When an investigation ends
+  in "there is nothing to fix here", the deliverable is a TEST, not a paragraph:
+  `tests/test_paper_order_reconciled_at_contract.py`.
+- Highest-value shape for that test -- enumerate what a constructor may LEGALLY
+  omit, derived from the migration rather than hardcoded:
+  `defaulted_PaperOrder_fields - {"filled_quantity"} == op.drop_column("paper_orders", ...)`
+  parsed out of `b990f1234567`. It is a checklist that stays honest: add a
+  defaulted reconciliation-shaped field and the test fails until someone decides
+  whether a constructor must supply it. A hardcoded field list would have rotted
+  into the same false premise it replaced.
+- Guard the read site, not just the column: NOT NULL metadata plus a migration
+  that agrees still permits an OUTER join to surface a row whose stamp is absent.
+  `assert "outerjoin" not in source` on the route is what pins the actual symptom.
+- Corollary for the sibling read sites: `paper_queries.portfolio` and
+  `decisions_routes` select `paper_orders` alone, which no longer HAS the column
+  (migration moved it), so their `last_reconciled_at: null` is correct for REPLAY.
+  Two tables, one concept, one home -- pinning `EXPECTED not in paper_orders.c`
+  stops someone re-adding it and silently diverging again.
+- Second, larger lesson from the same cycle: `AGENT_STATE.md` had gone STALE for
+  seven commits because those cycles committed without writing a state entry, and
+  the resulting "first-in-line task" was ALREADY DONE (`broker_order_quantity_divergence`,
+  covered in `tests/test_worker_unknown_order_aborts_whole_cycle.py`). An
+  out-of-date handoff file is not neutral -- it actively steers the next cycle into
+  re-doing finished work. Verify a backlog claim with grep/pytest at PICK time, not
+  only when it was written.

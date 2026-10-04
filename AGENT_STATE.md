@@ -2681,3 +2681,67 @@ correcting it. It is fail-closed financial safety and no existing test touches i
 Second candidate (carried, unchanged): `AGENT_STATE.md` is now ~2650 lines and its
 backlog has already produced one false-premise task. Move the per-cycle narrative
 into dated sections with a short current-backlog summary at the top.
+
+## Cycle: 2026-10-04 g (RECOVERY MODE: cycle g-1 left the tree dirty)
+
+RESULT: the WIP is DONE and committed. No new task chosen. Test-only commit; zero
+production code touched.
+
+PAPER_REVIEW (cycle g, read-only): status ACTIVE, paused=false, degraded=false,
+reconciled=true, last_reconciled_at=2026-10-04T08:55:50Z vs observed_at=08:55:53Z
+(fresh, 3s), open positions AAPL/SPY/TSLA, unrealized P&L -0.0366820,
+orders_count_reported 0 vs orders_count_actual 13, fills_count_reported 0 vs
+fills_count_actual 11. Top-level `health.status=degraded` is again only the
+`market_data state=market_closed` artifact. `latest_orders[*].last_reconciled_at`
+is null on all 10 orders -- and `python -m scripts.paper_runtime_parity` (exit 0)
+already classifies exactly that as `explained-by-runtime-lag` under known fix
+`5ee4f29`. No new anomaly; the count gap is registered under `7252052`.
+
+WHAT THE WIP WAS: an untracked `tests/test_paper_order_reconciled_at_contract.py`
+(7 tests) that closes a FOUR-cycle backlog item. It is not a fix -- it is the
+executable form of the investigation that produced three false premises
+("find the SECOND `PaperOrder(` constructor", "relax the column", "audit the
+SIMULATOR read sites"), all of which were recorded only in prose and therefore
+re-derived every cycle.
+
+CHANGES (1 file, +1/-1 on top of the WIP; the WIP itself is 198 lines, new):
+- `test_paper_runs_status_cannot_express_a_degraded_run()` gained a `-> None`
+  annotation. That was the ONLY finding against the WIP: `mypy` reported
+  `no-untyped-def` on line 160 while the file's other six test functions were all
+  annotated. Everything else in the WIP verified as written.
+- I did NOT re-litigate the WIP's conclusions. Verified cheaply and independently:
+  `PaperOrder(` appears at exactly ONE production site (`broker_routes.py:124`),
+  it forwards `last_reconciled_at=o["last_reconciled_at"]` (line 167), and the
+  join at line 86 is an inner `broker_orders.join(paper_orders, ...)`.
+
+VALIDATION (this repo's `./.venv/Scripts/python.exe`; the `python` on PATH is NOT
+this interpreter):
+- `pytest tests/test_paper_order_reconciled_at_contract.py -q` -> 7 passed (0.26s).
+- Contract family: `+ test_broker_snapshot_not_null_contract.py`,
+  `test_paper_page_mode.py`, `test_paper_runtime_parity.py` -> 36 passed (0.54s).
+- `ruff check tests/test_paper_order_reconciled_at_contract.py` -> All checks passed.
+- `mypy tests/test_paper_order_reconciled_at_contract.py` -> 1 error before the
+  annotation (`no-untyped-def`), Success after.
+
+THE REAL FINDING THIS CYCLE: `AGENT_STATE.md` has been STALE SINCE CYCLE f. Six
+commits landed after the last state entry (`d069b65`, `5de56d3`, `6d17316`,
+`991647a`, `3de07fe`, `12e6321`, `968e9b5`) and none of them wrote one, so the
+"first-in-line task" at the end of the file -- "pin
+`broker_order_quantity_divergence`; no existing test touches it" -- is now a
+THIRD false premise: `5de56d3` already did it, in
+`tests/test_worker_unknown_order_aborts_whole_cycle.py` and
+`tests/test_worker_reconcile_unknown_open_orders.py`. Two cycles from now, the
+natural pick is a task that has been done for a while. This is the concrete cost of
+the carried second candidate, and it is now evidenced rather than suspected.
+
+FIRST-IN-LINE TASK (accurate as of this commit):
+`broker_order_quantity_divergence` is DONE -- do not pick it. Next real candidate:
+reconcile `AGENT_STATE.md` with the 7 commits that landed without a state entry, and
+collapse the ~2700-line per-cycle narrative into dated sections with a short
+CURRENT BACKLOG at the top, so the next cycle picks from verified ground. Verify
+each backlog claim with a grep/pytest before it is recorded, not after.
+
+Second candidate: `python -m scripts.paper_runtime_parity` reports
+`explained-by-runtime-lag` for `last_reconciled_at` but the observation file
+carries the symptom string only in code. If the deployed runtime is ever promoted
+to HEAD, re-run the report BEFORE filing anything from `latest_orders` again.
