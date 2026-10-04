@@ -2277,3 +2277,92 @@ anomaly keys get, with a test pinning the count.
 Second candidate task (carried forward): clear the 2 pre-existing mypy
 `var-annotated` errors in services/api/analytics.py (`fifo_buys`, `rejections`),
 and decide separately whether the file's remaining E501s are worth rewrapping.
+
+## Recovery cycle: real exposure/drawdown metrics in session analytics
+
+Cycle type: RECOVERY. The worktree was dirty at cycle start with an unfinished
+change to `services/api/analytics.py` plus an untracked
+`tests/test_session_analytics_exposure_and_drawdown.py`. No new task was chosen;
+this cycle finished that WIP.
+
+INTENT of the WIP: `max_drawdown` was the literal `"0.00"` and BOTH `avg_exposure`
+and `max_exposure` were the CURRENT market value. So every session reported no
+drawdown, and an "average" exposure equal to its final instant.
+
+WHY REBUILD A CURVE: `broker_portfolio_snapshots` holds ONE row per provider, so
+there is no stored equity/exposure time series to read. The curve is rebuilt from
+this run's fills, anchored on the broker's current book and walked BACKWARD (a BUY
+added its notional, a SELL removed its own). Anchoring on the book is what lets
+lots inherited from a previous run -- no fill in this run, no opening timestamp --
+count in every interval instead of vanishing. Marks are fill prices, so both
+metrics are measured at fill granularity and do NOT see excursions between fills.
+
+CHANGES:
+- services/api/analytics.py: backward exposure walk + time-weighted average and
+  peak exposure; realized-equity series and peak-to-trough `max_drawdown` per
+  docs/M4_CORE.md:68 (initial capital is the first peak). The three response keys
+  now carry real numbers instead of the `market_value`/`"0.00"` placeholders.
+  Fills before `start_time` or a zero-length window still fall back to
+  `market_value`, and a run with no fills is unaffected.
+- FIX to the WIP: the series paired each backward-walk value with its OWN fill
+  timestamp. That value is the exposure in force BEFORE that fill, i.e. over the
+  interval ENDING at it, so every segment sat one interval late and understated
+  the average. Now anchored at the PREVIOUS boundary, with `market_value` as the
+  segment after the last fill.
+- tests/test_session_analytics_exposure_and_drawdown.py (new, repaired): the
+  stubs exposed `.first`/`.fetchall` directly but production calls
+  `.mappings().first()`; rewritten with the explicit stub pattern from
+  test_session_analytics_provider_scope.py.
+- Two of the three originally failing expectations were WRONG, not the code, and
+  were corrected after recomputing each scenario by hand: (1) the fixture had a
+  BUY at t=60 with an EMPTY book, so the backward walk subtracted a notional the
+  book never carried -- now the run holds the lot it bought; (2) buy 100/sell 150
+  is +50 and buy 150/sell 50 is -100, so realized P&L is -50.00 and equity runs
+  1000 -> 1050 -> 950, not "1000 -> 1050 -> 1000". The drawdown of 100 was right.
+
+VALIDATION:
+- 13 tests in the two analytics files pass.
+- 40 tests matching `-k "analytics or exposure or drawdown"` pass.
+- ruff: no new findings (the 9 remaining in analytics.py are pre-existing E501/I001/
+  F401 on untouched lines; the test file's single E501 is on an untouched
+  inherited line). mypy: the same 2 pre-existing `var-annotated` errors on the
+  untouched `fifo_buys` / `rejections` dicts -- both sites exist at HEAD.
+- Discrimination proven WITHOUT touching tracked code: the first pair of failures
+  was reproduced against `git show HEAD:services/api/analytics.py` driving the same
+  stub. HEAD returns avg_exposure 66.67 where the hand-computed correct value is
+  50.00, which is what isolated the off-by-one rather than guessing.
+
+Next candidate task (first in line, carried forward): give
+`anomalies.unmatched_sells` the same counted, attributed summary the other
+anomaly keys get, with a test pinning the count.
+
+Second candidate task (carried forward): clear the 2 pre-existing mypy
+`var-annotated` errors in services/api/analytics.py (`fifo_buys`, `rejections`),
+and decide separately whether the file's remaining E501s are worth rewrapping.
+
+Second recovery pass (same cycle, after re-reading the WIP): the diff was
+coherent, finished and uncommitted only. Re-verified rather than re-derived:
+13 targeted tests and 40 `-k "analytics or exposure or drawdown"` pass; mypy
+reports only the 2 pre-existing `var-annotated` errors. Two E501s WERE newly
+introduced on WIP lines (the `nxt = ...` ternary and the `equity_series.extend`
+generator), now rewrapped, so `analytics.py` is back to exactly HEAD's 9 ruff
+findings, all on pre-diff lines (HEAD 157/161/192 -> now 229/233/264). This was
+committed; the next cycle starts clean and may pick a backlog task.
+
+### Paper review at the end of this recovery cycle
+
+PAPER_REVIEW: runtime status ACTIVE / paused False / degraded False (paper block)
+/ reconciled True, last_reconciled_at 2026-10-04T06:40:41Z; open positions AAPL,
+SPY, TSLA; orders_count_reported 0 vs orders_count_actual 13; fills_count_reported
+0 vs fills_count_actual 11; unrealized P&L -0.036682 (equity 99951.28, cash
+99921.35).
+
+BOTH mismatches are the ALREADY-FIXED, NOT-YET-DEPLOYED items recorded above, and
+the one-command diagnostic confirms it rather than a new fault: `observed_at`
+06:40:58 is 17s AFTER this sample's own `last_reconciled_at` 06:40:41, and
+`health.status=degraded` is paired with a healthy `paper` block -- exactly the
+signature of the pre-fix `health_ready()` fail-closed window. `latest_orders` len
+10 vs actual 13 is the documented LIMIT-100 list semantics, not a new cap bug. No
+broker/local divergence, no stale reconciliation, no duplicate execution, no
+accounting inconsistency beyond the known counts. No new Paper work; do not
+re-investigate these two.

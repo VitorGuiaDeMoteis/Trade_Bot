@@ -75,6 +75,7 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     completed_trades = []
     unmatched_sells: dict[str, Decimal] = {}
     session_realized_pnl = Decimal("0")
+    realized_after_fill: list[tuple[Any, Decimal]] = []
     total_wins = 0
     total_losses = 0
     gross_wins = Decimal("0")
@@ -139,7 +140,78 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
             if sell_qty > 0:
                 unmatched_sells[sym] = unmatched_sells.get(sym, Decimal("0")) + sell_qty
 
+        realized_after_fill.append((f["filled_at"], session_realized_pnl))
+
     realized_pnl = session_realized_pnl
+
+    # `max_drawdown`, `avg_exposure` and `max_exposure` used to be fabricated: the
+    # drawdown was the literal "0.00" and BOTH exposures were the CURRENT market
+    # value, so a session that peaked far above where it ended reported no
+    # drawdown at all and an "average" exposure equal to its final instant.
+    #
+    # broker_portfolio_snapshots holds ONE row per provider (see the equity_initial
+    # note above), so there is no stored equity time series to read. The curve is
+    # rebuilt from this run's fills anchored on the broker's current book and walked
+    # BACKWARD (a BUY added its notional, a SELL removed its own). Anchoring on the
+    # book is what lets lots inherited from a previous run -- which have no fill in
+    # this run and no opening timestamp -- count in every interval instead of
+    # vanishing. Marks are fill prices, so the exposure and drawdown are measured at
+    # fill granularity and do not see excursions between fills.
+    avg_exposure = market_value
+    max_exposure = market_value
+    max_drawdown = Decimal("0")
+
+    if fills and end_time:
+        curve_end = max(end_time, fills[-1]["filled_at"])
+        if curve_end > start_time:
+            exposure = market_value
+            before: list[tuple[Any, Decimal]] = []
+            for f in reversed(fills):
+                notional = Decimal(str(f["quantity"])) * Decimal(str(f["price"]))
+                exposure = exposure - notional if f["side"] == "BUY" else exposure + notional
+                before.append((f["filled_at"], exposure))
+            before.reverse()
+            # Each backward step yields the exposure in force BEFORE that fill, i.e.
+            # over the interval ENDING at its timestamp. So a value belongs to the
+            # NEXT fill's timestamp, not its own -- pairing it with its own timestamp
+            # shifts every segment one interval late and understates the average.
+            exposure_series: list[tuple[Any, Any]] = [(start_time, before[0][1])]
+            exposure_series.extend(
+                (before[index][0], before[index + 1][1]) for index in range(len(before) - 1)
+            )
+            # After the LAST fill the anchor itself is what is in force until the end.
+            exposure_series.append((before[-1][0], market_value))
+
+            span = Decimal(str((curve_end - start_time).total_seconds()))
+            weighted = Decimal("0")
+            peak_exposure = Decimal("0")
+            for index, (ts, value) in enumerate(exposure_series):
+                nxt = (
+                    exposure_series[index + 1][0]
+                    if index + 1 < len(exposure_series)
+                    else curve_end
+                )
+                weighted += value * Decimal(str((nxt - ts).total_seconds()))
+                if value > peak_exposure:
+                    peak_exposure = value
+            avg_exposure = weighted / span
+            max_exposure = peak_exposure
+
+            # docs/M4_CORE.md:68 defines the drawdown as the largest
+            # `previous peak - equity`, with the initial capital as the first peak.
+            # Equity moves here only when a fill realizes P&L, so this is the
+            # realized-equity curve at fill granularity.
+            equity_series = [(start_time, initial_cash)]
+            equity_series.extend(
+                (ts, initial_cash + realized) for ts, realized in realized_after_fill
+            )
+            equity_series.append((curve_end, initial_cash + realized_pnl))
+            peak = initial_cash
+            for _ts, equity in equity_series:
+                if equity > peak:
+                    peak = equity
+                if peak - equity > max_drawdown:
+                    max_drawdown = peak - equity
     total_pnl = realized_pnl + unrealized_pnl
     # docs/M4_CORE.md:67 defines the session return as
     # (equity final - initial cash) / initial cash * 100, i.e. the change in the
@@ -206,9 +278,9 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
         "pnl_realized": str(realized_pnl),
         "pnl_unrealized": str(unrealized_pnl),
         "return_pct": str(return_pct),
-        "max_drawdown": "0.00",
-        "avg_exposure": str(market_value),
-        "max_exposure": str(market_value),
+        "max_drawdown": str(round(max_drawdown, 2)),
+        "avg_exposure": str(round(avg_exposure, 2)),
+        "max_exposure": str(round(max_exposure, 2)),
         "signals": sig_count,
         "decisions": dec_count,
         "rejection_reasons": rejections,

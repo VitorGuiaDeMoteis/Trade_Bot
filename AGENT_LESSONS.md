@@ -1587,3 +1587,42 @@ Reusable rules:
   drive both with the same stub. HEAD gave pnl_unrealized -130 vs 20,
   equity_final 8000 vs 1020, return_pct 700% vs 2%. Same technique as the
   `return_pct` case recorded above; it costs one scratch file and zero risk.
+- A placeholder metric is a lie that no test can catch, because a fabricated
+  `"0.00"` passes any assertion that only checks it is a decimal string. When a
+  response field is a hardcoded constant, ask what it would have to MEAN before
+  trusting it -- `max_drawdown` pinned to `"0.00"` and `avg_exposure` aliased to
+  the final market value reported a drawdown-free, zero-average session forever.
+- When a fixture makes a computed metric come out wrong, verify the fixture's
+  semantics before blaming the code. A backward walk anchored on the broker's
+  current book must be anchored on a book CONSISTENT with the fills: a BUY with an
+  empty position book is incoherent input, and the "result" was an artefact. Two
+  of three failures in this cycle were bad expectations (an incoherent anchor, and
+  +50 then -100 asserted as 0) and one was a real off-by-one. Recomputing each
+  scenario by hand separated them in one pass; "the test I just wrote fails" is
+  not evidence about which side is wrong.
+- A value produced by a backward walk describes the interval ENDING at its
+  timestamp, not starting there. Pairing it with its own boundary shifted every
+  segment one interval late and understated the time-weighted average. Before
+  trusting a series, state for each point which interval the value is in force
+  over, then check the first and last point against the anchor by hand.
+- `Decimal(str(field))` rather than `Decimal(field)`: a numeric column handed
+  back as a float round-trips through binary representation and misprices the
+  curve. The same pattern keeps fill notional and the weighted average exact.
+- With no stored time series, a rebuilt curve is only as good as its anchor, and
+  the anchor determines whether inherited state counts at all. Anchoring on the
+  broker's CURRENT book (and walking backward) keeps lots bought in an earlier run
+  present in every interval; anchoring on "the fills I can see" silently deletes
+  them. State the anchor's trade-off in the comment -- here, marks are fill
+  prices, so the metric is measured at fill granularity and cannot see
+  excursions BETWEEN fills. A reader who is not told that will read the number as
+  a continuous-time fact.
+- SQLAlchemy test doubles must implement the whole chain the code calls:
+  production used `.mappings().first()` while the stub answered `.first()`
+  directly, which fails before any assertion runs. When a unit test breaks on a
+  mock, check the CALL SHAPE against the real code before editing the fake --
+  `sqlalchemy.Result`/`sqlalchemy.Row` are easy to mirror explicitly, as
+  test_session_analytics_provider_scope.py already does.
+- Preserve the real exit status when piping test output: `pytest ... | tail -25`
+  reports the exit code of `tail`, so a failing run looks like `exit_code: 0`.
+  Use `| tail -25; echo "EXIT=${PIPESTATUS[0]}"`, or drop the pipe. A green
+  exit code that came from the wrong process is worse than no exit code.
