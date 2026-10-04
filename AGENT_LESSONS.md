@@ -2,6 +2,43 @@
 
 Durable engineering memory for autonomous development.
 
+## A "value 0" order quantity is notional-BUY by design, not a corrupt record
+
+`paper-latest.json` shows a FILLED BUY with `latest_orders[*].quantity="0"`
+next to `filled_quantity="0.0299293550"`. That reads as a broken order-size
+record, so the natural reaction is to "repair" the zero.
+
+Do not. A notional BUY is submitted with no share count, so
+`paper_orders.requested_quantity` is NULL *by design* — the count is not
+knowable until the broker fills it. Coercing that NULL to 0 fabricated a trade
+that traded nothing beside a real fill. The route falls back to
+`filled_quantity` when `requested_quantity` is None
+(`services/api/broker_routes.py:140-146`, commit `a05d136`), and it must never
+invent a zero: on a non-notional row a missing `requested_quantity` is a real
+inconsistency and reporting 0 would hide it instead of surfacing it.
+
+This is registered in `scripts/paper_runtime_parity.py:KNOWN_FIXES` so a future
+cycle looks it up instead of re-deriving it. The registry entry names the
+symptom in the shape the observation prints it (`quantity=0` beside
+`filled_quantity>0`), because a symptom phrased in cause terms cannot be matched
+by a reader who has not re-derived the cause.
+
+Corollary, worth more than the entry itself: the sibling anomalies already
+registered (`last_reconciled_at: null`, `orders_count_reported=0`,
+`health.status=degraded`) were all *absent fields* — obviously null, obviously
+lag. A zero beside a positive is the first registered symptom that looks like
+**corruption**, which is why it needed registration more than the others did.
+
+## Never quote the frozen runtime's sha from prose; read it
+
+Cycle notes recorded the runtime at `72d37d8`; this cycle found it at
+`76813fd`. Any backlog item phrased as "the runtime lags by N commits" or
+"git merge-base --is-ancestor <sha> 72d37d8" silently rots the moment the
+runtime advances. Get the sha from
+`./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` (read-only; prints
+both HEADs and the status), and re-derive ancestry against that. The *symptom*
+and *fix* claims stay valid; only the distance changes.
+
 ## Verify a "missing X" backlog item before writing code for it
 
 An open candidate claimed Mission Control could not tell "feed died" from "no

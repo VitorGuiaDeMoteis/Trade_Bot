@@ -373,6 +373,28 @@ def test_health_flap_symptom_is_registered_against_its_own_fix() -> None:
     assert symptom in report.render()
 
 
+def test_notional_buy_zero_quantity_is_registered_against_its_own_fix() -> None:
+    """`quantity=0` beside `filled_quantity>0` must name the commit that fixed it.
+
+    The observation shows a FILLED notional BUY with `quantity="0"`, which
+    reads as corrupted order sizing rather than as a plainly absent field --
+    the trap is a future cycle "repairing" a NULL that is correct by design.
+    `broker_routes.py` falls back to `filled_quantity` as of `a05d136` and the
+    frozen runtime never ran it, so an unregistered symptom costs every future
+    cycle the whole re-derivation.
+    """
+    symptom = next(f.symptom for f in KNOWN_FIXES if f.commit == "a05d136")
+    assert "latest_orders[*].quantity=0" in symptom
+    assert "latest_orders[*].filled_quantity>0" in symptom
+    assert "NULL by design" in symptom
+
+    report = _behind_report()
+    provenance = next(f for f in report.fixes if f.commit == "a05d136")
+    assert provenance.state == EXPLAINED_BY_LAG
+    assert symptom in report.anomalies_explained_by_lag
+    assert symptom in report.render()
+
+
 def test_every_registered_fix_is_a_real_commit_on_this_branch() -> None:
     """Every registered sha must resolve in THIS repository.
 

@@ -120,38 +120,18 @@ Each line is pinned by an executable check; a violation now fails a test.
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
-0. HIGHEST-VALUE, derived and verified this cycle but NOT started (that cycle hit a
-   SECOND context compression, so `AGENT_MISSION.md:301-307` forbade beginning the
-   edit; recorded here so the derivation is not repeated):
-   **Register the notional-BUY `quantity=0` symptom in
-   `scripts/paper_runtime_parity.py:KNOWN_FIXES`.**
-   - SYMPTOM, as it appears in `.agent-runtime/paper-latest.json`: two filled BUY
-     orders carry `latest_orders[*].quantity="0"` while `filled_quantity>0`, yet show
-     as fully filled in `latest_fills`. It reads like a broken order-size record; it
-     is not.
-   - ROOT CAUSE (verified, do not re-derive): notional BUY orders are submitted with
-     no share count, so `requested_quantity` is genuinely None and the fill carries
-     the real share count. HEAD's `broker_routes.py:140-146` already falls back to
-     `filled_quantity` when `requested_quantity` is None; the fix commit is `a05d136`.
-   - IT IS RUNTIME LAG, not a live defect. `git merge-base --is-ancestor a05d136
-     72d37d8` returns non-zero (runtime LACKS the fix) and
-     `git rev-list --count 72d37d8..HEAD` = 59, so the frozen runtime still runs the
-     un-fallback behaviour.
-   - WHY IT IS WORTH THE EFFORT: `KNOWN_FIXES` already registers the sibling
-     symptoms of the same lag (`5ee4f29`, `7252052`, `b6b2802`); this one is NOT
-     registered, so it reads as a fresh anomaly forever -- exactly the failure the
-     module exists to prevent.
-   - TASK: append `KnownFix(commit="a05d136", symptom=...)` naming
-     `latest_orders[*].quantity=0`, `filled_quantity>0` and the notional-BUY cause;
-     then add a sibling test in `tests/test_paper_runtime_parity.py` modelled on
-     `test_health_flap_symptom_is_registered_against_its_own_fix` (assert the sha
-     resolves, state is `EXPLAINED_BY_LAG`, symptom is excused and rendered).
-   - VERIFY WITH: `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity`
-     → expect `fix a05d136: explained-by-runtime-lag`; then
-     `./.venv/Scripts/python.exe -m pytest tests/test_paper_runtime_parity.py -q`.
-     Read-only both ways; touches no broker state and no runtime database.
+0. CLOSED this cycle — `fix(parity): register the notional-BUY quantity=0 symptom`.
+   `KnownFix(commit="a05d136")` now names
+   `latest_orders[*].quantity=0 ... filled_quantity>0`, and
+   `tests/test_paper_runtime_parity.py::test_notional_buy_zero_quantity_is_registered_against_its_own_fix`
+   pins it (sha resolves, `EXPLAINED_BY_LAG`, symptom excused and rendered).
+   Do NOT re-derive: `requested_quantity` is NULL by design for a notional
+   BUY, the route falls back to `filled_quantity`
+   (`services/api/broker_routes.py:140-146`), and the frozen runtime never ran
+   `a05d136`. Verified: parity report renders `fix a05d136:
+   explained-by-runtime-lag` against the real runtime.
 
-1. `RUN_ALPACA_SMOKE_TEST` doc drift (verified by grep this cycle, NOT fixed):
+1. `RUN_ALPACA_SMOKE_TEST` doc drift (verified by grep on 2026-10-04, NOT fixed):
    the flag is documented as the live-smoke opt-in in `.env.example:26`,
    `docs/DEMO.md:144`, `docs/DECISIONS.md:152` (D035), `docs/SECURITY.md:85`,
    `docs/RUNBOOK.md:195,202` and `README.md:126`, but nothing in production reads
@@ -246,6 +226,53 @@ Each line is pinned by an executable check; a violation now fails a test.
   the mandatory `PAPER_REVIEW:` line before picking the backlog task.
 - Next candidate: still the `RUN_ALPACA_SMOKE_TEST` doc drift (candidate 1 in
   the authoritative backlog above).
+
+## Latest cycle (2026-10-04, CLEAN tree; candidate 0)
+
+- Task: backlog candidate 0 -- register the notional-BUY `quantity=0` symptom in
+  `scripts/paper_runtime_parity.py:KNOWN_FIXES` and pin it with a test.
+- Mandatory Paper review ran first (clean tree, so the gate applies).
+  PAPER_REVIEW: observed_at 2026-10-04T11:26:18Z, run status ACTIVE,
+  `health.status=degraded`, `paper.paused=false`, `paper.degraded=false`,
+  `paper.reconciled=true` (last_reconciled_at 11:26:07Z, fresh); open positions
+  AAPL/SPY/TSLA (~10 USD each); orders_count_reported=0 vs actual=13;
+  fills_count_reported=0 vs actual=11; unrealized_pnl=-0.0367 (equity 99951.28,
+  cash 99921.35); market_data `market_closed`, last_bar_at 2026-10-02T21:00Z,
+  last_message_at 2026-10-04T03:03:51Z -- a Sunday, so `market_closed` is
+  correct. Every anomaly except one matched a finding already CLOSED as
+  `explained-by-runtime-lag`; the one exception (`latest_orders[*].quantity="0"`
+  with `filled_quantity>0` on a filled BUY) was exactly backlog candidate 0, so
+  the gate and the backlog agreed and the candidate became the task.
+- Verified the candidate's four load-bearing claims BEFORE editing, rather than
+  trusting the prose: `a05d136` is an ancestor of HEAD and NOT of the runtime;
+  the runtime HEAD is `76813fd` (not the `72d37d8` the note assumed); the HEAD
+  fallback really exists at `services/api/broker_routes.py:140-146`; and the
+  symptom really is in the live observation. Nothing was taken on faith.
+- CHANGES: `scripts/paper_runtime_parity.py` -- one `KnownFix(commit="a05d136")`
+  appended, whose symptom text names `latest_orders[*].quantity=0`,
+  `filled_quantity>0` and that `requested_quantity` is NULL by design.
+  `tests/test_paper_runtime_parity.py` -- one sibling test modelled on
+  `test_health_flap_symptom_is_registered_against_its_own_fix`. No production
+  behaviour changed; this is registry + documentation.
+- The registry's own invariants held without edits: `_behind_report` anchors
+  every `KNOWN_FIXES` entry to the branch, and
+  `test_every_known_fix_is_classified_independently` asserts membership per entry
+  rather than over the whole tuple, so appending an entry did not need a fixture
+  change. That was designed for this.
+- Validation: `pytest tests/test_paper_runtime_parity.py -q` -> 36 passed
+  (35 before). `ruff check` on both files -> All checks passed. `mypy` on both
+  files -> no issues. `pytest tests/test_broker_portfolio_counts.py
+  tests/test_paper_order_reconciled_at_contract.py -q` -> 36 passed (the pins for
+  the registered fix and its sibling). `./.venv/Scripts/python.exe -m
+  scripts.paper_runtime_parity` -> `fix a05d136: explained-by-runtime-lag`
+  against the REAL runtime worktree, read-only.
+- Baseline correction: the frozen runtime has MOVED ON from the `72d37d8` that
+  older cycle notes recorded — `-C TradingBot-runtime rev-parse HEAD` is now
+  `76813fd955c169a6c62d296d4414b66a31924035` and the branch is 47 commits ahead
+  (`runtime-behind`). Read the runtime sha from the parity report, never from a
+  prose note, or a "runtime lags by N" claim is wrong the moment the runtime
+  updates. `a05d136` is still absent from it.
+- Next candidate: backlog candidate 1, the `RUN_ALPACA_SMOKE_TEST` doc drift.
 
 ## Previous latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
 

@@ -131,6 +131,22 @@ KNOWN_FIXES: tuple[KnownFix, ...] = (
             "and paper.reconciled=true (the /health execution-gate flap)"
         ),
     ),
+    # A notional BUY is submitted with no share count, so `requested_quantity`
+    # is NULL by design and the real count only exists on the fill.  The
+    # portfolio route used to coerce that NULL to 0, so the observation shows a
+    # FILLED order with quantity="0" beside filled_quantity>0 -- a trade that
+    # reads as having traded nothing while the fill list says otherwise.  It is
+    # the one anomaly here that looks like corrupted order sizing rather than a
+    # plainly absent field, so without registration a cycle re-derives it (and
+    # may "fix" a correct NULL) every time.
+    KnownFix(
+        commit="a05d136",
+        symptom=(
+            "latest_orders[*].quantity=0 on a filled notional BUY while "
+            "latest_orders[*].filled_quantity>0 (requested_quantity is NULL by "
+            "design; the route must fall back to filled_quantity)"
+        ),
+    ),
 )
 
 
