@@ -12,10 +12,18 @@ each KNOWN_FIX, whether the runtime actually contains that commit -- which turns
 "is this observation anomaly a live defect or runtime lag?" into a lookup
 instead of a fresh investigation every cycle.
 
-This module answers that question with `git` alone.  It is strictly read-only:
-it runs `rev-parse`, `merge-base` and `log` against the runtime worktree and
-writes nothing anywhere.  It never opens the database, never contacts the
-broker, and never mutates the frozen worktree.
+This module answers those questions with `git`, plus one read of the latest
+observation.  It is strictly read-only: it runs `rev-parse`, `merge-base` and
+`log` against the runtime worktree, opens one JSON file, and writes nothing
+anywhere.  It never opens the database, never contacts the broker, and never
+mutates the frozen worktree.
+
+Git parity alone cannot say whether a review is possible at all: when the
+observer's probe fails it overwrites the observation with a stub carrying
+`observer_error` and no `paper` block, which git sees as nothing.  So the
+observation is classified too -- ok / observer-error / incomplete / missing /
+unreadable -- and a stub renders as "NO paper payload" rather than as a healthy
+runtime.
 
 Usage:
     python -m scripts.paper_runtime_parity
@@ -59,6 +67,22 @@ UNKNOWN_FIX = "unknown-fix"
 #: A run_git returns a CompletedProcess; tests substitute their own callable so
 #: no real repository is required to exercise the classification logic.
 RunGit = Callable[[Sequence[str], Path | None], subprocess.CompletedProcess[str]]
+
+#: The observation file was read and carries a `paper` payload.
+OBSERVATION_OK = "ok"
+#: The observer itself failed (timeout, HTTP error) and wrote a stub.  There is
+#: no runtime evidence at all -- not "no anomalies".
+OBSERVATION_ERROR = "observer-error"
+#: The file parsed, but carries no `paper` block, so every runtime field a
+#: reviewer needs is absent.  Distinct from OBSERVATION_ERROR: here the observer
+#: reported success while withholding the payload.
+OBSERVATION_INCOMPLETE = "incomplete"
+#: No observation file exists.
+OBSERVATION_MISSING = "missing"
+#: The file exists but is not readable JSON, or not a JSON object.
+OBSERVATION_UNREADABLE = "unreadable"
+#: The caller did not ask for the observation to be read.
+OBSERVATION_NOT_EXAMINED = "not-examined"
 
 
 @dataclass(frozen=True)
@@ -180,6 +204,104 @@ def _ahead_commits(git: RunGit, older: str, newer: str, repo: Path) -> tuple[str
 
 
 @dataclass(frozen=True)
+class ObservationHealth:
+    """Whether the latest Paper observation can support a review at all.
+
+    Git parity answers "is this anomaly runtime lag?".  It cannot answer "is
+    there an observation to review?".  The observer writes `.agent-runtime/
+    paper-latest.json` on its own schedule and, when its probe fails, replaces
+    the file with a stub carrying `observer_error` and NO `paper` block.  A
+    git-only gate renders that stub exactly like a healthy runtime, so a cycle
+    reads "no anomalies" out of a file that observed nothing.  That is
+    fail-open in the one place the mission requires fail-closed reasoning, so
+    the stub is classified here instead of being left to the reader.
+    """
+
+    path: str
+    status: str
+    detail: str | None = None
+    observed_at: str | None = None
+
+    @property
+    def usable(self) -> bool:
+        """True only when a real `paper` payload is present.
+
+        `not-examined` is deliberately NOT usable: a gate that skipped the
+        check has no evidence, and reporting that as healthy is the same
+        fail-open as mistaking a stub for a healthy runtime.
+        """
+        return self.status == OBSERVATION_OK
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "path": self.path,
+            "status": self.status,
+            "detail": self.detail,
+            "observed_at": self.observed_at,
+            "usable": self.usable,
+        }
+
+
+def read_observation(path: Path) -> ObservationHealth:
+    """Classify the latest observation file. Read-only; never raises.
+
+    Every failure mode is a verdict, not an exception, so the review gate can
+    print unconditionally and a broken observer can never abort the gate.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ObservationHealth(path=str(path), status=OBSERVATION_MISSING, detail="no file")
+    except OSError as exc:
+        return ObservationHealth(
+            path=str(path), status=OBSERVATION_UNREADABLE, detail=str(exc)
+        )
+
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        return ObservationHealth(
+            path=str(path), status=OBSERVATION_UNREADABLE, detail=f"invalid JSON: {exc}"
+        )
+
+    if not isinstance(payload, dict):
+        return ObservationHealth(
+            path=str(path),
+            status=OBSERVATION_UNREADABLE,
+            detail=f"expected a JSON object, got {type(payload).__name__}",
+        )
+
+    observed_at = payload.get("observed_at")
+    observed_at = observed_at if isinstance(observed_at, str) else None
+
+    # The observer's own failure verdict wins: it is the authoritative reason
+    # the payload is missing, and it names the cause a reviewer needs.
+    error = payload.get("observer_error")
+    if error:
+        message = payload.get("observer_message")
+        detail = f"{error}: {message}" if message else str(error)
+        return ObservationHealth(
+            path=str(path),
+            status=OBSERVATION_ERROR,
+            detail=detail,
+            observed_at=observed_at,
+        )
+
+    paper = payload.get("paper")
+    if not isinstance(paper, dict) or not paper:
+        return ObservationHealth(
+            path=str(path),
+            status=OBSERVATION_INCOMPLETE,
+            detail="observation carries no `paper` payload",
+            observed_at=observed_at,
+        )
+
+    return ObservationHealth(
+        path=str(path), status=OBSERVATION_OK, observed_at=observed_at
+    )
+
+
+@dataclass(frozen=True)
 class ParityReport:
     """The runtime checkout's commit relative to this branch's HEAD.
 
@@ -204,6 +326,16 @@ class ParityReport:
     commits_only_on_runtime: tuple[str, ...] = ()
     error: str | None = None
     fixes: tuple[FixProvenance, ...] = ()
+    observation: ObservationHealth | None = None
+
+    @property
+    def observation_usable(self) -> bool:
+        """True only when a review can actually be based on the observation.
+
+        False for a stub, a missing file, an unreadable file, AND for a report
+        built without one -- absence of evidence is not evidence of health.
+        """
+        return self.observation is not None and self.observation.usable
 
     @property
     def in_sync(self) -> bool:
@@ -242,12 +374,22 @@ class ParityReport:
             "commits_only_on_runtime": list(self.commits_only_on_runtime),
             "fixes": [f.to_dict() for f in self.fixes],
             "anomalies_explained_by_lag": list(self.anomalies_explained_by_lag),
+            "observation": self.observation.to_dict() if self.observation else None,
+            "observation_usable": self.observation_usable,
             "error": self.error,
         }
 
     def render(self) -> str:
         if self.status == UNKNOWN:
-            return f"runtime parity unknown ({self.runtime_path}): {self.error}"
+            # The observation verdict is appended here too: losing the ability to
+            # read the runtime must not also lose the reason the observation is
+            # unusable, or the cycle learns nothing at all from a dead runtime.
+            return "\n".join(
+                [
+                    f"runtime parity unknown ({self.runtime_path}): {self.error}",
+                    *self._render_observation(),
+                ]
+            )
         lines = [
             f"runtime : {self.runtime_path}",
             f"  runtime HEAD : {self.runtime_head}",
@@ -263,6 +405,10 @@ class ParityReport:
         for fix in self.fixes:
             lines.append(f"  fix {fix.commit}: {fix.state}")
             lines.append(f"    {fix.symptom}")
+        # Placed BEFORE the lag notes on purpose: a reader who cannot see the
+        # runtime has no anomaly list to interpret, so "explained by lag" would
+        # be advice about evidence that does not exist.
+        lines.extend(self._render_observation())
         if self.anomalies_explained_by_lag:
             lines.append(
                 "  EXPLAINED BY RUNTIME LAG: do not file these as defects on this"
@@ -275,29 +421,59 @@ class ParityReport:
             )
         return "\n".join(lines)
 
+    def _render_observation(self) -> list[str]:
+        if self.observation is None:
+            return [
+                "  observation : not examined (no verdict; do not read this "
+                "report as a healthy runtime)"
+            ]
+        observation = self.observation
+        stamp = observation.observed_at or "no timestamp"
+        if observation.usable:
+            return [f"  observation : ok ({stamp})"]
+        detail = f" -- {observation.detail}" if observation.detail else ""
+        return [
+            f"  observation : {observation.status}{detail}",
+            f"    observed at {stamp}; NO paper payload, so no runtime anomaly "
+            "below can be confirmed or cleared. Do not report the runtime as "
+            "healthy on this evidence.",
+        ]
+
 
 def build_report(
     runtime_path: Path = DEFAULT_RUNTIME,
     branch_path: Path | None = None,
     *,
     git: RunGit = subprocess_run_git,
+    observation_path: Path | None = None,
 ) -> ParityReport:
     """Classify the frozen runtime against this branch. Read-only.
 
     Any failure to read the runtime yields an `unknown` report rather than an
     exception, so the review gate can print the report unconditionally.
+
+    `observation_path` is opt-in: pass a path to also classify the latest Paper
+    observation.  Omitting it leaves `observation` None, which renders as "not
+    examined" -- never as a healthy runtime.  Tests rely on that default so no
+    test depends on the real `.agent-runtime` file.
     """
+    observation = read_observation(observation_path) if observation_path else None
     branch = branch_path if branch_path is not None else Path(__file__).resolve().parents[1]
     try:
         runtime_head = _rev_parse(git, runtime_path)
         branch_head = _rev_parse(git, branch)
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
+        # OSError matters on Windows: a missing/unmounted runtime worktree makes
+        # `subprocess.run(cwd=...)` raise NotADirectoryError, which used to escape
+        # the gate as a traceback. The runtime being unreadable is a verdict, not
+        # a crash -- the caller must still get the observation verdict printed.
         return ParityReport(
             runtime_path=str(runtime_path),
             runtime_head=None,
             branch_head=None,
             status=UNKNOWN,
             error=str(exc),
+            observation=observation,
         )
 
     if runtime_head == branch_head:
@@ -335,6 +511,7 @@ def build_report(
         commits_only_on_branch=branch_only,
         commits_only_on_runtime=runtime_only,
         fixes=fixes,
+        observation=observation,
     )
 
 
@@ -342,10 +519,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--runtime", type=Path, default=DEFAULT_RUNTIME)
     parser.add_argument("--branch", type=Path, default=None)
+    parser.add_argument(
+        "--observation",
+        type=Path,
+        default=DEFAULT_OBSERVATION,
+        help="latest Paper observation to classify (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--skip-observation",
+        action="store_true",
+        help="report git parity only, without a verdict on the observation",
+    )
     parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
     args = parser.parse_args(argv)
 
-    report = build_report(args.runtime, args.branch)
+    observation_path = None if args.skip_observation else args.observation
+    report = build_report(args.runtime, args.branch, observation_path=observation_path)
     if args.json:
         print(json.dumps(report.to_dict(), indent=2))
     else:

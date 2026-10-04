@@ -2,6 +2,38 @@
 
 Durable engineering memory for autonomous development.
 
+## A test that passes for an environmental reason is not coverage
+
+`build_report(runtime, branch, *, git=subprocess_run_git)` binds its git
+callable as a DEFAULT ARGUMENT at import time. So
+`monkeypatch.setattr(parity, "subprocess_run_git", boom)` rebinds the module
+global and reaches nothing — `build_report` keeps calling the original. The
+only seam that `main` actually goes through is `parity.build_report` itself,
+so every test that drives `main` must wrap THAT (inject via the `git=` keyword).
+
+The trap that made this survive review: with `RUNTIME`/`BRANCH` set to
+placeholder paths like `C:/frozen/runtime`, the REAL git fails anyway, so
+`status == UNKNOWN` and `code == 2` both hold. The test is green while the
+branch it claims to cover — the new `except (RuntimeError, OSError)` handler —
+is never executed. The environment supplied the failure the test was supposed
+to inject.
+
+Two rules that catch this class:
+
+- Assert the INJECTED artifact, not just the verdict. `"boom" in
+  str(payload["error"])` is what proves the fake was reached; `payload["status"]
+  == UNKNOWN` alone cannot tell an injected failure from an environmental one.
+- A fixture whose inputs cannot succeed in principle (placeholder paths,
+  sentinel shas) silently converts every "did my patch take effect?" check into
+  a no-op. When such a fixture exists, any test that mutates the thing under
+  test must be written so it FAILS when the mutation is reverted — verify that
+  by reverting the patch locally, not by reading the assertion.
+
+Generalised: **"green" and "covered" are different claims.** A test whose
+failure mode is an environment behaviour is evidence about the environment.
+Whenever a cycle adds a new error-handling branch, confirm the new test goes
+red without the branch before trusting the pass.
+
 ## Registry entries must be anchored by identity, not by position
 
 `scripts/paper_runtime_parity.py` maps a committed FIX to the SYMPTOM it

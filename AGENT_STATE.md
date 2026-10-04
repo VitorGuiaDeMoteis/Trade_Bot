@@ -106,11 +106,56 @@ Each line is pinned by an executable check; a violation now fails a test.
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
-- None currently verified open. Every previously listed item resolved to CLOSED
-  above. A clean cycle must therefore re-derive its own candidate from Paper
-  evidence or from a targeted grep, and record the verification command here.
+- `health.market_data` staleness has no distinct verdict. In
+  `paper-latest.json` @ `2026-10-04T10:28:21Z`, `health.status=degraded` while
+  `paper.degraded=false, reconciled=true`, and the only reason recorded is
+  `market_data.state="market_closed"` with `last_bar_at=2026-10-02T21:00:00Z` /
+  `last_persisted_at=2026-10-02T21:01:55Z` — two days stale — while
+  `last_message_at=2026-10-04T03:03:51Z` proves the feed socket is still alive.
+  Candidate: Mission Control cannot distinguish "feed died" from "no new bar
+  yet" because staleness has no verdict of its own. Verify by grepping the
+  `/health` producer for where `market_data` feeds into `status`, before
+  assuming it is a defect.
 
-### Latest cycle (2026-10-04, worktree was clean at start)
+### Latest cycle (2026-10-04, RECOVERY MODE — worktree was DIRTY at start)
+
+- Task: finish the inherited WIP, do not choose new work.
+- WIP found uncommitted: `scripts/paper_runtime_parity.py` +
+  `tests/test_paper_runtime_parity.py` taught the parity gate to classify the
+  latest observation (`read_observation` / `ObservationHealth`: ok,
+  observer-error, incomplete, missing, unreadable, not-examined) so a
+  `paper-latest.json` stub is never rendered as a healthy runtime.
+- Defect found IN the WIP and fixed before committing:
+  `test_an_unusable_runtime_still_prints_the_observation_verdict` patched
+  `parity.subprocess_run_git`, but `build_report` binds that callable as an
+  import-time default argument, so the patch never reached it. The test passed
+  because REAL git fails on the placeholder path `C:/frozen/runtime`, i.e. for
+  an environmental reason, leaving the new `except (RuntimeError, OSError)`
+  branch unexercised. Now routed through a new `_use_git(monkeypatch, git)`
+  seam (the only one `main` actually goes through) and the test asserts the
+  INJECTED error text, so it can no longer pass on the wrong evidence.
+- Validation: `pytest tests/test_paper_runtime_parity.py -q` -> 35 passed;
+  `ruff check` on both files -> All checks passed; `mypy
+  scripts/paper_runtime_parity.py` -> Success. Real read-only run
+  (`python -m scripts.paper_runtime_parity`, exit 0) prints
+  `observation : ok (2026-10-04T10:28:21.992131+00:00)`.
+- PAPER_REVIEW: run ACTIVE, health degraded, paper.paused=false,
+  paper.degraded=false, paper.reconciled=true (last_reconciled_at
+  2026-10-04T10:28:08Z, fresh); positions AAPL/SPY/TSLA;
+  orders_count_reported=0 vs actual=13; fills_count_reported=0 vs actual=11;
+  unrealized_pnl=-0.0367 (equity 99951.28). Observation verdict: `ok` — a real
+  `paper` payload, no `observer_error` stub. All three anomalies
+  (degraded-with-reconciled, count mismatch, `last_reconciled_at: null` on all
+  10 orders) are already registered CLOSED as `explained-by-runtime-lag`; no
+  new actionable finding this cycle.
+- Follow-on closed while verifying: the previous cycle's "next candidate"
+  (positional `KNOWN_FIXES[0]` ancestry anchor) is ALREADY FIXED — `_behind_report`
+  at `tests/test_paper_runtime_parity.py:261-276` enumerates the whole registry
+  (`ancestors |= {(fix.commit, BRANCH_HEAD) for fix in KNOWN_FIXES}`). Do not
+  re-open it.
+- Next candidate: the `health.market_data` staleness verdict above.
+
+### Previous latest cycle (2026-10-04, worktree was clean at start)
 
 - Task: register the `/health` execution-gate flap as a parity-known symptom, and
   make the parity test survive registry growth.
