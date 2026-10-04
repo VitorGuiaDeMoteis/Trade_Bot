@@ -89,26 +89,7 @@ def db_connection(market):
 @pytest.mark.anyio
 async def test_duplicate_intent_one_post(db_connection):
     engine, _, run_id, signal_id, risk_id = db_connection
-    class ConnProxy:
-        def execute(self, *args, **kwargs):
-            with engine.begin() as _c:
-                # We consume scalars/first eagerly because the connection closes
-                res = _c.execute(*args, **kwargs)
-                class ResultProxy:
-                    def __init__(self, res):
-                        try:
-                            self._all = res.all()
-                        except:
-                            self._all = []
-                    def first(self): return self._all[0] if self._all else None
-                    def fetchall(self): return self._all
-                    def scalar(self): return self._all[0][0] if self._all else None
-                    def scalars(self): 
-                        class SProxy:
-                            def all(self): return [r[0] for r in self._all]
-                        return SProxy()
-                return ResultProxy(res)
-    conn = ConnProxy()
+
     post_count = 0
 
     # A real Alpaca order entity ALWAYS carries filled_qty, so the duplicate-intent
@@ -147,12 +128,14 @@ async def test_duplicate_intent_one_post(db_connection):
         decided_at=datetime.now(UTC),
     )
 
-    res1 = await executor.submit(engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
+    res1 = await executor.submit(
+        engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
     )
     assert res1.status == "ACCEPTED"
     assert post_count == 1
 
-    res2 = await executor.submit(engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
+    res2 = await executor.submit(
+        engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
     )
     assert res2.status == "ACCEPTED"
     assert res2.reason == "duplicate_intent"
@@ -162,26 +145,7 @@ async def test_duplicate_intent_one_post(db_connection):
 @pytest.mark.anyio
 async def test_concurrent_intent_one_post(db_connection):
     engine, _, run_id, signal_id, risk_id = db_connection
-    class ConnProxy:
-        def execute(self, *args, **kwargs):
-            with engine.begin() as _c:
-                # We consume scalars/first eagerly because the connection closes
-                res = _c.execute(*args, **kwargs)
-                class ResultProxy:
-                    def __init__(self, res):
-                        try:
-                            self._all = res.all()
-                        except:
-                            self._all = []
-                    def first(self): return self._all[0] if self._all else None
-                    def fetchall(self): return self._all
-                    def scalar(self): return self._all[0][0] if self._all else None
-                    def scalars(self): 
-                        class SProxy:
-                            def all(self): return [r[0] for r in self._all]
-                        return SProxy()
-                return ResultProxy(res)
-    conn = ConnProxy()
+
     post_count = 0
 
     # Same real-entity rule as test_duplicate_intent_one_post: Alpaca always
@@ -222,9 +186,11 @@ async def test_concurrent_intent_one_post(db_connection):
     )
 
     results = await asyncio.gather(
-        executor.submit(engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
+        executor.submit(
+            engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
         ),
-        executor.submit(engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
+        executor.submit(
+            engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
         ),
         return_exceptions=True,
     )
@@ -243,25 +209,38 @@ async def test_concurrent_intent_one_post(db_connection):
 @pytest.mark.anyio
 async def test_reconcile_order_partially_filled(db_connection):
     engine, _, run_id, signal_id, risk_id = db_connection
+
     class ConnProxy:
         def execute(self, *args, **kwargs):
             with engine.begin() as _c:
                 # We consume scalars/first eagerly because the connection closes
                 res = _c.execute(*args, **kwargs)
+
                 class ResultProxy:
                     def __init__(self, res):
                         try:
                             self._all = res.all()
-                        except:
+                        except Exception:
                             self._all = []
-                    def first(self): return self._all[0] if self._all else None
-                    def fetchall(self): return self._all
-                    def scalar(self): return self._all[0][0] if self._all else None
-                    def scalars(self): 
+
+                    def first(self):
+                        return self._all[0] if self._all else None
+
+                    def fetchall(self):
+                        return self._all
+
+                    def scalar(self):
+                        return self._all[0][0] if self._all else None
+
+                    def scalars(self):
                         class SProxy:
-                            def all(self): return [r[0] for r in self._all]
+                            def all(self):
+                                return [r[0] for r in self._all]
+
                         return SProxy()
+
                 return ResultProxy(res)
+
     conn = ConnProxy()
 
     order_id = uuid4()

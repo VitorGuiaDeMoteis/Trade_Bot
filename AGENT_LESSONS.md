@@ -2206,3 +2206,27 @@ separate worktree" guidance.
   `.agent-runtime/paper-latest.json` for the mandatory PAPER_REVIEW gate needs
   none of them: `search_files` on the key names returns the counts and statuses
   with their line numbers, and `read_file` on those ranges gives the values.
+- LINT FINDINGS ARE NOT ALWAYS LIVE CODE. A lint pass on a test file reported
+  9 findings and the reflex is to reformat the lines the linter pointed at. Here
+  4 of the 9 (2x F841, 2x E722) pointed into a local stub whose only handle was
+  `conn = ConnProxy()`, assigned and never read. Deleting the dead block removed
+  all four at once, and the "obvious" alternative — reformatting or `# noqa`-ing
+  the bare `except:` — would have left a lie in the file: a stub that exists to
+  pretend to be a DB connection and is wired to nothing. Before fixing a finding,
+  grep for reads of the symbol the finding is about; a variable-scoped finding is
+  a statement about reachability, not about text.
+- `replace_all` PATCHES ARE NOT SCOPED TO WHAT YOU PROVED. Deleting the two dead
+  stubs with a single `replace_all` also deleted a THIRD, byte-identical stub that
+  was genuinely live (five `conn.execute` calls). The patch tool reported success
+  and clean lint — the reflowed calls were valid Python either way, so nothing in
+  the toolchain objected; only re-reading the file caught it. When removing a
+  duplicated block, count the duplicates first and remove them one at a time by
+  unique context. A green linter is not evidence that a multi-site edit hit only
+  the sites you checked.
+- PROVE A FORMATTING COMMIT CHANGED NO BEHAVIOUR, DON'T DESCRIBE IT. The cheap
+  proof is mechanical and one command: `git diff -U0 <file> | grep -E '^[+-].*assert'`
+  returning EMPTY shows not one assertion moved, which is the whole contract for
+  a test-file cleanup. Paired with `ruff check tests scripts` going 254 -> 245 —
+  exactly the file's finding count, no other file moving — it establishes that the
+  commit retired only what it claimed to. Prose like "formatting-only, no
+  behaviour change" is an assertion; that diff filter is evidence.

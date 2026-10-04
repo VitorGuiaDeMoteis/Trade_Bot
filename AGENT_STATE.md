@@ -3474,3 +3474,61 @@ carries 9 ruff findings and `ruff format` drift, all pre-existing and inherited 
 several cycles. Confirm the file is not a ruff-excluded path and that the findings
 are in fact mechanical, then make the formatting-only cleanup in a commit of its
 own so it never mixes with behavioural work.
+
+## 2026-10-04 — CYCLE 6 (task: land the pre-existing ruff debt in tests/test_alpaca_executor.py)
+
+- CYCLE START: worktree clean (branch agent/autonomous-dev). Not RECOVERY MODE.
+- PAPER GATE: observed `.agent-runtime/paper-latest.json` at
+  `observed_at=2026-10-04T12:45:50Z`. Run `ACTIVE`, `health.status=degraded`,
+  `paper.paused=false`, `paper.degraded=false`, `paper.reconciled=true`,
+  `last_reconciled_at=2026-10-04T12:45:45Z` (fresh, 5s before observation).
+  `orders_count_reported=0` vs `orders_count_actual=13`, `fills_count_reported=0`
+  vs `fills_count_actual=11`, `unrealized_pnl=-0.0366820000`, `equity=99951.28`,
+  `cash=99921.35`, `market_data.market_closed`, `last_bar_at=2026-10-02T20:00Z`.
+  Positions AAPL/SPY/TSLA micro, ~$10 each. NO NEW ACTIONABLE PAPER DEFECT: the
+  count mismatch and degraded health are the already-closed/registered agent-side
+  defects, unchanged for a fifth cycle; observation was Sunday, so
+  `market_closed` is correct and the two `ACCEPTED` SELL orders with
+  `filled_quantity=0E-10` are expected, not a new defect.
+- TASK LANDED (the first-in-line candidate named last cycle). Pre-existing, purely
+  mechanical ruff debt in `tests/test_alpaca_executor.py`. No production file was
+  touched; the file is not a ruff-excluded path.
+- THE 9 FINDINGS, AND WHY 6 OF THEM WERE DEAD CODE. The file held THREE copies of
+  a local `ConnProxy` stub. Two of them, in `test_duplicate_intent_one_post` and
+  `test_concurrent_intent_one_post`, assigned `conn = ConnProxy()` and then NEVER
+  READ IT — those two tests assert on the mock transport's own `post_count`, not
+  on the DB. They were F841 (unused variable) plus, inside the dead stub, the
+  nested `def scalars(self)` with E722 bare `except:`. So 2 of the 9 were F841 and
+  2 were E722, and all four were reachable only through dead assignments.
+- DELETED the two dead stubs outright (not suppressed, not `# noqa`). Retained the
+  third `ConnProxy` in `test_reconcile_order_partially_filled`, which IS live:
+  five `conn.execute(...)` calls (lines 253, 269, 319, 327, 335) depend on it. The
+  retained stub's bare `except:` became an explicit `except Exception:` — this is
+  a behaviour-preserving tightening in a test double, and it removes the third
+  E722 rather than suppressing it.
+- E501s (4) were pure line-length: four `executor.submit(...)` / `asyncio.gather`
+  argument lines at 104-107 chars were reflowed onto a wrapped call. No argument
+  was added, removed, reordered or renamed.
+- NO ASSERTION WAS TOUCHED. Proof, not assertion: `git diff -U0 | grep assert`
+  returns EMPTY — zero assert churn across the whole diff. The idempotency
+  contract the previous cycle added (`post_count == 1`,
+  `res2.reason == "duplicate_intent"`) and the concurrency contract
+  (`submit raised under concurrency`) are byte-identical.
+- VALIDATION.
+  - `tests/test_alpaca_executor.py`: 3 passed.
+  - Alpaca surface `test_alpaca_executor.py + test_alpaca_paper.py +
+    test_alpaca_worker.py + test_alpaca_paper_incident.py`: 14 passed.
+  - `ruff check tests/test_alpaca_executor.py`: All checks passed (0 findings).
+  - `ruff format --diff tests/test_alpaca_executor.py`: 1 file already formatted.
+  - Repo baseline `ruff check tests scripts`: 254 -> 245, i.e. exactly the 9
+    findings for this file were retired and no other file's count moved.
+- No broker state, runtime database, or credential was touched. Nothing pushed.
+
+FIRST-IN-LINE TASK (for the next cycle): 245 pre-existing ruff findings remain in
+`tests/` + `scripts/`, 72 auto-fixable. Do NOT sweep the whole set in one cycle —
+that is not one small task and it would bury any behavioural signal. Next: take a
+single clearly-bounded, still-unfixed FILE (verify its findings are mechanical by
+inspecting each, as this cycle did) and land it the same way, or investigate
+whether the 3 `--unsafe-fixes` / 3 hidden fixes include any that would change
+behaviour and therefore need manual review. Do not assume `--fix` is behaviour-
+preserving; this cycle proved mechanical by reading each finding first.
