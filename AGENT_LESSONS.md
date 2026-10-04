@@ -1801,8 +1801,13 @@ Reusable rules:
 - Corollary for the sibling read sites: `paper_queries.portfolio` and
   `decisions_routes` select `paper_orders` alone, which no longer HAS the column
   (migration moved it), so their `last_reconciled_at: null` is correct for REPLAY.
-  Two tables, one concept, one home -- pinning `EXPECTED not in paper_orders.c`
-  stops someone re-adding it and silently diverging again.
+Read the whole file before filing: `paper_queries.portfolio` stamps
+  `reconciled`/`last_reconciled_at` explicitly on both branches and counts via real
+  SQL `COUNT()`, so the "audit the SIMULATOR constructor" candidate was a false
+  premise too.
+- Corollary for the schema half of the same family: `paper_orders` keeps ONE home
+  for a concept. Two tables, one concept, one home -- pinning `EXPECTED not in
+  paper_orders.c` stops someone re-adding it and silently diverging again.
 - Second, larger lesson from the same cycle: `AGENT_STATE.md` had gone STALE for
   seven commits because those cycles committed without writing a state entry, and
   the resulting "first-in-line task" was ALREADY DONE (`broker_order_quantity_divergence`,
@@ -1810,3 +1815,22 @@ Reusable rules:
   out-of-date handoff file is not neutral -- it actively steers the next cycle into
   re-doing finished work. Verify a backlog claim with grep/pytest at PICK time, not
   only when it was written.
+
+## An append-only state file rots the section a cycle reads FIRST
+- `AGENT_STATE.md` grew to 2747 lines because each cycle appended its entry at the
+  END, while the authoritative `## Next task` section sat frozen at line 1071. The
+  mission tells a cycle to read the state and pick a task, so every cycle read the
+  one section that no commit ever updates. That produced three consecutive false
+  premises (`broker_order_quantity_divergence`, the "second `PaperOrder(` ctor",
+  the "SIMULATOR constructor audit") -- all three already fixed days earlier.
+- The mechanism is PLACEMENT, not absence. Cycle g claimed "seven commits landed
+  without a state entry"; `git show --stat` showed every one of them had written
+  46-80 lines. When a cycle suspects missing state, check `git log --stat` before
+  theorizing -- the file was never missing an entry, the entry was in the wrong place.
+- Fix that generalizes: put the authoritative backlog at the TOP of the file, in a
+  section every cycle is required to rewrite, and push narrative below an explicit
+  `## ARCHIVED` divider. A section that is never edited is a section that will lie.
+- Pair every CLOSED backlog claim with the executable check that pins it (a test
+  name, or a grep whose remaining hits are all benign). A CLOSED claim with no
+  pinning check is indistinguishable from a stale one, and costs a cycle to
+  re-derive either way.
