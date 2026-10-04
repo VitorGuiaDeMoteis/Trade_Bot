@@ -190,6 +190,12 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
             conn.scalar(select(func.count()).select_from(broker_fills)) or 0
         )
 
+        # The snapshot status is the single source of truth for whether the last
+        # reconciliation cycle succeeded. `_enter_degraded` flips the stored status
+        # to DEGRADED when a cycle fails, so this is the persisted latch, not a
+        # recomputation of current health.
+        degraded = snapshot["status"] in ("DEGRADED", "STALE")
+
         return PaperPortfolio(
             mode="ALPACA_PAPER",
             run_id=run_id,
@@ -213,5 +219,11 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
             orders_count=orders_count,
             fills_count=fills_count,
             last_reconciled_at=snapshot["last_reconciled_at"],
-            degraded=snapshot["status"] in ("DEGRADED", "STALE"),
+            # `reconciled` defaults to True in the contract, and this route
+            # never passed it, so a DEGRADED/STALE snapshot published
+            # "reconciled": true beside "degraded": true -- a book whose last
+            # reconciliation FAILED asserting it was verified. Derive both
+            # flags from the single snapshot status so they can never disagree.
+            degraded=degraded,
+            reconciled=not degraded,
         )

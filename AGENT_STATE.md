@@ -1693,3 +1693,78 @@ constructor of the observation payload is the suspect: grep the `PaperOrder(` /
 `PaperPortfolio(` constructors in services/alpaca_paper/ and services/api/
 (paper_routes.py already supplies it correctly; services/api/paper_queries.py:28
 builds the second `PaperPortfolio` for the simulator path).
+
+================================================================================
+CYCLE 2026-10-04 (worktree DIRTY at start -> RECOVERY MODE, work finished & committed)
+
+TASK: none chosen. The tree was dirty (`M services/api/broker_routes.py`,
+`M tests/test_broker_portfolio_counts.py`), so per the recovery rule this cycle
+only reviewed, validated and committed that unfinished work.
+
+REVIEW OF THE WIP: no temporary or intentionally-broken code present. The change
+is one constructor argument plus three focused tests. `PaperPortfolio.reconciled`
+defaults to `True` (packages/contracts/paper.py:106) and the broker route never
+passed it, while it DID derive `degraded` from the snapshot status. So a snapshot
+latched DEGRADED/STALE -- i.e. the last reconciliation cycle FAILED and the
+positions may not match the broker -- was published as
+`"reconciled": true, "degraded": true`. Both flags describe the same stored
+latch, so the fix derives both from it (`reconciled = not degraded`), which makes
+disagreement structurally impossible rather than merely fixed today.
+
+CHANGES (already made by the interrupted cycle; verified, not rewritten):
+- services/api/broker_routes.py: one hoisted `degraded` local used for both
+  `degraded=` and the newly supplied `reconciled=`.
+- tests/test_broker_portfolio_counts.py: `_StubConnection` takes a per-case
+  `snapshot_status` so the latch can be driven; three tests added -- the two
+  failure statuses must never publish reconciled, the ACTIVE CONTROL must still
+  publish True, and the two flags are always opposed for every status.
+
+VALIDATION (re-run independently, not taken on trust):
+- 25 passed in 0.38s for tests/test_broker_portfolio_counts.py; the 9 tests
+  selected by `-k "reconcil or degraded"` pass.
+- `ruff check` clean on both changed files; `mypy services/api/broker_routes.py`
+  clean (no issues in 1 source file).
+- Non-vacuity proven WITHOUT editing any tracked file:
+  `git show HEAD:services/api/broker_routes.py | grep -n reconciled` returns only
+  `last_reconciled_at` hits and no `reconciled=` kwarg, which is direct evidence
+  the field was never supplied on HEAD and therefore defaulted to True. Read-only;
+  no bug restore was performed.
+- Latch reachability checked so the inversion cannot be fooled by a third value:
+  `broker_portfolio_snapshots.status` is only ever written `ACTIVE`
+  (worker.py:151 `reconcile_once`, worker.py:587 `_snapshot_broker_portfolio`) or
+  `DEGRADED` (worker.py:329 `_enter_degraded`). `STALE` is in the membership test
+  defensively and is never written.
+- Consumer check: grep for `.reconciled` / `reconciled=` across services/ finds
+  only this route; no production consumer branches on the field, so the change
+  has no downstream contract effect. tests/test_broker_routes.py inserts
+  `status="ACTIVE"` snapshots, so its expectations are unchanged.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle; observed_at
+2026-10-04T01:49:48Z): health.status=degraded, health.database=up,
+market_data.state=market_closed, paper.status=ACTIVE, paused=false,
+paper.degraded=false, reconciled=true, last_reconciled_at=2026-10-04T01:49:45Z.
+Open position symbols AAPL, SPY, TSLA, all still micro-sized (~$9.95-9.99 each).
+orders_count_reported=0 vs orders_count_actual=13; fills_count_reported=0 vs
+fills_count_actual=11. unrealized_pnl=-0.0366820000, equity=99951.28,
+cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: `health.status` is `degraded` again (it was `ok` last
+cycle) -- the known execution-gate flap documented in prior cycles, not a new
+fault. Equity, P&L and both totals are IDENTICAL to last cycle, so this is still
+the documented undeployed pre-fix reading rather than new drift: the counted-
+report fix is committed but the frozen runtime predates it. Two new orders are
+the expected intraday SELL pair for the AAPL and TSLA micro-lots (both
+ACCEPTED, filled_quantity 0E-10, so not yet filled). No broker/local
+divergence, no duplicate execution, no stale reconciliation, no accounting
+inconsistency. Every `latest_orders[*].last_reconciled_at` is STILL null while
+the portfolio-level field is populated -- the long-standing candidate task
+remains open and is still the one to take next.
+
+Next candidate task (carried forward, still first): the observation path null
+`last_reconciled_at`, now confirmed in SIX consecutive Paper samples -- every
+`latest_orders[*]` entry carries `"last_reconciled_at": null` while the
+portfolio-level field is populated. The broker route supplies it, so the SECOND
+constructor of the observation payload is the suspect: grep the `PaperOrder(` /
+`PaperPortfolio(` constructors in services/alpaca_paper/ and services/api/
+(paper_routes.py already supplies it correctly; services/api/paper_queries.py:28
+builds the second `PaperPortfolio` for the simulator path).

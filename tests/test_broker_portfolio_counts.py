@@ -135,6 +135,7 @@ class _StubConnection:
         fills: list[dict[str, Any]],
         order_total: int,
         fill_total: int,
+        snapshot_status: str = "ACTIVE",
     ) -> None:
         self._control = control
         self._positions = positions
@@ -142,6 +143,10 @@ class _StubConnection:
         self._fills = fills
         self._order_total = order_total
         self._fill_total = fill_total
+        # `status` is the reconciliation LATCH the worker writes (see
+        # `_save_broker_snapshot` / `_enter_degraded`), not a health probe, so
+        # a test can drive the portfolio's flags by setting it per case.
+        self._snapshot = {**_SNAPSHOT, "status": snapshot_status}
         self.statements: list[str] = []
 
     def execute(self, statement: Any) -> "_Result":
@@ -150,7 +155,7 @@ class _StubConnection:
         if "system_controls" in text:
             return _Result([self._control] if self._control else [])
         if "broker_portfolio_snapshots" in text:
-            return _Result([dict(_SNAPSHOT)])
+            return _Result([dict(self._snapshot)])
         if "broker_positions" in text:
             return _Result(self._positions)
         if "broker_orders" in text:
@@ -541,3 +546,59 @@ def test_order_status_column_is_selected_under_a_label_that_cannot_shadow_broker
     assert "paper_orders.status AS paper_status" in projection
     # The broker column is still projected, for the verbatim broker_status field.
     assert "broker_orders.status" in projection
+
+
+def _conn_for_status(status: str) -> _StubConnection:
+    return _StubConnection(
+        control={"paused": False, "active_run_id": None},
+        positions=[_position_row()],
+        orders=[],
+        fills=[],
+        order_total=0,
+        fill_total=0,
+        snapshot_status=status,
+    )
+
+
+@pytest.mark.parametrize("status", ["DEGRADED", "STALE"])
+def test_failed_reconciliation_is_never_published_as_reconciled(status: str) -> None:
+    """`reconciled` must not default to True on a snapshot whose cycle failed.
+
+    The route derived `degraded` from the snapshot status but never passed
+    `reconciled`, which the contract defaults to True. A DEGRADED/STALE book --
+    one whose last reconciliation FAILED and whose positions may not match the
+    broker -- was therefore published as `"reconciled": true` beside
+    `"degraded": true`. Both flags describe one fact about the same latch, so
+    any consumer that trusts `reconciled` (and many will, since True is the
+    contract default and therefore the common case) was told a failed book had
+    been verified against the broker.
+    """
+    portfolio = _call(_conn_for_status(status))
+
+    assert portfolio.status == status
+    assert portfolio.degraded is True
+    assert portfolio.reconciled is False
+
+
+def test_reconciled_is_true_only_for_a_reconciled_snapshot() -> None:
+    """The control: an ACTIVE latch must still report reconciled=True.
+
+    Without this, "always report False" would pass the test above.
+    """
+    portfolio = _call(_conn_for_status("ACTIVE"))
+
+    assert portfolio.degraded is False
+    assert portfolio.reconciled is True
+
+
+@pytest.mark.parametrize("status", ["ACTIVE", "DEGRADED", "STALE"])
+def test_reconciled_and_degraded_can_never_disagree(status: str) -> None:
+    """Both flags come from the same stored latch, so they are always opposed.
+
+    Whichever status the worker persisted, exactly one of the two must hold.
+    A future edit that recomputes either flag from a second source would break
+    this invariant even if it kept both current tests passing.
+    """
+    portfolio = _call(_conn_for_status(status))
+
+    assert portfolio.reconciled is not portfolio.degraded

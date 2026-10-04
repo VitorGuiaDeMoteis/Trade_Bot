@@ -1326,3 +1326,39 @@ denominator was already right.
   percentages carry 10 decimal places; several analytics fields are rounded
   (`round(win_rate, 2)` etc.) and this one is not. Not yet decided which is
   right -- do not "fix" it without checking the consumer.
+
+## A defaulted contract field is an UNSET field, not a neutral one
+
+`PaperPortfolio.reconciled` defaults to `True`
+(`packages/contracts/paper.py:106`). `get_broker_portfolio` derived `degraded`
+from the snapshot status but never passed `reconciled`, so every DEGRADED/STALE
+book was published as `"reconciled": true` beside `"degraded": true` -- a book
+whose last reconciliation FAILED asserting it had been verified against the
+broker. Because `True` is the default it is also the value seen in normal
+operation, so no reader of the field had a reason to distrust it.
+
+Reusable rules:
+
+- When a constructor omits a field, check the CONTRACT's default before assuming
+  the omission is harmless. A `bool = True` default is not "unmentioned"; it is a
+  positive claim the route is making on every request it does not think about.
+- Two flags about ONE fact should be derived from ONE source. Here both come
+  from the stored snapshot status, so they can never disagree; a future edit that
+  recomputes either from a second source breaks that by construction.
+- Fail-closed means the UNAVAILABLE claim must not be the default. An
+  availability-shaped flag (`reconciled`) defaulting to the permissive value
+  fails open even while a separate `degraded` flag fails closed.
+- Pin the CONTROL when a fix inverts a flag: `test_reconciled_is_true_only_for_a
+  reconciled_snapshot` exists so "always report False" cannot pass.
+
+Proving non-vacuity without touching tracked code, third form of this technique:
+`git show HEAD:services/api/broker_routes.py | grep -n reconciled` returns only
+`last_reconciled_at` hits and NO `reconciled=` kwarg, which is direct evidence
+the field was never supplied on HEAD. Read-only, no restore needed.
+
+Latch reachability: `broker_portfolio_snapshots.status` is only ever written
+`ACTIVE` (both `_save_broker_snapshot` call sites: worker.py:151
+`reconcile_once`, worker.py:587 `_snapshot_broker_portfolio`) or `DEGRADED`
+(`_enter_degraded`, worker.py:329). `STALE` appears in the route's membership
+test defensively and is never written. So inverting on that set covers every
+reachable value, and no third status can slip through as "reconciled".
