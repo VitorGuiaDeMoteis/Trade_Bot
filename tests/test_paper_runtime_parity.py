@@ -22,8 +22,12 @@ from scripts.paper_runtime_parity import (
     AHEAD,
     BEHIND,
     DIVERGED,
+    EXPLAINED_BY_LAG,
+    KNOWN_FIXES,
+    LIVE_ON_RUNTIME,
     SYNC,
     UNKNOWN,
+    UNKNOWN_FIX,
     ParityReport,
     build_report,
     main,
@@ -215,3 +219,73 @@ def test_json_output_is_serialisable(
     payload = capsys.readouterr().out
     assert '"status": "runtime-behind"' in payload
     assert '"observations_may_lag": true' in payload
+
+
+def _behind_report(*, also_on_runtime: set[str] | None = None) -> ParityReport:
+    """A runtime that is a strict ancestor of the branch.
+
+    The known fix is always an ancestor of the BRANCH (it is a branch commit);
+    `also_on_runtime` decides per sha whether the runtime has it too.
+    """
+    fix = KNOWN_FIXES[0].commit
+    ancestors = {(RUNTIME_HEAD, BRANCH_HEAD), (fix, BRANCH_HEAD)}
+    ancestors |= {(sha, RUNTIME_HEAD) for sha in (also_on_runtime or set())}
+    return build_report(
+        RUNTIME,
+        BRANCH,
+        git=fake_git({RUNTIME: RUNTIME_HEAD, BRANCH: BRANCH_HEAD}, ancestors=ancestors),
+    )
+
+
+def test_fix_missing_from_runtime_is_reported_as_runtime_lag() -> None:
+    """The point of the section: a stale runtime gets an explicit verdict.
+
+    Without this, every cycle re-investigates a symptom whose fix is already
+    merged here and simply never deployed.
+    """
+    report = _behind_report()
+
+    provenance = report.fixes[0]
+    assert provenance.state == EXPLAINED_BY_LAG
+    assert provenance.symptom in report.anomalies_explained_by_lag
+    rendered = report.render()
+    assert provenance.commit in rendered
+    assert "EXPLAINED BY RUNTIME LAG" in rendered
+
+
+def test_fix_present_on_runtime_is_not_called_runtime_lag() -> None:
+    """When the runtime HAS the fix, the symptom is live and must be reported.
+
+    The inverse error is the dangerous one: calling a live defect "explained"
+    would suppress the investigation that finds it.
+    """
+    report = _behind_report(also_on_runtime={KNOWN_FIXES[0].commit})
+
+    assert report.fixes[0].state == LIVE_ON_RUNTIME
+    assert report.anomalies_explained_by_lag == ()
+    assert "EXPLAINED BY RUNTIME LAG" not in report.render()
+
+
+def test_fix_absent_from_branch_history_is_unknown_not_explained() -> None:
+    """An unresolvable sha yields no verdict, never a reassuring one."""
+    report = build_report(
+        RUNTIME,
+        BRANCH,
+        git=fake_git(
+            {RUNTIME: RUNTIME_HEAD, BRANCH: BRANCH_HEAD},
+            ancestors={(RUNTIME_HEAD, BRANCH_HEAD)},
+        ),
+    )
+
+    assert report.status == BEHIND
+    assert report.fixes[0].state == UNKNOWN_FIX
+    assert report.anomalies_explained_by_lag == ()
+
+
+def test_unreadable_runtime_reports_no_fix_provenance() -> None:
+    """Nothing was read, so nothing is claimed -- not even an explanation."""
+    report = build_report(RUNTIME, BRANCH, git=fake_git({RUNTIME: "abc"}))
+
+    assert report.status == UNKNOWN
+    assert report.fixes == ()
+    assert report.anomalies_explained_by_lag == ()

@@ -7,6 +7,11 @@ worktree pinned to its own commit and it NEVER fast-forwards during autonomous
 development.  A field that is populated on this branch can legitimately read as
 null in an observation simply because the deployed checkout predates the fix.
 
+Two questions are answered.  First, how far behind the runtime is.  Second, for
+each KNOWN_FIX, whether the runtime actually contains that commit -- which turns
+"is this observation anomaly a live defect or runtime lag?" into a lookup
+instead of a fresh investigation every cycle.
+
 This module answers that question with `git` alone.  It is strictly read-only:
 it runs `rev-parse`, `merge-base` and `log` against the runtime worktree and
 writes nothing anywhere.  It never opens the database, never contacts the
@@ -43,9 +48,69 @@ AHEAD = "runtime-ahead"
 DIVERGED = "diverged"
 UNKNOWN = "unknown"
 
+#: A known symptom is `explained-by-runtime-lag` when the runtime does not
+#: contain the fix and `live-on-runtime` when it does.  `unknown-fix` means the
+#: commit is not even in this branch's history, so no verdict is possible -- a
+#: typo'd sha must never yield a confident "explained" answer.
+EXPLAINED_BY_LAG = "explained-by-runtime-lag"
+LIVE_ON_RUNTIME = "live-on-runtime"
+UNKNOWN_FIX = "unknown-fix"
+
 #: A run_git returns a CompletedProcess; tests substitute their own callable so
 #: no real repository is required to exercise the classification logic.
 RunGit = Callable[[Sequence[str], Path | None], subprocess.CompletedProcess[str]]
+
+
+@dataclass(frozen=True)
+class KnownFix:
+    """A commit that corrected a defect the review gate can still observe.
+
+    `symptom` is phrased the way the anomaly appears in the observation, so a
+    cycle reading the report can match it without re-deriving the cause.
+    """
+
+    commit: str
+    symptom: str
+
+
+#: Defects already corrected on this branch whose symptom persists in every
+#: observation while the frozen runtime stays behind.  Each entry is a claim the
+#: report VERIFIES, never assumes: `commit` must be reachable from the branch
+#: HEAD, otherwise it is reported as `unknown-fix`.
+KNOWN_FIXES: tuple[KnownFix, ...] = (
+    KnownFix(
+        commit="5ee4f29",
+        symptom=(
+            "latest_orders[*].requested_at advances every reconcile cycle while "
+            "latest_orders[*].last_reconciled_at is null"
+        ),
+    ),
+)
+
+
+@dataclass(frozen=True)
+class FixProvenance:
+    """Where a known fix sits relative to the branch and the runtime."""
+
+    commit: str
+    symptom: str
+    in_branch: bool
+    in_runtime: bool
+
+    @property
+    def state(self) -> str:
+        if not self.in_branch:
+            return UNKNOWN_FIX
+        return LIVE_ON_RUNTIME if self.in_runtime else EXPLAINED_BY_LAG
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "commit": self.commit,
+            "symptom": self.symptom,
+            "in_branch": self.in_branch,
+            "in_runtime": self.in_runtime,
+            "state": self.state,
+        }
 
 
 def subprocess_run_git(
@@ -116,6 +181,7 @@ class ParityReport:
     commits_only_on_branch: tuple[str, ...] = ()
     commits_only_on_runtime: tuple[str, ...] = ()
     error: str | None = None
+    fixes: tuple[FixProvenance, ...] = ()
 
     @property
     def in_sync(self) -> bool:
@@ -131,6 +197,17 @@ class ParityReport:
         """
         return self.status in (BEHIND, DIVERGED)
 
+    @property
+    def anomalies_explained_by_lag(self) -> tuple[str, ...]:
+        """Symptoms a reviewer can stop investigating, and why.
+
+        Each entry names a commit that IS in the branch and is NOT in the
+        runtime, so the anomaly belongs to the deployed checkout, not to this
+        code.  A symptom whose fix IS in the runtime is deliberately absent:
+        then the runtime is running the fix and the anomaly is still live.
+        """
+        return tuple(f.symptom for f in self.fixes if f.state == EXPLAINED_BY_LAG)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "runtime_path": self.runtime_path,
@@ -141,6 +218,8 @@ class ParityReport:
             "observations_may_lag": self.observations_may_lag,
             "commits_only_on_branch": list(self.commits_only_on_branch),
             "commits_only_on_runtime": list(self.commits_only_on_runtime),
+            "fixes": [f.to_dict() for f in self.fixes],
+            "anomalies_explained_by_lag": list(self.anomalies_explained_by_lag),
             "error": self.error,
         }
 
@@ -159,6 +238,14 @@ class ParityReport:
         if self.commits_only_on_runtime:
             lines.append(f"  {len(self.commits_only_on_runtime)} commit(s) on the runtime only:")
             lines.extend(f"    {c}" for c in self.commits_only_on_runtime)
+        for fix in self.fixes:
+            lines.append(f"  fix {fix.commit}: {fix.state}")
+            lines.append(f"    {fix.symptom}")
+        if self.anomalies_explained_by_lag:
+            lines.append(
+                "  EXPLAINED BY RUNTIME LAG: do not file these as defects on this"
+                " branch; the runtime never ran the fix."
+            )
         if self.observations_may_lag:
             lines.append(
                 "  NOTE: a field this branch populates may read null in an "
@@ -205,6 +292,19 @@ def build_report(
     if status in (SYNC, UNKNOWN):
         branch_only, runtime_only = (), ()
 
+    # Provenance is computed only after both revisions resolved, and both
+    # ancestry probes run against `branch` so they resolve in this repository
+    # rather than in whatever cwd the caller happened to be in.
+    fixes = tuple(
+        FixProvenance(
+            commit=known.commit,
+            symptom=known.symptom,
+            in_branch=_is_ancestor(git, known.commit, branch_head, branch),
+            in_runtime=_is_ancestor(git, known.commit, runtime_head, branch),
+        )
+        for known in KNOWN_FIXES
+    )
+
     return ParityReport(
         runtime_path=str(runtime_path),
         runtime_head=runtime_head,
@@ -212,6 +312,7 @@ def build_report(
         status=status,
         commits_only_on_branch=branch_only,
         commits_only_on_runtime=runtime_only,
+        fixes=fixes,
     )
 
 

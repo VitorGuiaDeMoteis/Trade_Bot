@@ -2171,5 +2171,46 @@ Second candidate task (carried forward, still open, now ELEVEN samples):
 `latest_orders[*].last_reconciled_at` is still null in every Paper sample while the
 portfolio-level field is populated. Prior analysis stands: `paper_orders` has no
 `last_reconciled_at` column (only `broker_orders` does, models.py:262), so
-determine which payload the frozen observation reads before changing anything, and
-do not add a column or migration without justification.
+determine which payload the frozen observation reads before changing anything,
+and do not add a column or migration without justification."
+
+===============================================================================
+CYCLE 2026-10-04 (worktree CLEAN at start, one small task)
+
+TASK: close the two stale Paper-review leads, then make that closure mechanical.
+
+Both were the SAME defect and both are already fixed on this branch. Frozen
+runtime 76813fd maps the order payload at services/api/broker_routes.py:103 with
+`requested_at=o["last_reconciled_at"]` and never stamps the order's own
+`last_reconciled_at`, so reconciliation advanced `requested_at` while the
+deterministic order_id stayed stable, and the field read null. Branch commit
+5ee4f29 corrects both, and tests/test_broker_portfolio_counts.py:341-364 pins
+them. There was no second submission and no fan-out to find: the previous
+cycle's `requested_at`/uuid5/dedup prohibitions were right and remain right.
+
+CHANGES:
+- scripts/paper_runtime_parity.py: added KNOWN_FIXES + FixProvenance and the
+  `fixes` / `anomalies_explained_by_lag` report fields. For each known fix the
+  tool asks git whether the runtime contains it, and reports one of
+  explained-by-runtime-lag / live-on-runtime / unknown-fix.
+- tests/test_paper_runtime_parity.py: 4 tests covering all three verdicts plus
+  the unreadable-runtime path.
+
+VALIDATION: 17 parity tests + 42 parity/broker-portfolio tests pass; ruff check
+clean; mypy clean on the script; live run against the frozen runtime prints
+`fix 5ee4f29: explained-by-runtime-lag`. The two `ruff format` complaints are in
+pre-existing code and were left alone.
+
+Why it matters: the gate could not tell a stale runtime from a live defect, so
+each cycle re-investigated the same symptom. The inverse error is the dangerous
+one, so the guard fails safe -- an unresolvable sha or an unreadable runtime
+reports NO explanation rather than a reassuring one.
+
+Next candidate task (carried forward, unchanged): `get_session_analytics`
+reports `anomalies.unmatched_sells` as a bare `[{symbol, quantity}]` list --
+give it the same counted, attributed summary the other anomaly keys get, with a
+test pinning the count.
+
+Second candidate task (carried forward): reconcile `return_pct` with
+docs/M4_CORE.md:67 (`(equity_final - initial_cash) / initial_cash * 100`); it
+still numerates from `total_pnl`.

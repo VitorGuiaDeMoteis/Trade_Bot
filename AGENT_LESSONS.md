@@ -1556,3 +1556,15 @@ Reusable rules:
 - `python -c` is BLOCKED in this session (exit -1). Read JSON artifacts directly
   with read_file instead of scripting extraction -- do not burn calls retrying a
   blocked interpreter path.
+- An anomaly that survives cycle after cycle is usually deployment lag, not
+  code. Before re-deriving a cause, ask whether the frozen runtime even has the
+  fix: `git merge-base --is-ancestor <fix> <runtime-head>` settles it in one
+  command. `scripts/paper_runtime_parity.py` now reports this per known fix and
+  names the symptom it explains -- read its output before opening the code.
+- A guard that can suppress alerts must fail safe in the reassuring direction it
+  controls. `unknown-fix` (sha not in this branch's history) and an unreadable
+  runtime both report NO explanation, so a typo'd commit or a missing worktree
+  can never make a live defect look explained. Pin both with tests.
+- When closing a stale lead, record which prohibitions lifted and which remain.
+  "Do not touch `requested_at`, do not weaken the uuid5 derivation, do not
+  dedupe" stayed correct here; only the hunt for a phantom emitter closed.
