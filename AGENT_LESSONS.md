@@ -1670,3 +1670,37 @@ Reusable rules:
   the raise fires for the wrong reason; capturing the first consumer of both
   payloads (here `ExecutionGuard.evaluate` via monkeypatch, returning a
   rejection so nothing is submitted) proves they actually arrived.
+
+## A stale fixture fails OPPOSITE to the safety bug it hides
+- `assert 0 == 1` on a submit counter looks like "the broker call never
+  happened", which invites a hunt for a worker bug that submits nothing. Read
+  the assertion's direction first: ZERO submits under a fail-closed guard is the
+  guard WORKING. The real defect was the test, whose fixture predated the
+  requirement (`last_equity` became mandatory in `38b3b57`, after the test's last
+  touch in `da6a90f` -- `git merge-base --is-ancestor` settles that ordering in one
+  command instead of re-deriving it from the log).
+- Adding a missing required field to a fixture is safe only while every OTHER test
+  sharing that shape is genuinely NOT a degraded-path test. Bare
+  `{"equity": "1000"}` appears in both a stale test and an intentional one
+  (`test_degraded_worker_never_submits_buy` asserts submission is NOT awaited) --
+  grep every occurrence and classify before editing. Bulk-fixing the shape would
+  have deleted a safety test.
+- Equal baseline sides (`last_equity == equity`) satisfy the breaker with a 0.00
+  delta. Prefer that to loosening a threshold or relaxing the guard; a fixture that
+  needs a real loss to reach its code path is usually testing the wrong path.
+- When a fixture fix needs a guard to actually let the order through, assert the
+  INVARIANT it depends on, not just the mock counter. `submit_order.call_count == 1`
+  survives a deleted dedup if a single worker still submits; the one-row-per-
+  `risk_decision_id` check on `paper_orders` is what pins the deterministic
+  uuid5 order_id dedup. And keep `== 1`: `>= 1` cannot fail.
+
+## Prove "pre-existing" by stashing the one file you touched
+- Adjacent test files failing after your edit is a HYPOTHESIS, not a fact, and
+  "I didn't touch that file" is reasoning, not proof. One command settles it:
+  `git stash push -- <only your changed file>`, re-run the failing file, then
+  `git stash pop`. `git diff --name-only` afterwards confirms the restore landed.
+  Scope the stash to your file -- a bare `git stash` sweeps unrelated WIP too.
+- Also check the direction of the regression claim: identical failures at HEAD
+  mean the file was already red, so it is a separate queued task, not blast
+  radius from the commit under test. Record that as the next first-in-line task
+  and STOP, rather than folding a second root cause into a small cycle.

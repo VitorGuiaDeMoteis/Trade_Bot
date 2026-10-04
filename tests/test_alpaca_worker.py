@@ -270,7 +270,16 @@ async def test_worker_process_pending_submits_idempotency(engine, adapter_mock, 
 
 
     adapter_mock.submit_order.return_value = {"id": "broker_order_123", "status": "accepted"}
-    adapter_mock.get_account.return_value = {"equity": "1000"}
+    # `last_equity` is REQUIRED, not optional: the daily-loss breaker compares the
+    # broker's start-of-day baseline against current equity, and `ExecutionGuard`
+    # fails CLOSED on a BUY when either side of that delta is unsourceable
+    # (services/alpaca_paper/guard.py, "baseline last_equity ausente ou inválido").
+    # This fixture predated that requirement, so it supplied only `equity`, the
+    # guard refused the BUY, and this test asserted 1 submit while observing 0 --
+    # it failed at HEAD for a FIXTURE reason, not a worker reason. Supply both
+    # sides of the delta so the test reaches the code path it is named for.
+    account = {"equity": "1000", "last_equity": "1000"}
+    adapter_mock.get_account.return_value = account
     adapter_mock.get_positions.return_value = []
 
     for worker in (worker1, worker2):
@@ -278,15 +287,29 @@ async def test_worker_process_pending_submits_idempotency(engine, adapter_mock, 
         worker.reconciliation_ready = True
 
     await asyncio.gather(
-        worker1._process_pending_submits(
-            account={"equity": "1000"}, positions=[]
-        ),
-        worker2._process_pending_submits(
-            account={"equity": "1000"}, positions=[]
-        ),
+        worker1._process_pending_submits(account=account, positions=[]),
+        worker2._process_pending_submits(account=account, positions=[]),
     )
 
+    # IDEMPOTENCY, not "at least once": two workers raced over one APPROVED
+    # decision, and the deterministic uuid5(run_id, decision_id) order_id means
+    # the second one loses the paper_orders primary-key insert and reconciles
+    # the existing intent instead of POSTing again (executor.submit ->
+    # IntegrityError -> "duplicate_intent"). Asserting exactly 1 is what pins
+    # the dedup; `>= 1` would pass even if the dedup were deleted.
     assert adapter_mock.submit_order.call_count == 1
+
+    with engine.connect() as c:
+        rows = (
+            c.execute(
+                select(paper_orders).where(
+                    paper_orders.c.risk_decision_id == decision_id
+                )
+            )
+            .mappings()
+            .all()
+        )
+    assert len(rows) == 1, f"one decision must yield one local intent, got {len(rows)}"
 
 
 @pytest.fixture

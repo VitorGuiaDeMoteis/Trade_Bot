@@ -2502,3 +2502,54 @@ fails at HEAD, standalone, with no WIP present:
 Second candidate task (carried forward, unchanged):
 `broker_order_quantity_divergence` (worker.py:255) still has no pure unit
 coverage; same stub-only approach as the guard test just committed.
+
+## Cycle: stale idempotency fixture, and a mis-scoped regression family
+
+RESULT: the first-in-line task is DONE (fixture repair, test-only, committed).
+No production code touched.
+
+- Root cause of `assert 0 == 1`: a FIXTURE, not a worker bug, exactly as the
+  handoff warned. `test_worker_process_pending_submits_idempotency` supplied
+  `account={"equity": "1000"}`. Commit `38b3b57` (daily-loss breaker wired to a
+  real equity baseline, confirmed via `git merge-base --is-ancestor da6a90f
+  38b3b57`) made `last_equity` REQUIRED, and `ExecutionGuard` fails CLOSED on a
+  BUY without it ("baseline last_equity ausente ou invalido"). So the guard
+  correctly refused the BUY and submit_order was never called -- the test was
+  asserting the dedup while never reaching the submit path.
+- Fix: `account = {"equity": "1000", "last_equity": "1000"}`, shared by both
+  workers so the fixture cannot drift between the two racers. Equal sides mean a
+  0.00 daily delta, i.e. the breaker is satisfied without loosening it. The
+  sibling negative test `test_degraded_worker_never_submits_buy` keeps its bare
+  `{"equity": "1000"}` ON PURPOSE -- rejection is its assertion -- and
+  `tests/test_paper_v1_stabilization.py:103` likewise stays degraded.
+- Added an assertion that pins WHY exactly-1 is correct: one APPROVED decision
+  must yield exactly one `paper_orders` row keyed by `risk_decision_id`.
+  `submit_order.call_count == 1` alone can hold for the wrong reason (e.g. one
+  worker doing the work while dedup is deleted); the row count pins the
+  deterministic uuid5(run_id, decision_id) intent instead. `== 1`, never `>= 1`.
+- Validation: tests/test_alpaca_worker.py 3 passed; ruff clean on the file; the
+  worker/guard family (alpaca_worker, alpaca_guard, daily_loss_baseline,
+  worker_pending_broker_state_required, paper_v1_stabilization) 41 passed.
+
+CAUTION, recorded because it nearly wasted the cycle: the family sweep also runs
+`tests/test_alpaca_deepseek.py`, whose 5 failures (test_worker_calls_execution_guard,
+test_worker_snapshot_runs_without_nameerror, test_worker_sell_uses_exact_quantity_and_no_notional,
+test_worker_inflight_prevents_pyramiding, test_worker_inflight_double_sell)
+look like blast radius but are NOT. Proven pre-existing by stashing ONLY
+tests/test_alpaca_worker.py and re-running at HEAD: same 5 failed, 6 passed.
+Leave them; do not re-diagnose them as a regression from an unrelated commit.
+
+NEW FIRST-IN-LINE TASK:
+`tests/test_alpaca_deepseek.py` -- 5 worker tests fail at HEAD, standalone. The
+representative one, `test_worker_calls_execution_guard` (line 99), asserts the
+decision flips to REJECTED for pyramiding, but reads `APPROVED` (line 126). Its
+DummyAdapter returns `{"equity": "1000"}` with NO `last_equity` -- the SAME stale
+fixture class just fixed in test_alpaca_worker.py -- except the assertion is
+inverted, so adding `last_equity` will likely flip it the WRONG way (baseline
+present => BUY proceeds => still not rejected for pyramiding). Establish first
+whether the test's premise (that one AAPL position must be rejected as
+pyramiding) ever matched the current guard, or whether the guard's pyramiding
+rule was deliberately changed and these 5 tests were left behind. Do NOT bulk-add
+`last_equity` to all of them -- one of these may be the intended degraded-path
+assertion. Same order-of-operations as this cycle: git-archaeology FIRST, decide
+fixture-vs-intent, and confirm any resulting change is test-only.
