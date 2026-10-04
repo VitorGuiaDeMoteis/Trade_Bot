@@ -2026,3 +2026,73 @@ REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:1
 is the route that joins it. Determine which payload the frozen observation actually
 reads BEFORE changing anything, and do not add a column/migration without
 justification.
+
+================================================================================
+CYCLE 2026-10-04 (worktree DIRTY at start -> RECOVERY MODE, work finished & committed)
+
+TASK: none chosen. Tree was dirty with two UNTRACKED files
+(`scripts/paper_runtime_parity.py`, `tests/test_paper_runtime_parity.py`) not
+mentioned anywhere in AGENT_STATE.md, so this cycle only reviewed, validated and
+committed that unfinished work.
+
+WHAT THE WIP WAS: a read-only `scripts/paper_runtime_parity.py` that classifies
+the frozen runtime checkout against this branch using git ALONE (rev-parse /
+merge-base --is-ancestor / log). It answers the soundness question behind the
+Paper review gate: the frozen runtime is a separate worktree pinned to its own
+commit and never fast-forwards, so a field populated only on this branch can
+legitimately read `null` in an observation. Statuses: in-sync / runtime-behind /
+runtime-ahead / diverged / unknown, plus `observations_may_lag` (True only for
+behind/diverged). Exit 0 in-sync, 1 not-in-sync, 2 unknown. Never touches the DB,
+the broker, or the frozen worktree.
+
+REVIEW: no temporary or intentionally-broken code; both files are coherent and
+complete. Nothing was added this cycle beyond state/lessons -- the WIP already
+had focused tests (13) that assert all five classifications plus the CLI exit
+codes, and `merge-base`/`log` are correctly given the branch repo as cwd so they
+cannot silently resolve against the caller's directory (documented in
+`_is_ancestor` and pinned by `test_ancestry_probes_run_in_a_repository_not_the_
+caller_cwd`).
+
+VALIDATION (run independently):
+- `pytest tests/test_paper_runtime_parity.py -q` -> 13 passed in 0.06s.
+- `ruff check` on both files -> All checks passed.
+- `mypy scripts/paper_runtime_parity.py` -> Success, 1 source file.
+- Real read-only run (`python -m scripts.paper_runtime_parity`, exit 1):
+  runtime HEAD 76813fd vs branch HEAD 2459c9c -> `runtime-behind`, 29 commits
+  only on this branch. It writes nothing and read the runtime worktree only via
+  git plumbing.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle; observed_at
+2026-10-04T04:28:38Z): health.status=degraded, health.database=up,
+market_data.state=market_closed (provider alpaca, feed iex, last_bar_at
+2026-10-02T21:00Z, last_message_at 2026-10-04T03:03:51Z), paper.status=ACTIVE,
+paused=false, paper.degraded=false, reconciled=true,
+last_reconciled_at=2026-10-04T04:28:34Z, run_id=bf39805a. Open position symbols
+AAPL, SPY, TSLA, all still micro-sized (AAPL $9.987, SPY $9.993, TSLA $9.953).
+orders_count_reported=0 vs orders_count_actual=13; fills_count_reported=0 vs
+fills_count_actual=11. unrealized_pnl=-0.0366820000, equity=99951.28,
+cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: none material. Equity, cash, market_value, P&L and BOTH
+totals are IDENTICAL across five cycles, so this remains the documented
+undeployed pre-fix reading -- now independently confirmed by the parity tool,
+since `7252052 fix(api): report real order/fill totals in ALPACA PAPER portfolio`
+is one of the 29 branch-only commits the frozen runtime has never run. The two
+newest orders are the intraday SELL pair for the AAPL/TSLA micro-lots, both
+ACCEPTED; total still 13, so no duplicate execution. No broker/local divergence,
+no accounting inconsistency, no stale reconciliation. Every
+`latest_orders[*].last_reconciled_at` is STILL null while the portfolio-level
+field is populated -- TEN consecutive samples; unchanged and still open.
+
+Next candidate task (carried forward, still first): the observation path null
+`last_reconciled_at`, now confirmed in TEN consecutive Paper samples. The
+portfolio-level constructor work is exhausted (all three sites derive the flag
+explicitly), so the remaining suspect is the ORDER payload: `PaperOrder`
+(packages/contracts/paper.py:47) also defaults `last_reconciled_at` to None, and
+paper_queries.py:98 builds orders with `PaperOrder.model_validate(dict(r))` from
+the `paper_orders` table, which (per services/api/models.py) has NO
+`last_reconciled_at` column -- only `broker_orders` does (models.py:262). So the
+REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:152
+is the route that joins it. Determine which payload the frozen observation actually
+reads BEFORE changing anything, and do not add a column/migration without
+justification.

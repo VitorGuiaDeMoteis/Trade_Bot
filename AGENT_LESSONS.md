@@ -1495,3 +1495,37 @@ Harness traps hit while pinning this:
   connection (no Postgres), unlike the sibling `tests/test_broker_routes.py`
   which inserts real rows and therefore hits CHECK constraints. Prefer the stub
   file for pure payload-construction assertions.
+
+## A null in an observation is not a defect until parity is checked
+
+The frozen Paper runtime is a separate worktree pinned to its own commit and
+never fast-forwards during autonomous development. So a field that a fix on this
+branch populates can legitimately read `null` in `.agent-runtime/paper-latest.json`
+simply because the deployed checkout predates the fix. Without that fact, the
+review gate either files a phantom defect or "fixes" already-correct code --
+both worse than not looking.
+
+`scripts/paper_runtime_parity.py` (read-only, git plumbing only: rev-parse,
+merge-base --is-ancestor, log) classifies the pair as in-sync / runtime-behind /
+runtime-ahead / diverged / unknown, and exposes `observations_may_lag`, True
+only for behind or diverged. Verified against the live runtime: HEAD 76813fd vs
+branch 2459c9c, `runtime-behind` with 29 branch-only commits -- which is the
+standing explanation for `orders_count_reported=0` vs 13.
+
+Reusable rules:
+
+- Before filing any observation-derived defect, run
+  `python -m scripts.paper_runtime_parity` (exit 0 in-sync, 1 not-in-sync,
+  2 unknown). Fix commits visible only on the branch cannot show up in the
+  observation at all; that is runtime lag, not a bug.
+- `merge-base` and `log` resolve revisions against the REPOSITORY they run in,
+  so with `cwd=None` they inherit the process working directory. Run from
+  outside a checkout, every probe exits 128 and the report claims `diverged` --
+  fabricated deployment drift on a healthy branch. Always pass the repo
+  explicitly; `tests/test_paper_runtime_parity.py` pins this.
+- `git rev-parse HEAD` output must be length-checked before it is trusted as a
+  commit id; a truncated or absent HEAD must yield `unknown`, never a bogus sha.
+- An unreadable runtime is an `unknown` report, not an exception: the review
+  gate must be able to print the verdict unconditionally.
+- Test the classifier with an injected `git` callable. No repository, runtime or
+  database is needed, so the whole parity contract is testable in milliseconds.
