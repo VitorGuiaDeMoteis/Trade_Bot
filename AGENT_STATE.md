@@ -2627,3 +2627,57 @@ correcting it. It is fail-closed financial safety and no existing test touches i
 Second candidate (carried, unchanged): `AGENT_STATE.md` is now ~2600 lines and its
 backlog has already produced one false-premise task. Move the per-cycle narrative
 into dated sections with a short current-backlog summary at the top.
+
+## Cycle: 2026-10-04 f (RECOVERY MODE: cycle e left the tree dirty)
+
+RESULT: the WIP is DONE and committed. No new task chosen. Cycle e recorded its
+own deepseek commit but did not notice that a SECOND, unrelated edit was sitting
+in the tree: the parity module had gained a second `KnownFix` entry (for the
+Paper count gap fixed in `7252052`) with tests. I re-validated it independently
+and committed it. No production trading code touched.
+
+PAPER_REVIEW (cycle f, read-only): status ACTIVE, paused=false, degraded=false,
+reconciled=true, last_reconciled_at=2026-10-04T08:28:13Z vs
+observed_at=08:28:17Z (fresh, 4s), open positions AAPL/SPY/TSLA, unrealized P&L
+-0.0367420, orders_count_reported 0 vs orders_count_actual 13, fills_count_reported
+0 vs fills_count_actual 11. Top-level `health.status=degraded` is the
+`market_data state=market_closed` artifact already recorded -- paper itself is
+healthy. The reported-vs-actual gap is exactly the symptom the uncommitted
+`KnownFix` registers, so the observation and the WIP agreed; no new anomaly.
+
+WHAT THE WIP WAS: `scripts/paper_runtime_parity.py` KNOWN_FIXES gained the
+`7252052` count entry, and the test fixture `_behind_report` was fixed to anchor
+EVERY known fix (not just `KNOWN_FIXES[0]`) as a branch ancestor, plus three new
+tests. That fix is load-bearing: a second entry left unanchored classifies as
+`unknown-fix`, and the report then EXPLAINS NOTHING for it -- the exact
+re-derivation loop the module exists to stop, and the reason the
+reported-vs-actual gap kept reappearing in cycle after cycle.
+
+ONE CHANGE I MADE to the WIP: `test_every_known_fix_is_classified_independently`
+asserted on `KNOWN_FIXES[1]`, a positional anchor that rots on the next append
+and contradicted the WIP's own argument. Replaced with a lookup by the
+`7252052` sha, matching the sibling test. Test-only.
+
+VALIDATION (this repo's `./.venv/Scripts/python.exe`; the `python` on PATH is NOT
+this interpreter):
+- `pytest tests/test_paper_runtime_parity.py -q` -> 20 passed (0.15s).
+- `ruff check scripts/paper_runtime_parity.py tests/test_paper_runtime_parity.py
+  --output-format=concise` -> All checks passed. Compared against HEAD by
+  `git stash push` of only these two files + re-run + `git stash pop`: also
+  All checks passed, so the WIP introduced no lint.
+- `mypy scripts/paper_runtime_parity.py` -> Success, no issues.
+
+STATE OF THE BACKLOG: the first-in-line task below is now STALE -- it is
+unaffected by this cycle and is the correct next pick.
+
+FIRST-IN-LINE TASK:
+`broker_order_quantity_divergence` (services/alpaca_paper/worker.py:314) still has
+NO pure unit coverage. Same stub-only approach as the guard test committed in
+`991647a`: pin that a fill whose cumulative `filled_quantity` does not reconcile
+against the broker's own order state raises
+`RuntimeError("broker_order_quantity_divergence:...")` instead of silently
+correcting it. It is fail-closed financial safety and no existing test touches it.
+
+Second candidate (carried, unchanged): `AGENT_STATE.md` is now ~2650 lines and its
+backlog has already produced one false-premise task. Move the per-cycle narrative
+into dated sections with a short current-backlog summary at the top.

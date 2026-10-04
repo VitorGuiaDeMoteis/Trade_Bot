@@ -31,6 +31,7 @@ from scripts.paper_runtime_parity import (
     ParityReport,
     build_report,
     main,
+    subprocess_run_git,
 )
 
 RUNTIME = Path("C:/frozen/runtime")
@@ -224,11 +225,13 @@ def test_json_output_is_serialisable(
 def _behind_report(*, also_on_runtime: set[str] | None = None) -> ParityReport:
     """A runtime that is a strict ancestor of the branch.
 
-    The known fix is always an ancestor of the BRANCH (it is a branch commit);
-    `also_on_runtime` decides per sha whether the runtime has it too.
+    EVERY known fix is an ancestor of the BRANCH (they are all branch commits);
+    `also_on_runtime` decides per sha whether the runtime has it too.  Anchoring
+    only the first entry would let a new fix read as `unknown-fix` by accident
+    and quietly stop being reported.
     """
-    fix = KNOWN_FIXES[0].commit
-    ancestors = {(RUNTIME_HEAD, BRANCH_HEAD), (fix, BRANCH_HEAD)}
+    ancestors = {(RUNTIME_HEAD, BRANCH_HEAD)}
+    ancestors |= {(fix.commit, BRANCH_HEAD) for fix in KNOWN_FIXES}
     ancestors |= {(sha, RUNTIME_HEAD) for sha in (also_on_runtime or set())}
     return build_report(
         RUNTIME,
@@ -259,11 +262,64 @@ def test_fix_present_on_runtime_is_not_called_runtime_lag() -> None:
     The inverse error is the dangerous one: calling a live defect "explained"
     would suppress the investigation that finds it.
     """
-    report = _behind_report(also_on_runtime={KNOWN_FIXES[0].commit})
+    report = _behind_report(also_on_runtime={fix.commit for fix in KNOWN_FIXES})
 
     assert report.fixes[0].state == LIVE_ON_RUNTIME
     assert report.anomalies_explained_by_lag == ()
     assert "EXPLAINED BY RUNTIME LAG" not in report.render()
+
+
+def test_every_known_fix_is_classified_independently() -> None:
+    """A second entry must not be judged by the first entry's ancestry.
+
+    The runtime here has the first fix but NOT the count fix, so exactly one
+    symptom is excused.  Classification that collapsed across entries would
+    either excuse a live defect or re-open a settled one.
+    """
+    count_fix = next(f for f in KNOWN_FIXES if f.commit == "7252052")
+    report = _behind_report(also_on_runtime={KNOWN_FIXES[0].commit})
+
+    states = {provenance.commit: provenance.state for provenance in report.fixes}
+    assert states[KNOWN_FIXES[0].commit] == LIVE_ON_RUNTIME
+    assert states[count_fix.commit] == EXPLAINED_BY_LAG
+    assert report.anomalies_explained_by_lag == (count_fix.symptom,)
+
+
+def test_count_symptom_is_registered_against_its_own_fix() -> None:
+    """The reported-vs-actual count gap must name the commit that fixed it.
+
+    This anomaly sits in EVERY observation while the runtime is undeployed; an
+    unregistered symptom costs a future cycle the whole re-derivation.
+    """
+    symptom = next(f.symptom for f in KNOWN_FIXES if f.commit == "7252052")
+    assert "orders_count_reported" in symptom
+    assert "orders_count_actual" in symptom
+
+    report = _behind_report()
+    provenance = next(f for f in report.fixes if f.commit == "7252052")
+    assert provenance.state == EXPLAINED_BY_LAG
+    assert symptom in report.anomalies_explained_by_lag
+    assert symptom in report.render()
+
+
+def test_every_registered_fix_is_a_real_commit_on_this_branch() -> None:
+    """Every registered sha must resolve in THIS repository.
+
+    A typo or a rebase-orphaned sha makes `in_branch` False, which downgrades the
+    entry to `unknown-fix`: the report then explains NOTHING for that symptom and
+    the next cycle re-derives it from scratch -- the exact failure this module
+    exists to prevent. Read-only: merge-base only.
+    """
+    repo = Path(__file__).resolve().parents[1]
+
+    for fix in KNOWN_FIXES:
+        probe = subprocess_run_git(
+            ["merge-base", "--is-ancestor", fix.commit, "HEAD"], repo
+        )
+        assert probe.returncode == 0, (
+            f"{fix.commit} is not an ancestor of HEAD; it would classify as "
+            f"{UNKNOWN_FIX} and stop explaining its symptom"
+        )
 
 
 def test_fix_absent_from_branch_history_is_unknown_not_explained() -> None:

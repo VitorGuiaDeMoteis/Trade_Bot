@@ -2,6 +2,34 @@
 
 Durable engineering memory for autonomous development.
 
+## Registry entries must be anchored by identity, not by position
+
+`scripts/paper_runtime_parity.py` maps a committed FIX to the SYMPTOM it
+retires, so a later cycle reading `paper-latest.json` does not re-derive an
+already-understood anomaly as if it were new. Its tests anchored fixtures on
+`KNOWN_FIXES[0]` -- and the fixture only made `KNOWN_FIXES[0]`'s sha an ancestor
+of the branch. Adding a second entry therefore left it unanchored, so it would
+have classified as `unknown-fix`: the report would quietly stop EXUSING that
+symptom, and the whole re-derivation the module exists to prevent would happen
+again, silently.
+
+Reusable rules:
+
+- A registry that grows by appending needs its fixtures to enumerate the whole
+  registry, never to index one representative entry. `for fix in KNOWN_FIXES` in
+  the fixture, not `KNOWN_FIXES[0]`.
+- Assert the distinguishing property of a SPECIFIC entry (its own sha maps to
+  its own symptom, its own state) instead of asserting registry position --
+  positional anchors rot on the next append.
+- An unresolvable/rebased sha degrades to `unknown-fix`, which is a SUPPRESSED
+  explanation. "Explains nothing" must fail the test loudly:
+  `test_every_registered_fix_is_a_real_commit_on_this_branch` runs
+  `git merge-base --is-ancestor <sha> HEAD` read-only for every entry.
+- The same "reported count vs actual list length" gap kept reappearing in Paper
+  observations for several cycles after `7252052` fixed the API route. Root cause
+  of the re-discovery: the FIX existed in git, but nothing tied the fix to the
+  OBSERVATION STRING a cycle reads. Fix the registry, not the API.
+
 ## One definition per concept (guard/worker position aggregation)
 
 A latent multi-row defect lived for several cycles because the broker NORMALLY

@@ -85,6 +85,16 @@ KNOWN_FIXES: tuple[KnownFix, ...] = (
             "latest_orders[*].last_reconciled_at is null"
         ),
     ),
+    # `get_broker_portfolio` published the PaperPortfolio count defaults (0)
+    # next to populated order/fill lists. An unreported symptom is worse than an
+    # unreported FIX: the report is what stops the next cycle from re-deriving it.
+    KnownFix(
+        commit="7252052",
+        symptom=(
+            "paper.orders_count_reported=0 while paper.orders_count_actual>0 "
+            "(same for fills_count_reported vs fills_count_actual)"
+        ),
+    ),
 )
 
 
