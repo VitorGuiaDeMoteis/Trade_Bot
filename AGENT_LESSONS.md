@@ -1273,3 +1273,56 @@ ONE row per provider, overwritten every reconcile.
   works, but not `$TMPDIR` if it resolves outside an existing directory).
   HEAD carried 13 errors, the worktree file 11 -- the change removed 2
   pre-existing findings and added none.
+
+## Session return is an ACCOUNT figure, not a P&L figure
+
+docs/M4_CORE.md:67 defines `return_pct` as
+`(equity final - initial cash) / initial cash * 100`. `get_session_analytics`
+computed the numerator from `total_pnl`, which is a DIFFERENT quantity: this
+run's matched FIFO realized P&L plus the unrealized P&L of the CURRENT position
+book. Those disagree whenever cash moved for a reason the fill walk cannot see:
+
+- an unmatched SELL has no local BUY lot, so its P&L is deliberately not
+  realized (it surfaces as `anomalies.unmatched_sells`) and the account's real
+  loss disappears from the reported return;
+- a lot inherited from an earlier run that opens or closes inside this session;
+- fees settling, a deposit, or a dust lot;
+- worst case, a real loss on one symbol netted against an unrelated gain on
+  another, so a losing session reports as healthy.
+
+The equity difference is the account's own answer and needs none of that
+reconciliation. Practical rule for this repo: when a report metric has a
+documented definition in docs/M4_CORE.md, treat the table as the contract and
+grep the implementation for which internal quantity it actually numerates from
+-- `total_pnl` and `equity_final - initial_cash` are easy to confuse because the
+denominator was already right.
+
+- The two halves of this defect were found in consecutive cycles and are the
+  same bug: the denominator was the live equity (fixed by taking the opener from
+  `paper_runs.initial_cash`), then the numerator was a P&L figure. When a metric
+  is reported as a single `return_pct`, check BOTH ends of the fraction against
+  the documented formula rather than fixing whichever one a failing test exposed.
+- Pinning a metric that now depends on two inputs needs a deliberate CONTROL in
+  which those inputs AGREE, otherwise the test cannot distinguish "uses the
+  right source" from "always uses the other source". Here: a control session
+  where equity moved by exactly the matched P&L (2.0% under both formulas) plus
+  a flat session (0.0).
+- When an earlier test in the same area starts failing because a neighbouring
+  fix changed what a fixture means, fix the TEST rather than weakening the new
+  behaviour: the old test was pinning the denominator using a snapshot equity
+  that made the account and the P&L disagree, so its scenario had to be pinned
+  to an agreeing equity, with the disagreement case moved to the new file.
+- Non-vacuity without touching tracked code, second form of this technique:
+  `importlib` the HEAD blob written into the scratch dir, then monkeypatch the
+  name the test module imported (`t.get_session_analytics = head_mod
+  .get_session_analytics`) and call the test functions directly. Result: 3 of 5
+  red on HEAD, the 2 controls green.
+- `services/api/observer_source.py:156` reads `return_pct` from the ACCEPTED
+  BACKTEST report metrics (services/backtesting), not from session analytics, so
+  a change to `get_session_analytics`' `return_pct` does not touch the observer
+  contract. Check that distinction before assuming a metric has one consumer.
+- Rounding: `return_pct` is emitted as `str(return_pct)` on the raw Decimal, so
+  it can carry many decimals. docs/M4_CORE.md:63 says monetary values and
+  percentages carry 10 decimal places; several analytics fields are rounded
+  (`round(win_rate, 2)` etc.) and this one is not. Not yet decided which is
+  right -- do not "fix" it without checking the consumer.

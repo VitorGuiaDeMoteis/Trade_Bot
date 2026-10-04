@@ -125,7 +125,17 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
 
     realized_pnl = session_realized_pnl
     total_pnl = realized_pnl + unrealized_pnl
-    return_pct = (total_pnl / initial_cash) * 100 if initial_cash else Decimal("0")
+    # docs/M4_CORE.md:67 defines the session return as
+    # (equity final - initial cash) / initial cash * 100, i.e. the change in the
+    # ACCOUNT. `total_pnl` is a different thing: it sums this run's matched FIFO
+    # realized P&L with the unrealized P&L of the CURRENT position book, so it
+    # silently drops any cash movement the fills do not explain (fees settling,
+    # an unmatched SELL -- reported separately as anomalies.unmatched_sells, an
+    # inherited lot opening or closing, a deposit) and can even net a real loss
+    # against an unrelated gain. The equity difference is the account's own
+    # answer and needs no such reconciliation.
+    equity_delta = final_equity - initial_cash
+    return_pct = (equity_delta / initial_cash) * 100 if initial_cash else Decimal("0")
     
     total_trades = total_wins + total_losses
     win_rate = (Decimal(total_wins) / Decimal(total_trades)) * 100 if total_trades > 0 else Decimal("0")

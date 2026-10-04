@@ -142,13 +142,24 @@ def test_equity_initial_is_the_runs_starting_cash_not_the_live_equity() -> None:
 
 
 def test_return_pct_is_measured_against_the_starting_cash() -> None:
-    """A +20 round trip on 1000 of starting cash is +2%, not ~1.92%."""
-    result = _analytics([_buy("AAPL", "1", "10"), _sell("AAPL", "1", "30")])
+    """A +20 round trip on 1000 of starting cash is +2%, not ~1.96%.
+
+    The snapshot equity is pinned to 1020 -- initial cash plus exactly the +20
+    this round trip realized -- so the account and the P&L agree and the only
+    thing under test is the DENOMINATOR. With the default SNAPSHOT_EQUITY the
+    account and the P&L would disagree, and the reported return would then be
+    the equity difference (see tests/test_session_analytics_return_pct.py, which
+    pins that behaviour deliberately).
+    """
+    result = _analytics(
+        [_buy("AAPL", "1", "10"), _sell("AAPL", "1", "30")],
+        snapshots=[{"cash": "1000", "equity": "1020"}],
+    )
 
     assert float(result["pnl_realized"]) == 20.0
     assert float(result["return_pct"]) == 2.0
-    # Guard against the old denominator: 20 / 1042.5.
-    assert float(result["return_pct"]) != 20.0 / float(SNAPSHOT_EQUITY) * 100
+    # Guard against the old denominator: 20 / 1020 (the live equity).
+    assert float(result["return_pct"]) != 20.0 / 1020.0 * 100
 
 
 def test_equity_final_still_tracks_the_live_snapshot() -> None:

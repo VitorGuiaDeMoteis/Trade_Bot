@@ -1602,3 +1602,94 @@ overrides the backlog.
 Next candidate task (unchanged, carried forward): reconcile `return_pct` with
 docs/M4_CORE.md:67 -- it still numerates from `total_pnl` instead of
 `equity_final - initial_cash`.
+
+================================================================================
+CYCLE 2026-10-03 (worktree DIRTY at start -> RECOVERY MODE, work finished & committed)
+
+TASK: none chosen. The tree was dirty (`M services/api/analytics.py`,
+`M tests/test_session_analytics_equity_initial.py`,
+`?? tests/test_session_analytics_return_pct.py`), so this cycle only reviewed,
+validated and committed the previous cycle's unfinished work -- exactly the
+"next candidate task" recorded at the end of the prior state file: reconcile
+`return_pct` with the formula in docs/M4_CORE.md:67.
+
+REVIEW OF THE WIP: no temporary or intentionally-broken code present; the change
+is confined to the numerator of one metric and its tests. `total_pnl` (this run's
+matched FIFO realized P&L + the unrealized P&L of the CURRENT position book) was
+being reported as `return_pct`, which is a different quantity from the change in
+the ACCOUNT. The fix numerates from `equity_final - initial_cash`, i.e. exactly
+what docs/M4_CORE.md:67 documents. This is the second half of the same defect the
+previous cycle fixed on the denominator: the opener was the live equity, and now
+the numerator is a P&L figure the account never agreed to.
+
+Why the old numerator was wrong, concretely (each case is now a test):
+- an unmatched SELL has no local BUY lot, so its P&L is deliberately NOT realized
+  (it surfaces as `anomalies.unmatched_sells`), and the account's actual loss
+  vanished from `return_pct`;
+- a lot inherited from an earlier run that opens or closes inside this session
+  moves the account with no local fill walk to explain it;
+- fees settling, a deposit, or a dust lot can move cash in either direction;
+- worst case, a real loss on one symbol netted against an unrelated gain on
+  another and reported a healthy session.
+
+CHANGES were already made by the interrupted cycle; this cycle verified them and
+adjusted ONE test: `test_return_pct_is_measured_against_the_starting_cash` in
+tests/test_session_analytics_equity_initial.py had been written to pin the
+DENOMINATOR using the default SNAPSHOT_EQUITY of 1042.5, which under the new
+numerator makes the account and the P&L disagree, so it now pins the snapshot
+equity to 1020 (initial cash plus exactly the +20 realized) and delegates the
+disagreement case to the new file. No production file was changed this cycle.
+
+VALIDATION (re-run independently, not taken on trust):
+- 15 passed in 0.11s across tests/test_session_analytics_return_pct.py,
+  tests/test_session_analytics_equity_initial.py and
+  tests/test_session_analytics_unmatched_sells.py. A keyword slice
+  (`-k "session_analytics or analytics"`) gives the same 15 passed plus one
+  ERROR, tests/test_alpaca_deepseek.py::
+  test_analytics_run_isolation_and_realized_pnl, on
+  `psycopg.errors.ConnectionTimeout` -- the documented environmental class
+  (Postgres is not running here).
+- Non-vacuity proven WITHOUT editing any tracked file: a scratch harness loaded
+  `git show HEAD:services/api/analytics.py` as a standalone module and ran the
+  new test file's scenarios against it. 3 of the 5 fail on HEAD (the P&L-vs-equity
+  case, the unmatched-SELL case and the inherited-lot case); the 2 that pass are
+  the deliberate CONTROLS where equity and P&L agree, so the fix cannot be read
+  as "always report the equity". Scratch file deleted.
+- Lint/type baseline: `ruff check` reports the identical 11 pre-existing errors on
+  the worktree file and on the HEAD blob (9 E501, 1 F401, 1 I001 -- no delta);
+  mypy reports the same 2 pre-existing `var-annotated` errors (`fifo_buys`:58,
+  `rejections`:160). ruff clean on both test files.
+- Consumer check: the only production consumer of `return_pct`
+  (`services/api/observer_source.py:156`) reads it from the ACCEPTED BACKTEST
+  report's metrics, a different payload produced by services/backtesting, so no
+  downstream contract is touched by this change.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle; observed_at
+2026-10-03T14:12:43Z): health.status=ok, health.database=up, paper.status=ACTIVE,
+paused=false, paper.degraded=false, reconciled=true,
+last_reconciled_at=2026-10-03T14:12:42Z. Open position symbols AAPL, SPY, TSLA,
+all still micro-sized (SPY $9.99, TSLA $9.95; AAPL likewise ~$10).
+orders_count_reported=0 vs orders_count_actual=13; fills_count_reported=0 vs
+fills_count_actual=11. unrealized_pnl=-0.0366820000, equity=99951.28,
+cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: `health.status` is `ok` again (it was `degraded` in the
+three previous samples) -- the known execution-gate flap, not a new fault. Totals
+are unchanged (13 orders / 11 fills, same equity and P&L), so this is still the
+documented undeployed pre-fix reading rather than new drift: the counted-report
+fix is committed but the frozen runtime predates it. Every
+`latest_orders[*].last_reconciled_at` is STILL null while the portfolio-level
+field is populated, i.e. that long-standing candidate task remains open. The
+two newest orders are the expected intraday SELL pair for the AAPL and TSLA
+micro-lots. No broker/local divergence, no duplicate execution, no stale
+reconciliation, no accounting inconsistency. Nothing here justifies overriding
+the backlog.
+
+Next candidate task (carried forward, still first): the observation path null
+`last_reconciled_at`, now confirmed in FIVE consecutive Paper samples -- every
+`latest_orders[*]` entry carries `"last_reconciled_at": null` while the
+portfolio-level field is populated. The broker route now sets it, so the SECOND
+constructor of the observation payload is the suspect: grep the `PaperOrder(` /
+`PaperPortfolio(` constructors in services/alpaca_paper/ and services/api/
+(paper_routes.py already supplies it correctly; services/api/paper_queries.py:28
+builds the second `PaperPortfolio` for the simulator path).
