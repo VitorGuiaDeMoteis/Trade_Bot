@@ -1,19 +1,19 @@
+import psycopg.errors
 import pytest
 import asyncio
 from uuid import uuid4
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import insert, select, text
+from sqlalchemy import insert, select, create_engine
+from sqlalchemy.exc import IntegrityError
 from httpx import AsyncClient, MockTransport, Response
 
-from packages.domain.risk import RiskDecision
 from services.alpaca_paper.adapter import AlpacaPaperAdapter
 from services.alpaca_paper.worker import AlpacaPaperWorker
 from services.alpaca_paper.guard import ExecutionGuard
 from services.api.models import paper_orders, broker_orders, risk_decisions, signals, candles, paper_runs, system_controls
 from services.api.config import Settings
-from sqlalchemy import create_engine
 
 @pytest.fixture
 def engine():
@@ -85,14 +85,24 @@ async def test_1_and_2_notional_constraint(engine):
     order_id = uuid4()
     
     with engine.begin() as conn:
-        # Test 2: Quantity-based fails if filled > quantity
-        with pytest.raises(Exception):
+        # Test 2: Quantity-based fails if filled > quantity.
+        # The exception must be pinned to the CHECK constraint itself. A bare
+        # `pytest.raises(Exception)` also passes when the insert fails for an
+        # UNRELATED reason (bad column name, FK violation, NOT NULL), so the
+        # constraint could be gone and the test would stay green.
+        with pytest.raises(IntegrityError) as excinfo:
             conn.execute(insert(paper_orders).values(
                 order_id=uuid4(), run_id=run_id, signal_id=s_id, risk_decision_id=rd_id,
                 symbol="AAPL", side="BUY", quantity=Decimal("10"), filled_quantity=Decimal("11"),
                 status="FILLED", requested_at=datetime.now(UTC), idempotency_key=uuid4(), reason="test"
             ))
-            
+
+        # Pin WHICH database invariant refused the row, not merely that it was refused.
+        assert isinstance(excinfo.value.orig, psycopg.errors.CheckViolation), (
+            f"expected a CHECK violation, got {type(excinfo.value.orig).__name__}: {excinfo.value}"
+        )
+        assert excinfo.value.orig.diag.constraint_name == "ck_paper_orders_state_m7"
+
     with engine.begin() as conn:
         # Test 1 & 2: Notional-based (quantity=0) accepts ANY filled_quantity
         conn.execute(insert(paper_orders).values(
@@ -202,7 +212,9 @@ async def test_6_restart_with_positions(engine, async_adapter):
         
         try:
             await task
-        except:
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - the worker raises when it degrades; that IS the assertion
             pass
-            
+
     assert worker.degraded is True

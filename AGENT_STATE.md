@@ -146,19 +146,65 @@ Each line is pinned by an executable check; a violation now fails a test.
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
-- `tests/test_alpaca_executor.py` pre-existing lint debt — OPEN, first in line.
-  The file carries 9 `ruff check` findings plus `ruff format` drift, verified
-  pre-existing this cycle by `git stash`-and-diff (`comm -13` on the normalized
-  findings was EMPTY, so this cycle added nothing). Unfixed deliberately: it is
-  formatting-only and must not mix with behavioural work. Next cycle must first
-  confirm the findings are mechanical, then land it as its own commit and re-run
-  the executor tests to prove the reformat changed no behaviour.
-- Otherwise none currently registered. The two candidates before this cycle (the
-  notional-BUY `quantity=0` parity symptom and the `RUN_ALPACA_SMOKE_TEST` doc
-  drift) are both CLOSED and pinned above. A clean cycle must FIRST run the
+- ~~`tests/test_alpaca_executor.py` pre-existing lint debt~~ — **CLOSED** in
+  `93e7428` ("style(tests): retire the pre-existing ruff debt in
+  test_alpaca_executor.py"). Re-verified 2026-10-04: `ruff check
+  tests/test_alpaca_executor.py` reports "All checks passed". This entry was
+  stale for at least one cycle and is retired here so it cannot seed the next
+  cycle with an already-closed task.
+- `tests/test_paper_audit.py` + `tests/test_replay_live.py` — 14 failures, NEW,
+  first in line. Observed 2026-10-04: `pytest tests/ -k "alpaca or paper or
+  incident"` gives 14 failed / 212 passed / 26 skipped. Proven PRE-EXISTING and
+  unrelated to test-file lint by `git stash`-and-rerun: the identical 14 fail at
+  baseline. NOT yet root-caused. Start by reading one failing test and its
+  traceback before assuming a cause.
+- Otherwise none currently registered. A clean cycle must FIRST run the
   mandatory PAPER_REVIEW gate, then derive its task from that observation plus
   `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` output rather than
   from a carried-over guess.
+
+## Cycle 2026-10-04 (blind DB-constraint assertion -> pinned to the real invariant)
+
+- Paper review gate first: `observed_at=2026-10-04T13:09:21Z`, run ACTIVE, health
+  ok, DB up, `ALPACA PAPER — DINHEIRO VIRTUAL`, not paused/degraded, reconciled at
+  13:09:19Z. Positions micro AAPL/SPY/TSLA ~$10 each, `market_value=29.93`,
+  `unrealized_pnl=-0.0366820000`, equity 99951.28, cash 99921.35. reported/actual
+  orders 0/13 and fills 0/11, `market_data=market_closed`, last bar
+  2026-10-02T21:00Z. `scripts.paper_runtime_parity` => `observation: ok`, all five
+  symptoms `explained-by-runtime-lag`. 2026-10-04 is a Sunday, so the closure is
+  correct. UNCHANGED from the prior cycle; nothing actionable; NO broker/runtime
+  state touched.
+- Task: `tests/test_alpaca_paper_incident.py::test_1_and_2_notional_constraint`
+  guarded the `paper_orders` CHECK constraint with `pytest.raises(Exception)`
+  (ruff B017). Proved it VACUOUS, not merely untidy: a scratch probe showed a
+  perfectly VALID row (`quantity=10, filled_quantity=5`) plus an unrelated
+  failure (bogus column) still satisfied it. So the test stayed green with the
+  constraint it claims to guard absent.
+- Proof it bites now, via a scratch mutation probe that dropped
+  `ck_paper_orders_state_m7` from the TEST db: blind form => GREEN (false),
+  pinned form => RED. Same conditions, opposite verdicts. Test db constraint was
+  restored by the probe fixture and the file re-passed 5/5 afterwards, so no
+  schema drift was left behind.
+- Changes (tests only, `tests/test_alpaca_paper_incident.py`): pinned
+  `pytest.raises(IntegrityError)`; assert
+  `isinstance(excinfo.value.orig, psycopg.errors.CheckViolation)`; assert
+  `excinfo.value.orig.diag.constraint_name == "ck_paper_orders_state_m7"`. This
+  makes the test prove the specific invariant, and its failure message now names
+  the wrong constraint when one bites. Also replaced a bare `except: pass` (E722)
+  that swallowed the worker task's real exception with `except Exception` +
+  re-raised `asyncio.CancelledError`, and dropped two pre-existing unused imports
+  (`sqlalchemy.text`, `packages.domain.risk.RiskDecision`). File is now clean on
+  B017/E722/F401/F811/E9/F821. NO production code touched.
+- Validation: 5/5 pass in the file. `-k "alpaca or paper or incident"` =>
+  14 failed / 212 passed / 26 skipped; the SAME 14 fail with the change stashed,
+  so they are pre-existing and NOT caused by this work (see open candidate).
+  Runtime DB never touched: `tests/conftest.py:39-40` forces
+  `POSTGRES_DB=trading_bot_test`, so the engine fixture cannot reach the live db.
+- CORRECTION to a prior cycle entry: the authoritative backlog listed
+  `tests/test_alpaca_executor.py` lint debt as "OPEN, first in line", but
+  `93e7428` already landed it and `ruff check` now passes on that file. The
+  backlog is the handoff, so a stale entry there becomes the next cycle's false
+  premise; retired above.
 
 ## Cycle 2026-10-04 (RECOVERY MODE -- inherited agent-loop.ps1 turn-budget bump)
 

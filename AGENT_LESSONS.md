@@ -2,6 +2,61 @@
 
 Durable engineering memory for autonomous development.
 
+## A blind `raises(Exception)` cannot tell a working guard from a missing one
+
+`tests/test_alpaca_paper_incident.py::test_1_and_2_notional_constraint` asserted
+that the database REFUSES an order row whose `filled_quantity` exceeds its
+`quantity`, using `pytest.raises(Exception)`. Ruff's `B017` flagged it. The
+finding is easy to dismiss as cosmetic, so it is worth being precise about what
+was actually wrong: the assertion did not merely name the exception vaguely, it
+was **vacuous**. A scratch probe showed a perfectly VALID row
+(`quantity=10, filled_quantity=5`) whose insert failed for a completely unrelated
+reason (a bogus column) still satisfied it. The test therefore stayed green with
+the constraint it claimed to guard physically absent from the schema.
+
+Rules that generalize:
+
+- For a database-constraint test, pin the driver error AND the constraint name:
+  `pytest.raises(IntegrityError)` plus
+  `excinfo.value.orig.diag.constraint_name == "<name>"`. The exception TYPE tells
+  you the insert failed; the constraint NAME is what tells you your invariant is
+  still installed.
+- Prove a guard test bites before trusting it. Drop the constraint in a scratch
+  probe against the TEST db and confirm the test goes RED. "It passes" and "it
+  would pass if the thing it protects were deleted" are different claims, and
+  only the second one is evidence.
+- `except: pass` in a test has the same disease as `pytest.raises(Exception)`: it
+  absorbs every failure into a pass. Narrow it to the exception the test actually
+  expects, and re-raise `asyncio.CancelledError` explicitly, since a broad
+  `except Exception` in an async test can silently eat task cancellation.
+- A bare `except`/`raises` is not automatically wrong, but "the test is green" is
+  not evidence of correctness on its own. Ask what ELSE would make it green.
+
+Before mutating a schema to run such a probe, confirm the target is the test db
+and not the live runtime db: `tests/conftest.py:39-40` forces
+`POSTGRES_DB=trading_bot_test`, which is what makes an engine built from
+`Settings().database_url` safe to point at a scratch probe. Always restore the
+constraint in a fixture teardown and re-run the suite afterwards.
+
+## The authoritative backlog is itself a source of false premises
+
+The handoff's "Verified OPEN candidates" list carried
+`tests/test_alpaca_executor.py` lint debt as "OPEN, first in line" after commit
+`93e7428` had already retired it. Nothing about the entry was checkable from the
+file it named, and it is exactly the shape of item a fresh cycle is told to pick
+first. A clean cycle therefore inherits a stale premise and spends its whole
+budget re-deriving what one `ruff check` settles.
+
+- Verify each backlog entry against the code in the SAME cycle before acting on
+  it; the list is prose, the code is the fact.
+- When a cycle closes a candidate, edit the entry to say CLOSED and name the
+  commit. Leaving it "OPEN" is not neutral -- it re-enters the next cycle's queue.
+- Do not invent the substitute task from nothing. This cycle's real candidate
+  came from a fresh lint scan, which is the discipline the mission asks for: derive
+  from current evidence, not from a carried-over guess.
+- Stale-backlog detection is a finding worth reporting, not an edit to bury. The
+  correction belongs in the state file next to the cycle entry that found it.
+
 ## A fallback timestamp is a falsified fact, and a test fixture can hide it
 
 `executor.py` read a fill's `transaction_time` from the broker and, when the key
