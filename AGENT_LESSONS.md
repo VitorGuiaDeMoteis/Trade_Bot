@@ -2230,3 +2230,35 @@ separate worktree" guidance.
   exactly the file's finding count, no other file moving — it establishes that the
   commit retired only what it claimed to. Prose like "formatting-only, no
   behaviour change" is an assertion; that diff filter is evidence.
+
+---
+
+## 2026-10-04 — A ruff F821 finding is an UNEXERCISED code path, not formatting debt
+
+The repo-wide ruff scan returns two kinds of finding and they must never be treated
+alike. E501/E402/I001 are cosmetic: reflow them, prove the diff moved no arguments,
+move on. F821 is different: ruff found a name that does not exist, which means the
+line has NEVER executed successfully. Treat each F821 as a dead branch in the test
+doubles, and ask which production line calls it.
+
+- WHY THIS CLASS SLIPS THROUGH: two independent shields. (1) The stub is only
+  reached by a branch the tests never drive — here `submit`'s timeout branch, which
+  needs `submit_order` to RAISE. (2) The caller wraps the call in a bare
+  `except Exception`, so the resulting `NameError` is absorbed into a generic
+  `network_error` result. Two layers of silence: the branch is never taken, and if it
+  were, nothing would be raised to a test.
+- RULE: when a lint finding names an undefined symbol, do not satisfy it with the
+  formatter or a `# noqa`. Fix the scope, then PIN the path by driving the branch
+  that reaches it. The pin must assert an OBSERVABLE consequence of the branch
+  running, not merely that the function returns without raising.
+- RULE: prove every new pin non-vacuous by mutating the exact line the pin guards,
+  running it to confirm it fails with the original defect, then restoring. A green
+  test you have never seen fail is not evidence. This cycle's pin reproduced
+  `NameError: name 'uuid' is not defined` at the guarded line before being restored.
+- RULE: a function-local import binds in THAT function only. Sibling methods in the
+  same class/stub are separate scopes — check each one, do not assume a nearby
+  import is visible. Here a correct third adapter in the SAME file was the in-repo
+  convention to copy.
+- RULE: do not trust "the tests pass" as evidence a stub is correct. Ask what code
+  path calls the stub. If nothing in the suite calls it, its body is unverified no
+  matter how clean the test run looks.

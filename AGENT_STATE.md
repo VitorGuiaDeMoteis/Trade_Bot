@@ -3532,3 +3532,78 @@ inspecting each, as this cycle did) and land it the same way, or investigate
 whether the 3 `--unsafe-fixes` / 3 hidden fixes include any that would change
 behaviour and therefore need manual review. Do not assume `--fix` is behaviour-
 preserving; this cycle proved mechanical by reading each finding first.
+
+---
+
+## 2026-10-04 — F821 undefined `uuid` in two AlpacaPaper test doubles (Latent NameError in the timeout-recovery path)
+
+- WORKTREE WAS CLEAN at cycle start, so this was a normal task cycle, not RECOVERY MODE.
+- PAPER OBSERVATION (mandatory, reconciled BEFORE choosing the task):
+  `status=ACTIVE`, `paused=false`, `degraded=false`, `reconciled=true`,
+  `health=ok`, `market_data=market_closed` (2026-10-04 is a Sunday, so a closed
+  market is CORRECT, not a fault). Positions AAPL/SPY/TSLA micro-sized ~$10 each;
+  equity 99951.28; unrealized_pnl -0.0366820000. The known agent-side count gaps
+  (orders 0/13, fills 0/11) are ALREADY-REGISTERED symptoms, so no new Paper
+  defect was selected from them and no broker/runtime state was touched.
+- TASK CHOSEN. The prior cycle's FIRST-IN-LINE note queued "one bounded still-unfixed
+  ruff FILE". Scanning `tests`+`scripts` with a high-signal rule subset
+  (`F821,B023,B017,B007,E722,F841,E402`) returned exactly TWO findings repo-wide,
+  both `F821 Undefined name 'uuid'` in `tests/test_alpaca_deepseek.py:284` and
+  `:350`. Two findings is the most bounded file-level unit that exists, and unlike
+  the E501/E402 formatting debt it is a CORRECTNESS finding, so it outranked the
+  formatting sweep.
+- ROOT CAUSE. Each `DummyAdapter` in that file defines `submit_order` and its
+  sibling `get_order_by_client_id` as separate methods, but only `submit_order`
+  carries a function-local `import uuid`. So `get_order_by_client_id` referenced a
+  `uuid` module object that does not exist in its scope — a guaranteed `NameError`
+  the moment it was called. The third adapter in the same file (lines 229-231)
+  already had the import in both methods and was never broken.
+- WHY GREEN TESTS DID NOT CATCH IT (the reason this survived). The two broken stubs
+  are only reachable through `AlpacaPaperExecutor.submit`'s timeout branch:
+  `submit_order` raises -> the `except Exception` at `executor.py:207` sees a
+  non-403/422 `AlpacaPaperError` -> calls `_handle_timeout_or_disconnect`
+  (`executor.py:228`) -> `await self.adapter.get_order_by_client_id(...)`
+  (`executor.py:80`). The in-flight tests never make `submit_order` raise, so they
+  never enter that branch. Worse, `submit` wraps the WHOLE broker call in a bare
+  `except Exception`, so the NameError was silently absorbed into the generic
+  `network_error` result: the reconciliation would just be skipped and no test
+  would ever see a failure. This is the same "asserted nothing" class the previous
+  two cycles kept finding, one level deeper — a stub that was never called.
+- PRODUCTION REACHABILITY (checked before calling it high-value, not lint noise):
+  `get_order_by_client_id` is defined at `services/alpaca_paper/adapter.py:91` and
+  called from `executor.py:80` and `executor.py:277` in REAL production code. So
+  the exact stub that carried the defect stands in for a live idempotency path.
+- CHANGES (test-only, `tests/test_alpaca_deepseek.py`; NO production file touched).
+  1. FIX: added the missing `import uuid` inside BOTH broken
+     `get_order_by_client_id` stubs, matching the already-correct sibling adapter
+     at lines 229-231. Minimal and convention-following; no symbol was renamed.
+  2. PIN: new `test_submit_timeout_path_reconciles_by_client_order_id`, which
+     builds a `TimeoutAdapter` whose `submit_order` raises
+     `AlpacaPaperError(status_code=500)` (deliberately NOT 403/422, so `submit`
+     falls through to `_handle_timeout_or_disconnect`) and asserts the observable
+     consequence: the broker row ends up carrying the remote id/status that
+     `get_order_by_client_id` returned and `paper_orders.status == "ACCEPTED"`.
+     `status_code=500` plus that assertion is what makes the pin bite.
+- PIN PROVEN NON-VACUOUS BY MUTATION. I reverted only the new stub to the buggy
+  shape and re-ran: `FAILED ... NameError: name 'uuid' is not defined` at
+  `tests/test_alpaca_deepseek.py:428` — the exact defect, caught. Then restored the
+  fix. A pin that cannot fail proves nothing, so this mutation step is the point of
+  the cycle, not an optional extra.
+- VALIDATION.
+  - `pytest tests/test_alpaca_deepseek.py`: 12 passed.
+  - Alpaca surface `test_alpaca_executor.py + test_alpaca_paper_incident.py +
+    test_alpaca_deepseek.py`: 20 passed.
+  - `ruff check tests/test_alpaca_deepseek.py --select F821,E9`: All checks passed.
+  - Full test suite deliberately NOT run (mission: never at cycle start, and the
+    touched surface is the alpaca_paper executor which is covered above).
+- LESSON RECORDED in AGENT_LESSONS.md: lint debt that is only FORMATTING can be
+  swept; lint debt that is F821 must be treated as an unexercised code path and
+  earns a regression pin.
+- No broker state, runtime database, or credential was touched. Nothing pushed.
+
+FIRST-IN-LINE TASK (for the next cycle): `tests/test_alpaca_deepseek.py` itself is
+NOT yet ruff-clean — only its 2 F821 findings were retired. Re-scan that file for
+the remaining rules and confirm the rest are formatting (E501 line-length on the
+long `conn.execute(...)` seed lines is the bulk) before touching it. Candidate,
+still bounded: the 3 `--unsafe-fixes` in the repo scan. Those may change behaviour,
+so inspect each one individually — do NOT run `--fix` on them blind.

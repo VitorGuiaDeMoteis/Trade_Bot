@@ -281,6 +281,7 @@ async def test_worker_inflight_prevents_pyramiding(test_engine):
             import uuid
             return {"id": str(uuid.uuid4()), "client_order_id": kwargs.get("client_order_id"), "status": "accepted"}
         async def get_order_by_client_id(self, *args, **kwargs):
+            import uuid
             return {"id": str(uuid.uuid4()), "status": "accepted", "filled_qty": "0", "filled_avg_price": "0"}
             
     worker = AlpacaPaperWorker(test_engine, DummyAdapter(), None)
@@ -347,6 +348,7 @@ async def test_worker_inflight_double_sell(test_engine):
             import uuid
             return {"id": str(uuid.uuid4()), "client_order_id": kwargs.get("client_order_id"), "status": "accepted"}
         async def get_order_by_client_id(self, *args, **kwargs):
+            import uuid
             return {"id": str(uuid.uuid4()), "status": "accepted", "filled_qty": "0", "filled_avg_price": "0"}
             
     worker = AlpacaPaperWorker(test_engine, DummyAdapter(), None)
@@ -400,4 +402,87 @@ async def test_worker_inflight_double_sell(test_engine):
             conn.execute(text("DELETE FROM signals WHERE signal_id IN (:s1, :s2)"), {"s1": str(sig1), "s2": str(sig2)})
             conn.execute(text("DELETE FROM candles WHERE candle_id = :c"), {"c": str(candle_id)})
             conn.execute(text("DELETE FROM system_controls"))
+            conn.execute(text("DELETE FROM paper_runs WHERE run_id = :r"), {"r": str(run_id)})
+
+
+@pytest.mark.anyio
+async def test_submit_timeout_path_reconciles_by_client_order_id(test_engine):
+    """Guards the NameError that hid in two DummyAdapter stubs in this file.
+
+    `get_order_by_client_id` referenced a `uuid` module object that only existed as a
+    function-local import inside the sibling `submit_order`, so calling it raised
+    `NameError`. Nothing caught it: the inflight tests never take the timeout branch,
+    and `submit()` wraps the whole broker call in `except Exception`, so the NameError
+    was absorbed into the generic `network_error` result and the reconciliation
+    silently never happened. Green tests, broken idempotency.
+    """
+    class TimeoutAdapter:
+        async def submit_order(self, **kwargs):
+            from services.alpaca_paper.adapter import AlpacaPaperError
+            # status_code 500 is deliberately NOT in (403, 422): that is what makes
+            # `submit` fall through to `_handle_timeout_or_disconnect`.
+            raise AlpacaPaperError("boom", code="timeout", status_code=500)
+
+        async def get_order_by_client_id(self, client_order_id):
+            import uuid
+            return {
+                "id": str(uuid.uuid4()),
+                "status": "accepted",
+                "filled_qty": "0",
+                "filled_avg_price": "0",
+            }
+
+    from services.api.models import broker_orders, candles, paper_orders, paper_runs, risk_decisions, signals
+
+    run_id, order_id = uuid4(), uuid4()
+    candle_id, signal_id, dec_id = uuid4(), uuid4(), uuid4()
+
+    with test_engine.begin() as conn:
+        conn.execute(paper_runs.insert().values(run_id=run_id, created_at=datetime.now(UTC), mode='ALPACA_PAPER', provider='alpaca', status='RUNNING', initial_cash=1000, cash=1000, step=1, fee_bps=0, fees=0, realized_pnl=0, slippage_bps=0, dataset=[], dataset_hash=''))
+        conn.execute(candles.insert().values(candle_id=candle_id, stream_id=uuid4(), sequence=1, symbol='AAPL', timeframe='1h', provider='alpaca', open_time=datetime(2026, 1, 1, tzinfo=UTC), close_time=datetime(2026, 1, 1, 1, tzinfo=UTC), open=1, high=2, low=1, close=2, volume=10, is_closed=True))
+        conn.execute(signals.insert().values(signal_id=signal_id, candle_id=candle_id, stream_id=uuid4(), strategy_version='1.0', reason='test', signal_type='BUY', generated_at=datetime.now(UTC)))
+        conn.execute(risk_decisions.insert().values(decision_id=dec_id, signal_id=signal_id, run_id=run_id, decided_at=datetime.now(UTC), decision='APPROVED', reason='test'))
+
+    executor = AlpacaPaperExecutor(TimeoutAdapter())
+    try:
+        result = await executor.submit(
+            engine=test_engine,
+            run_id=run_id,
+            signal_id=signal_id,
+            risk=RiskDecision(
+                decision_id=dec_id, signal_id=signal_id, decision="APPROVED",
+                reason="test", decided_at=datetime.now(UTC),
+            ),
+            symbol="AAPL",
+            side="BUY",
+            quantity=Decimal("1"),
+            order_id=order_id,
+            requested_at=datetime.now(UTC),
+        )
+        assert result.status == "REJECTED"
+        assert result.reason == "network_error"
+
+        with test_engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT b.broker_order_id, b.status AS broker_status, p.status AS paper_status "
+                    "FROM broker_orders b JOIN paper_orders p USING (order_id) "
+                    "WHERE b.order_id = :o"
+                ),
+                {"o": str(order_id)},
+            ).mappings().first()
+
+        # The reconciliation ran: the broker stub answered, so the broker row now carries
+        # the remote id/status that `get_order_by_client_id` returned.
+        assert row is not None
+        assert row["broker_order_id"] is not None, "timeout reconciliation never ran"
+        assert row["broker_status"] == "accepted"
+        assert row["paper_status"] == "ACCEPTED"
+    finally:
+        with test_engine.begin() as conn:
+            conn.execute(text("DELETE FROM broker_orders WHERE order_id = :o"), {"o": str(order_id)})
+            conn.execute(text("DELETE FROM paper_orders WHERE order_id = :o"), {"o": str(order_id)})
+            conn.execute(text("DELETE FROM risk_decisions WHERE decision_id = :d"), {"d": str(dec_id)})
+            conn.execute(text("DELETE FROM signals WHERE signal_id = :s"), {"s": str(signal_id)})
+            conn.execute(text("DELETE FROM candles WHERE candle_id = :c"), {"c": str(candle_id)})
             conn.execute(text("DELETE FROM paper_runs WHERE run_id = :r"), {"r": str(run_id)})
