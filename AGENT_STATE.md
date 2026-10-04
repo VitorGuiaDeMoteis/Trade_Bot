@@ -117,30 +117,27 @@ Each line is pinned by an executable check; a violation now fails a test.
   `AlpacaMarketDataProvider`, `regular_session`) for several commits; only the
   tests were stale. Not a missing seam -- nothing to restore. Replaced by 3
   executable pins; the file is now 66 passed / 0 failed.
+- `RUN_ALPACA_SMOKE_TEST` doc drift -- CLOSED (this cycle). The flag was documented
+  in six files as the live-broker smoke opt-in while nothing in production read it
+  (`tests/conftest.py:52` sets it to `0`; no other code reference). The docs now
+  state that `scripts/smoke_test.py` is an offline evaluation-lab reporter and that
+  the flag is inert/legacy, with real-data validation moved onto the running API
+  (`.env.example`, `README.md:126`, `docs/RUNBOOK.md`, `docs/DEMO.md`, D035 in
+  `docs/DECISIONS.md`, `docs/SECURITY.md`). Pinned by
+  `tests/test_alpaca_provider.py::test_no_production_code_reads_the_inert_smoke_opt_in_flag`
+  and `::test_docs_do_not_promise_a_broker_smoke_opt_in`; both were proven
+  non-vacuous by replaying the assertions against the `git show HEAD:<doc>` blobs.
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
-0. CLOSED this cycle — `fix(parity): register the notional-BUY quantity=0 symptom`.
-   `KnownFix(commit="a05d136")` now names
-   `latest_orders[*].quantity=0 ... filled_quantity>0`, and
-   `tests/test_paper_runtime_parity.py::test_notional_buy_zero_quantity_is_registered_against_its_own_fix`
-   pins it (sha resolves, `EXPLAINED_BY_LAG`, symptom excused and rendered).
-   Do NOT re-derive: `requested_quantity` is NULL by design for a notional
-   BUY, the route falls back to `filled_quantity`
-   (`services/api/broker_routes.py:140-146`), and the frozen runtime never ran
-   `a05d136`. Verified: parity report renders `fix a05d136:
-   explained-by-runtime-lag` against the real runtime.
+- None currently registered. The two most recent candidates (the notional-BUY
+  `quantity=0` parity symptom and the `RUN_ALPACA_SMOKE_TEST` doc drift) are both
+  CLOSED and pinned above. A clean cycle must FIRST run the mandatory PAPER_REVIEW
+  gate, then derive its task from that observation plus
+  `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` output rather than
+  from a carried-over guess.
 
-1. `RUN_ALPACA_SMOKE_TEST` doc drift (verified by grep on 2026-10-04, NOT fixed):
-   the flag is documented as the live-smoke opt-in in `.env.example:26`,
-   `docs/DEMO.md:144`, `docs/DECISIONS.md:152` (D035), `docs/SECURITY.md:85`,
-   `docs/RUNBOOK.md:195,202` and `README.md:126`, but nothing in production reads
-   it -- the only code references are `tests/conftest.py:52` (sets it to `0`) and
-   `.env.example`. Those docs still promise a broker smoke that cannot run.
-   Task: correct them to the offline reporter reality (or restore a real opt-in
-   deliberately). `README.md`/`docs/RUNBOOK.md` are written in Portuguese.
-
-## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
+## Cycle 2026-10-04 (RECOVERY MODE -- inherited agent-loop.ps1 turn-budget bump)
 
 - Task: finish/validate the inherited WIP, no new task.
 - The inherited WIP was ONE file, `scripts/agent-loop.ps1`, and it was NOT product
@@ -176,8 +173,49 @@ Each line is pinned by an executable check; a violation now fails a test.
   expected with the market closed, and the positions are unchanged. No new
   actionable Paper finding. (Read for context only; this cycle began DIRTY, so
   the mandatory clean-cycle gate does not apply.)
-- Next candidate: unchanged -- the `RUN_ALPACA_SMOKE_TEST` doc drift above (one
-  coherent docs task; README/RUNBOOK are in Portuguese).
+- Next candidate: was the `RUN_ALPACA_SMOKE_TEST` doc drift, which the next entry
+  below records as CLOSED and pinned.
+
+## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
+
+- Task: finish/validate the inherited WIP, no new task. The WIP was the
+  `RUN_ALPACA_SMOKE_TEST` doc drift (backlog candidate 1 at start).
+- Inherited WIP touched 6 files (`.env.example`, `README.md`, `docs/RUNBOOK.md`,
+  `docs/DEMO.md`, `docs/DECISIONS.md`, `docs/SECURITY.md`), all docs-only. No
+  production code was modified, so nothing could be left half-applied. Verified
+  the WIP's core claim before keeping it: `scripts/smoke_test.py` imports only
+  `json`/`asyncio`/`pathlib`/`collections.Counter`/`run_evaluation` and never
+  reads the flag, and `scripts/evaluation_lab.py` has zero matches for
+  `import litellm|import openai|httpx|aiohttp|requests.|import anthropic|Settings`
+  -- so "inert flag + offline reporter" is the true reality.
+- Corrections made to the WIP before committing:
+  (1) `docs/RUNBOOK.md` had two prose paragraphs indented inside the PowerShell
+  code block, so the explanation of the offline reporter rendered as runnable
+  commands. Dedented.
+  (2) `docs/DEMO.md` step 2 still said "validar o candle 1h fechado na REST",
+  which duplicated step 3's REST check; trimmed to match the renumbered list.
+  (3) The WIP had no executable pin, so the drift could return silently. Added two
+  pins in `tests/test_alpaca_provider.py`: no production package reads the flag,
+  and no doc may show the `RUN_ALPACA_SMOKE_TEST=1` opt-in or mention the flag
+  without calling it inert.
+- First draft of the doc pin was too naive: it forbade the bare string "SKIPPED",
+  which failed on README's own corrected sentence ("não existe timeout de 45 s nem
+  saída SKIPPED"). Pinned the actual drift marker (the opt-in literal) plus a
+  positive "must say inert" requirement instead of banning a word a correct doc
+  legitimately negates.
+- Pinned non-vacuity out-of-tree: a scratch script replays both assertions against
+  `git show HEAD:<doc>` blobs (5 of 6 docs red at HEAD, README doubly so) and
+  against the working-tree files (green). The repo tree was never modified to prove
+  it -- this is the "never temporarily break tracked production code" rule applied
+  to a doc pin.
+- Validation: `./.venv/Scripts/python.exe -m pytest tests/test_alpaca_provider.py
+  -q` -> 68 passed / 0 failed (was 66 + 2 new); `ruff check` on the touched test
+  file -> clean. No full suite run, and none warranted for a docs-only change.
+- No PAPER_REVIEW line this cycle: the mission gates it on a CLEAN cycle start, and
+  this one began DIRTY. Read-only `.agent-runtime/paper-latest.json` was consulted
+  for context only; nothing about the runtime was touched.
+- Next candidate: none registered. A clean cycle must start with the mandatory
+  PAPER_REVIEW gate and re-derive work from it.
 
 ## Cycle 2026-10-04 (RECOVERY MODE -- worktree was DIRTY at start)
 

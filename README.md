@@ -123,7 +123,7 @@ Pare qualquer backend anterior antes da migração. A revisão atual é `0008_m3
 
 Somente Alpaca **Market Data**. `ALPACA_API_KEY_ID` e `ALPACA_API_SECRET_KEY` ficam no `.env` local; nunca no chat ou Flutter. Configure `MARKET_DATA_PROVIDER=alpaca`, feed `iex`, símbolos `SPY,AAPL,TSLA` e timeframe `1h`. A sessão PowerShell pode sobrescrever o provider do arquivo.
 
-`uv run python -m scripts.smoke_test` retorna **SKIPPED** por padrão. Habilitar `RUN_ALPACA_SMOKE_TEST=1` é o opt-in explícito para o smoke real, com timeout de 45 s. Mercado fechado informa que streaming não foi validado. Instruções e limites em [RUNBOOK](docs/RUNBOOK.md) e [DEMO](docs/DEMO.md).
+`uv run python -m scripts.smoke_test` **não toca a Alpaca**: é um reporter offline do evaluation-lab (respostas válidas, cache hit, distribuição de regimes, concordância de trades). `RUN_ALPACA_SMOKE_TEST` é **inerte** — nenhuma linha de produção a lê, logo ela não autoriza smoke real, não existe timeout de 45 s nem saída SKIPPED. Para provar dados reais, use o backend com `MARKET_DATA_PROVIDER=alpaca`. Instruções e limites em [RUNBOOK](docs/RUNBOOK.md) e [DEMO](docs/DEMO.md).
 
 Candles 1h vêm da REST nativa `1Hour`, após fechamento + 60 s; barras WS de minuto não são rebatizadas como horas. Cada ativo tem seu cursor persistente. Duplicatas não geram outros Signal/RiskDecision; conflitos de conteúdo falham explicitamente. Nenhuma ordem é criada.
 

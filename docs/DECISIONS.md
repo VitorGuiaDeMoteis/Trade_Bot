@@ -149,7 +149,7 @@ As decisões abaixo substituem, somente no escopo autorizado, as restrições hi
 | D032 | Candle/evento/sinal/risco atômicos, duplicidade explícita e conflito fatal | Mesmo conteúdo recupera evento existente sem recalcular decisões. Alteração posterior da fonte para identidade conhecida exige investigação; não corrigir preços/decisões automaticamente. |
 | D033 | NUMERIC(28,10), validação Decimal e contratos de mercado 2.0 | Preserva precisão suportada sem float; preços fora da precisão falham. Hora/sequence antigos deixam de ser compatíveis. Saúde mantém envelope 1.1. |
 | D034 | Séries independentes no Flutter, até 2.000 candles, chart cronológico | Troca de ativo cancela requisições/socket anteriores e busca snapshot próprio. Timestamp de mercado e ordem de ingestão podem divergir em backfill. |
-| D035 | Smoke opt-in separado de testes offline | Testes bloqueiam internet; RUN_ALPACA_SMOKE_TEST=1 autoriza smoke real limitado. Sem flag: SKIPPED. ACK não é prova de nova hora ao vivo nem da cadeia até o tablet. |
+| D035 | Smoke offline separado de testes, sem opt-in de broker | `scripts/smoke_test.py` é reporter do evaluation-lab: não lê `RUN_ALPACA_SMOKE_TEST` (flag inerte, mantida no `.env.example` por compatibilidade) e não abre provider. Dados reais validam pelo backend com `MARKET_DATA_PROVIDER=alpaca`. ACK não é prova de nova hora ao vivo nem da cadeia até o tablet. |
 | D036 | Calendário com biblioteca dedicada e stubs locais mínimos | exchange_calendars 4.13.2 não fornece py.typed; stubs descrevem somente a API utilizada, em vez de desabilitar mypy. alpaca-py removido por não ser necessário. |
 
 Fontes oficiais consultadas:

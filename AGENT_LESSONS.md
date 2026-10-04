@@ -2022,6 +2022,34 @@ governs the agent's own supervision is a revert candidate however small and
 reasonable it looks -- "45 is still small" is the reasoning that gets a cycle to
 approve its own budget extension.
 
+## A doc pin must assert the fix, not ban a word
+
+Six files advertised `RUN_ALPACA_SMOKE_TEST=1` as the live Alpaca smoke opt-in
+while nothing in production read the flag: `scripts/smoke_test.py` is an offline
+evaluation-lab reporter with no broker seam, and the only other reference is
+`tests/conftest.py` setting the flag to `0`. The inherited WIP fixed the prose
+correctly and shipped no pin, so the drift could return silently.
+
+The first pin I wrote forbade the literal strings `"RUN_ALPACA_SMOKE_TEST=1"`,
+`"SKIPPED"` and `"timeout de 45"`. It went red immediately -- on README's own
+*corrected* sentence, which negates both: "não existe timeout de 45 s nem saída
+SKIPPED". A keyword ban cannot tell an assertion from its own refutation, so it
+either misses the real drift or bans the fix.
+
+Pin the mechanism in two positive obligations instead: the opt-in literal must be
+absent from every doc, and any doc that mentions the flag MUST call it inert
+("inerte" case-insensitively). The second half is what survives future rewording,
+because a correct doc has to keep making the disclaimer. Same rule for code pins:
+assert no production package reads the flag (`scripts`, `services`, `packages`,
+`infrastructure`), rather than grepping for one known reference.
+
+Prove such a pin non-vacuously WITHOUT touching the tree -- the mission forbids
+temporarily breaking tracked files. Replay the assertions against
+`git show HEAD:<doc>` blobs from a scratch script: 5 of the 6 docs were red at HEAD
+and all are green in the working tree, so the pin has teeth and the docs hold. That
+is the doc-pin equivalent of the "use git history, isolated scratch code, mocks, or a
+separate worktree" guidance.
+
 ## An append-only state file rots the section a cycle reads FIRST
 - `AGENT_STATE.md` grew to 2747 lines because each cycle appended its entry at the
   END, while the authoritative `## Next task` section sat frozen at line 1071. The

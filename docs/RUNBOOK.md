@@ -192,16 +192,14 @@ No .env local:
     ALPACA_DATA_FEED=iex
     MARKET_SYMBOLS=SPY,AAPL,TSLA
     MARKET_TIMEFRAME=1h
-    RUN_ALPACA_SMOKE_TEST=1
 
 Variáveis da sessão prevalecem sobre .env. Se esta sessão foi usada para simulação, alterar explicitamente o provider:
 
     $env:MARKET_DATA_PROVIDER = 'alpaca'
-    uv run python -m scripts.smoke_test
 
-Sem opt-in a saída é SKIPPED. Com opt-in, timeout global de 45 s, histórico SPY, provider/UTC/Decimal/fechamento e, se sessão regular aberta, handshake WS. Sessão fechada informa market_closed / streaming not validated. O smoke não persiste dados nem comprova nova hora ao vivo.
+O reporter offline `scripts/smoke_test.py` não valida dados de mercado e não faz parte deste roteiro: resume o evaluation-lab e não lê `RUN_ALPACA_SMOKE_TEST` (flag inerte, mantida por compatibilidade). A validação de dados reais são as consultas abaixo.
 
-Após smoke, iniciar o único Uvicorn pelo comando acima. Consultar:
+Após configurar o provider, iniciar o único Uvicorn pelo comando acima. Consultar:
 
     Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/market/candles?symbol=SPY&timeframe=1h'
     Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/market/candles?symbol=AAPL&timeframe=1h'

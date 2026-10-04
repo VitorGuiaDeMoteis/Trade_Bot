@@ -141,13 +141,12 @@ São **dados simulados no código corrigido**, não prova de Alpaca real.
 
 ## Roteiro de dados reais — etapas de histórico concluídas; streaming pendente
 
-1. Confirmar as credenciais localmente e habilitar explicitamente RUN_ALPACA_SMOKE_TEST=1.
-2. Executar o smoke limitado. Mercado regular fechado deve informar streaming not validated.
-3. Iniciar um único backend com MARKET_DATA_PROVIDER=alpaca.
-4. Conferir SPY/1h fechado no PostgreSQL, REST e replay WS.
-5. Abrir app normal no Xiaomi; trocar SPY → AAPL → TSLA e conferir séries independentes.
-6. Durante sessão apropriada, observar uma nova hora fechada nativa, com margem de fechamento e intervalo de atualização.
-7. Reiniciar backend e recuperar conexão sem duplicar candle/evento/Signal/RiskDecision.
+1. Confirmar as credenciais localmente; `RUN_ALPACA_SMOKE_TEST` é flag inerte e `scripts/smoke_test.py` é reporter offline, portanto não há smoke de broker a habilitar.
+2. Iniciar um único backend com MARKET_DATA_PROVIDER=alpaca.
+3. Conferir SPY/1h fechado no PostgreSQL, REST e replay WS.
+4. Abrir app normal no Xiaomi; trocar SPY → AAPL → TSLA e conferir séries independentes.
+5. Durante sessão apropriada, observar uma nova hora fechada nativa, com margem de fechamento e intervalo de atualização.
+6. Reiniciar backend e recuperar conexão sem duplicar candle/evento/Signal/RiskDecision.
 
 A tela deve identificar DADOS REAIS e fonte/feed; análise/decisão permanecem simuladas. Nenhuma ordem existe. Não concluir M1.5 por histórico sozinho, ACK do socket ou teste com fake.
 # Modelo real M5 ainda não demonstrável (2026-09-04)

@@ -550,3 +550,38 @@ def test_smoke_harness_never_opens_a_broker_provider(monkeypatch, capsys):  # ty
 
     for name in ("AlpacaMarketDataProvider", "Settings", "regular_session"):
         assert not hasattr(smoke_test, name), f"smoke harness regained broker seam {name}"
+
+
+SMOKE_DOCS = (
+    "README.md",
+    ".env.example",
+    "docs/RUNBOOK.md",
+    "docs/DEMO.md",
+    "docs/DECISIONS.md",
+    "docs/SECURITY.md",
+)
+
+
+def test_no_production_code_reads_the_inert_smoke_opt_in_flag() -> None:
+    """REGRESSION: `RUN_ALPACA_SMOKE_TEST` authorizes nothing. Production packages
+    must not read it; only `.env.example` carries it for legacy compatibility."""
+    root = Path(__file__).resolve().parents[1]
+    offenders = [
+        path.relative_to(root).as_posix()
+        for package in ("scripts", "services", "packages", "infrastructure")
+        for path in (root / package).rglob("*.py")
+        if "RUN_ALPACA_SMOKE_TEST" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"production code reads the inert flag: {offenders}"
+
+
+def test_docs_do_not_promise_a_broker_smoke_opt_in() -> None:
+    """REGRESSION: the docs used to advertise a live Alpaca smoke that no code can
+    run. They must state the offline-reporter reality instead: the opt-in literal is
+    absent and every mention of the flag carries the "inert" disclaimer."""
+    root = Path(__file__).resolve().parents[1]
+    for doc in SMOKE_DOCS:
+        text = (root / doc).read_text(encoding="utf-8")
+        assert "RUN_ALPACA_SMOKE_TEST=1" not in text, f"{doc} still shows the opt-in"
+        if "RUN_ALPACA_SMOKE_TEST" in text:
+            assert "inerte" in text.lower(), f"{doc} mentions the flag without calling it inert"

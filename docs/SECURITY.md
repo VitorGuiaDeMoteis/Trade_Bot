@@ -82,7 +82,7 @@ Alpaca utiliza exclusivamente data.alpaca.markets e stream.data.alpaca.markets. 
 
 Logs estruturados contêm códigos controlados, UTC e correlation_id. Não registrar respostas de autenticação, headers ou texto bruto de exceções externas. Desabilitar access log do servidor. Não compartilhar logcat completo: outros aplicativos do aparelho podem aparecer nele.
 
-Smoke test exige RUN_ALPACA_SMOKE_TEST=1; sem opt-in retorna SKIPPED antes de criar provider. Testes automatizados bloqueiam HTTP/WS externos e usam fakes; PostgreSQL de teste fica em localhost:5433.
+Smoke test é offline: `scripts/smoke_test.py` só reporta o evaluation-lab, não lê `RUN_ALPACA_SMOKE_TEST` (flag inerte) e não abre provider nem HTTP/WS externo. Testes automatizados bloqueiam HTTP/WS externos e usam fakes; PostgreSQL de teste fica em localhost:5433.
 
 ## Superfície local
 
