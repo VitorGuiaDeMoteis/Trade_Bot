@@ -3,11 +3,33 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import Table
 
+from packages.contracts.decisions import RiskResponse, SignalResponse
+from packages.contracts.market import CandleResponse
 from packages.domain.market import SimulationSpec
+from services.api.models import candles, risk_decisions, signals
 from services.market_simulator.generator import CandleGenerator
 from services.risk_engine.engine import RiskEngine
 from services.strategy_engine.engine import BaseStrategy
+
+
+@pytest.mark.parametrize(
+    ("table", "response"),
+    [
+        (candles, CandleResponse),
+        (signals, SignalResponse),
+        (risk_decisions, RiskResponse),
+    ],
+)
+def test_response_covers_every_table_column(table: Table, response: type) -> None:
+    """Both decisions call sites project whole table rows into extra="forbid" models.
+
+    A column added to a table without the matching response field makes every
+    decision listing and every paper dataset build raise at request time, so pin
+    the two sides together here instead of discovering it in production.
+    """
+    assert {c.name for c in table.c} <= set(response.model_fields)
 
 
 @pytest.mark.parametrize(

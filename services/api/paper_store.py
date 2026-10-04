@@ -246,7 +246,9 @@ class PaperStore:
                 item = previous.get(symbol)
                 if item is None:
                     continue
-                risk = RiskDecision(**item.risk.model_dump())
+                # run_id is paper persistence linkage, not a risk-engine concept:
+                # the domain dataclass stays free of it and the field is dropped here.
+                risk = RiskDecision(**item.risk.model_dump(exclude={"run_id"}))
                 if risk.decision != "APPROVED":
                     result = PaperResult("NO_ACTION", "risk_rejected")
                 elif item.signal.signal_type == "HOLD":

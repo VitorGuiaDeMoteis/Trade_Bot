@@ -2356,3 +2356,21 @@ NOT safe to auto-delete
   cycle PROVING which side it falls on before spending it on a sweep. Two of the
   three candidate classes this cycle (B023, E501) were noise or formatting; the one
   with a real silent-failure mode (F401 on model imports) is where the value was.
+
+- When a test compares a whole API snapshot dict for equality, first check whether any
+  field in it is stamped with wall-clock `now()` on read. Two reads can never match,
+  so the test is measuring clock skew, not the behaviour it names.
+- A new "parity" or "covers everything" test is only worth committing once you have
+  shown it FAILS without the fix. Reconstruct the old shape in-process and print the
+  gap; if the gap is empty the test is decorative.
+- When a strict (`extra="forbid"`) response model gains a persistence-only field, grep
+  for every site that round-trips that model back into a domain dataclass. The write
+  path keeps working and only the replay path raises `TypeError`, so it survives any
+  test that does not actually replay a persisted row.
+- Never trust a test command's exit code when its output is piped through `tail`,
+  `head` or `grep` — the pipeline reports the LAST filter's status, so failures print
+  as success. Use `set -o pipefail`, or redirect to a file and read it.
+- `uv`/`python -m pytest` under the repo-local default interpreter exited 1 in this
+  environment; the sibling `TradingBot-unified/.venv/Scripts/python.exe` ran pytest,
+  ruff and mypy cleanly. Pin the working interpreter in the state file rather than
+  rediscovering it every cycle.

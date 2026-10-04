@@ -32,6 +32,7 @@ class RiskResponse(BaseModel):
     decision: DecisionType
     reason: str
     decided_at: datetime
+    run_id: UUID | None = None
 
 
 class PaperDecisionResponse(BaseModel):

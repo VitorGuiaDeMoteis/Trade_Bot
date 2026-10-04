@@ -3722,3 +3722,71 @@ line must be checked for accidental edits to string content. Alternative
 candidate, still bounded: the remaining 49 F401/I001 across `tests`/`scripts` —
 but apply the metadata-registration probe FIRST to any F401 naming an ORM model,
 per the lesson recorded this cycle.
+
+## Cycle 2026-10-04 — RECOVERY MODE: `run_id` field/DB parity WIP finished and committed
+
+MODE: recovery. The cycle opened on a dirty worktree (`M packages/contracts/decisions.py`,
+`M services/api/paper_store.py`, `M tests/test_decisions.py`, plus an untracked
+`tests/test_zz_scratch_order_diag.py`). Per mission, no new task was chosen; the
+existing WIP was inspected, validated and closed.
+
+THE WIP, as found: add `run_id` to the strict `extra="forbid"` `RiskResponse`, and
+pin table-to-response parity so a future column cannot silently break the two call
+sites that project a whole table row into a response model.
+
+- Premise CONFIRMED: `risk_decisions.run_id` is a real column
+  (`services/api/models.py:84`), and `services/api/decisions_routes.py:120`
+  projects whole `risk_decisions` rows into `RiskResponse`. With `extra="forbid"`,
+  any column lacking a matching field raises at request time — so a new column
+  breaks the decisions listing and the paper dataset build, not just one endpoint.
+- CHANGE 1 (`packages/contracts/decisions.py`): `RiskResponse.run_id: UUID | None = None`.
+  Note the DEFAULT matters — the response model also serializes DECISIONS that were
+  never linked to a run, so the field must stay optional.
+- CHANGE 2 (`services/api/paper_store.py:246`): the paper replay path round-trips a
+  response model back into the domain dataclass, so it now drops the persistence-only
+  field explicitly — `RiskDecision(**item.risk.model_dump(exclude={"run_id"}))`.
+  This is the load-bearing half of the WIP: without it, replaying a persisted run
+  raises `TypeError` on the dataclass. Comment records WHY, so the exclude is not
+  "simplified" away later.
+- CHANGE 3 (`tests/test_decisions.py`): `test_response_covers_every_table_column`,
+  parametrized over `(candles, CandleResponse)`, `(signals, SignalResponse)`,
+  `(risk_decisions, RiskResponse)`, asserting `{c.name for c in table.c} <=
+  set(response.model_fields)`. Covers all three projection sites at once, so the
+  next added column fails here instead of in production.
+- SCRATCH REMOVED: untracked `tests/test_zz_scratch_order_diag.py` deleted. It was a
+  diagnostic for a DIFFERENT, pre-existing failure (see below) and had no place in
+  the commit.
+
+VALIDATION (targeted only; the full suite was never run, per mission):
+- `pytest tests/test_decisions.py tests/test_decisions_database.py -q`:
+  11 passed, 3 skipped (skips are `Dedicated PostgreSQL required`, environmental).
+- NON-VACUITY PROVED, because a parity test that passes for the wrong reason is
+  worthless: replaying the OLD `RiskResponse` shape (reconstructed in-process from
+  HEAD's three fields) leaves the gap `{decision_id, run_id, signal_id}` against
+  `risk_decisions.c`. Non-empty => the new assertion genuinely fails without the fix.
+- `pytest tests/test_paper_database.py tests/test_paper_stop.py
+  tests/test_paper_v1_stabilization.py tests/test_paper_runtime_parity.py -q`:
+  66 passed, 12 skipped — the paper consumers of `paper_store.py` are unaffected by
+  the `exclude=` change.
+- `ruff check` on all three changed files: All checks passed.
+- `mypy packages/contracts/decisions.py services/api/paper_store.py`: no issues.
+- Toolchain note: the repo-local default `python` exits 1 under this mission's
+  pytest/ruff invocation; `C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot-unified/.venv/Scripts/python.exe`
+  runs all three tools cleanly. Prefer it.
+
+PRE-EXISTING FAILURE, explicitly NOT caused by this WIP and NOT fixed here:
+`tests/test_paper_audit.py` has 2 failures in
+`test_insufficient_capital_persists_rejections_without_financial_mutation` and
+`test_pause_waits_for_atomic_batch`. Both compare a full `state(store)` snapshot
+against an earlier one, and the differing key is `last_reconciled_at` only.
+`services/api/paper_queries.py:58` stamps `datetime.now(UTC)` on every read when a
+run is active, so two reads seconds apart can never be equal. That file is untouched
+by this WIP. Root cause is now IDENTIFIED (previously "not yet root-caused"), which
+makes it a real candidate for the next cycle.
+
+NEXT CANDIDATE TASK: make `last_reconciled_at` deterministic for those two
+`test_paper_audit.py` comparisons — the honest fix is for the portfolio snapshot to
+expose the reconciled timestamp it read from the run row rather than wall-clock
+"now", so a repeated read of an unchanged run compares equal. This must be done
+WITHOUT weakening the concurrent-visibility assertion at `tests/test_paper_audit.py:148`,
+which is the point of the test.
