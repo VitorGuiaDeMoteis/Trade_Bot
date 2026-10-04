@@ -5,6 +5,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import pytest
@@ -417,15 +418,75 @@ def test_strategy_rejects_partial():  # type: ignore
         BaseStrategy().process_candle(replace(candle, is_closed=False), NOW)
 
 
-def test_smoke_skipped_without_network(monkeypatch, capsys):  # type: ignore
+def test_smoke_harness_never_rewrites_tracked_production_source(monkeypatch, tmp_path, capsys):  # type: ignore
+    """The harness used to "cap" a run by editing scripts/evaluation_lab.py in place
+    and leaving a .bak beside it. A crash mid-run could leave tracked source mangled,
+    so bounding a run must never touch repository files."""
     from scripts import smoke_test
 
-    def forbidden(*args, **kwargs):  # type: ignore
-        pytest.fail("Smoke opened a provider without opt-in")
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    tracked = scripts_dir / "evaluation_lab.py"
+    before_bytes = tracked.read_bytes()
+    before_baks = set(scripts_dir.glob("*.bak"))
 
-    monkeypatch.setattr(smoke_test, "AlpacaMarketDataProvider", forbidden)
-    assert asyncio.run(smoke_test.main()) == 0
-    assert "SKIPPED" in capsys.readouterr().out
+    run = tmp_path / "evaluations" / "run-1"
+    run.mkdir(parents=True)
+    (run / "progress.json").write_text(
+        json.dumps({"ai_requests": 2, "ai_valid": 1, "cache_hits": 1, "cache_misses": 1})
+    )
+    (run / "observations.jsonl").write_text(
+        json.dumps(
+            {
+                "res": {
+                    "status": "OK",
+                    "validated_output": {
+                        "regime": {"label": "trend", "confidence": 0.7},
+                        "bias": "long",
+                    },
+                }
+            }
+        )
+        + "\n"
+    )
+    (run / "labeled_trades.csv").write_text("agreement\nagree\n")
+
+    async def fake_run_evaluation():  # type: ignore
+        return None
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(smoke_test, "run_evaluation", fake_run_evaluation)
+    asyncio.run(smoke_test.main())
+
+    assert tracked.read_bytes() == before_bytes, "smoke harness mutated tracked production source"
+    bak_set = set(scripts_dir.glob("*.bak"))
+    assert bak_set == before_baks, "smoke harness left .bak files in scripts/"
+    # monkeypatch.chdir made tmp_path the CWD, so this also covers the old
+    # helpers' relative .bak path.
+    assert not list(tmp_path.rglob("*.bak")), "smoke harness left a .bak beside its target"
+
+
+def test_smoke_harness_reports_rates_without_dividing_by_zero(monkeypatch, tmp_path, capsys):  # type: ignore
+    """A zero-request / zero-cache run must still report 0.0% instead of raising."""
+    from scripts import smoke_test
+
+    run = tmp_path / "evaluations" / "run-1"
+    run.mkdir(parents=True)
+    (run / "progress.json").write_text(
+        json.dumps({"ai_requests": 0, "ai_valid": 0, "cache_hits": 0, "cache_misses": 0})
+    )
+    (run / "observations.jsonl").write_text("")
+    (run / "labeled_trades.csv").write_text("agreement\n")
+
+    async def fake_run_evaluation():  # type: ignore
+        return None
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(smoke_test, "run_evaluation", fake_run_evaluation)
+    asyncio.run(smoke_test.main())
+
+    out = capsys.readouterr().out
+    assert "Valid Rate: 0.0%" in out
+    assert "Cache Hit Rate: 0.0%" in out
 
 
 def test_transport_failure_is_retryable_and_redacted(caplog):  # type: ignore
@@ -482,21 +543,10 @@ def test_http_websocket_handshake_failure_is_classified(monkeypatch, status, ret
     assert "fake-secret" not in str(error.value)
 
 
-def test_opted_in_smoke_closed_session_is_bounded_and_skips_stream(monkeypatch, capsys):  # type: ignore
+def test_smoke_harness_never_opens_a_broker_provider(monkeypatch, capsys):  # type: ignore
+    """The harness is an offline evaluation-lab reporter: it must never construct a
+    trading/market-data provider, with or without the legacy opt-in flag."""
     from scripts import smoke_test
 
-    monkeypatch.setenv("RUN_ALPACA_SMOKE_TEST", "1")
-    settings = Settings(
-        _env_file=None,
-        postgres_password=SecretStr("test"),
-        alpaca_api_key_id=SecretStr("fake-key"),
-        alpaca_api_secret_key=SecretStr("fake-secret"),
-    )
-    p = provider()  # type: ignore
-    monkeypatch.setattr(smoke_test, "Settings", lambda **kwargs: settings)
-    monkeypatch.setattr(smoke_test, "AlpacaMarketDataProvider", lambda **kwargs: p)
-    monkeypatch.setattr(smoke_test, "regular_session", lambda now: None)
-    assert asyncio.run(smoke_test.main()) == 0
-    output = capsys.readouterr().out
-    assert "PASS" in output and "market_closed / streaming not validated" in output
-    assert "fake-key" not in output and "fake-secret" not in output
+    for name in ("AlpacaMarketDataProvider", "Settings", "regular_session"):
+        assert not hasattr(smoke_test, name), f"smoke harness regained broker seam {name}"

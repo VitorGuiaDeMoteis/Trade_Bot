@@ -4,28 +4,15 @@ from pathlib import Path
 from collections import Counter
 from scripts.evaluation_lab import run_evaluation
 
-def limit_candles():
-    with open("scripts/evaluation_lab.py", "r") as f:
-        content = f.read()
-    with open("scripts/evaluation_lab.py.bak", "w") as f:
-        f.write(content)
-    content = content.replace("n = len(candles)", "n = min(len(candles), 100)")
-    with open("scripts/evaluation_lab.py", "w") as f:
-        f.write(content)
+async def main() -> None:
+    # NOTE: this harness used to "cap" the run by rewriting the tracked module
+    # scripts/evaluation_lab.py in place (and leaving a .bak beside it). The
+    # anchor string it patched no longer exists, so the rewrite did nothing but
+    # touch tracked production source and risk leaving it mangled on a crash.
+    # Bounding an evaluation must be done by passing a limit, never by editing
+    # repository files at runtime.
+    await run_evaluation()
 
-def restore_candles():
-    with open("scripts/evaluation_lab.py.bak", "r") as f:
-        content = f.read()
-    with open("scripts/evaluation_lab.py", "w") as f:
-        f.write(content)
-
-async def main():
-    limit_candles()
-    try:
-        await run_evaluation()
-    finally:
-        restore_candles()
-        
     eval_dir = Path("evaluations")
     subdirs = sorted([d for d in eval_dir.iterdir() if d.is_dir() and (d / "progress.json").exists()], key=lambda x: x.stat().st_mtime)
     latest = subdirs[-1]
