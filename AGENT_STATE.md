@@ -1854,3 +1854,90 @@ REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:1
 is the route that joins it. Determine which payload the frozen observation actually
 reads before changing anything, and do not add a column/migration without
 justification.
+
+================================================================================
+CYCLE 2026-10-04 (worktree DIRTY at start -> RECOVERY MODE, work finished & committed)
+
+TASK: none chosen. The tree was dirty (`M services/api/broker_routes.py`,
+`M tests/test_broker_routes.py`), so per the recovery rule this cycle only
+reviewed, validated, repaired and committed that unfinished work: the broker
+route coerced a NULL `broker_orders.broker_order_id` to an empty string.
+
+REVIEW OF THE WIP: no temporary or intentionally-broken code present. The
+production change is ONE constructor argument; the payload fabricated a broker
+id that did not exist. `broker_orders.broker_order_id` is `nullable=True`
+(models.py:257) and NULL until the broker acknowledges the order -- legitimately
+NULL forever for a submission the broker never accepted. `or ""` published
+`"broker_order_id": ""`, so any `is not None` check read an unacknowledged order
+as genuinely issued, and the route disagreed with the REPLAY constructor, which
+reports the contract default None for the same field. Same class as the
+`quantity: 0` coercion already fixed in that constructor.
+
+REPAIR MADE BY THIS CYCLE (the only edit): the WIP regression test's fixture
+inserted `paper_orders.status="SUBMITTED"`, which is not a member of
+`ck_paper_orders_state_m7`, so the test failed with a psycopg CheckViolation
+BEFORE reaching its assertion -- it could never have passed. Changed to
+`SUBMITTING`, the status the executor actually persists as intent
+(services/alpaca_paper/executor.py:138, "Persistir intent"), which is the last
+state before the broker replies and so the honest fixture for this scenario.
+Production code was NOT edited by this cycle beyond what the WIP already had.
+
+VALIDATION (re-run independently, not taken on trust):
+- 4 passed in 1.26s for tests/test_broker_routes.py (3 pre-existing + the 1 new
+  regression test), after the repair.
+- 36 passed in 1.36s for the four-file regression set (test_broker_routes,
+  test_broker_portfolio_counts, test_paper_portfolio_reconciled,
+  test_paper_portfolio_mode) -- the siblings that build the same payload through
+  the other constructors.
+- `mypy services/api/broker_routes.py` clean (no issues in 1 source file).
+- Lint baseline proven, not assumed: HEAD's test file reports 7 ruff errors via
+  `git show HEAD:... | ruff check --stdin-filename`, the worktree file reports
+  the SAME 7 -- the added test introduced none. The I001/F401/E501 findings are
+  pre-existing; not fixed here (out of scope).
+- Non-vacuity proven WITHOUT editing any tracked file:
+  `git show HEAD:services/api/broker_routes.py | grep -n broker_order_id`
+  returns `broker_order_id=o["broker_order_id"] or "",` -- direct evidence the
+  coercion existed on HEAD. Read-only; no bug restore performed.
+- Consumer check: `grep broker_order_id services/` finds only executor,
+  worker, models, this route, and mission-control.html:104, which renders
+  `r.broker_order_id||r.order_id` (a falsy test, so None and "" render
+  identically). No production consumer branches on the None-vs-"" distinction
+  yet, so the fix has no downstream contract effect -- the payload is still the
+  contract the observer reads.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle; observed_at
+2026-10-04T03:42:12Z): health.status=degraded, health.database=up,
+market_data.state=market_closed (provider alpaca, last_bar_at 2026-10-02T21:00Z),
+paper.status=ACTIVE, paused=false, paper.degraded=false, reconciled=true,
+last_reconciled_at=2026-10-04T03:42:01Z. Open position symbols AAPL, SPY, TSLA,
+all still micro-sized (AAPL $9.987, SPY $9.993, TSLA $9.953).
+orders_count_reported=0 vs orders_count_actual=13; fills_count_reported=0 vs
+fills_count_actual=11. unrealized_pnl=-0.0366820000, equity=99951.28,
+cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: `health.status` is `degraded` again (it was `ok` last
+cycle) -- the known execution-gate flap, not a new fault. Equity, cash,
+market_value, P&L and BOTH totals are IDENTICAL to the last three cycles, so
+this is still the documented undeployed pre-fix reading of the counted report
+(the fix is committed but the frozen runtime predates it), not new drift. The
+two newest orders are the intraday SELL pair for the AAPL and TSLA micro-lots,
+both ACCEPTED with filled_quantity 0E-10, freshly requested at 03:42:07/03:42:08Z
+-- a resubmission cadence worth watching, but the total is still 13 and no
+duplicate execution or divergence is visible. No broker/local divergence, no
+accounting inconsistency, no stale reconciliation. Every `latest_orders[*].
+last_reconciled_at` is STILL null while the portfolio-level field is populated
+-- now EIGHT consecutive samples; that candidate task remains open. Nothing here
+justifies overriding the recovery-mode work.
+
+Next candidate task (carried forward, still first): the observation path null
+`last_reconciled_at`, now confirmed in EIGHT consecutive Paper samples. The
+portfolio-level constructor work is exhausted (all three sites derive the flag
+explicitly), so the remaining suspect is the ORDER payload: `PaperOrder`
+(packages/contracts/paper.py:47) also defaults `last_reconciled_at` to None, and
+paper_queries.py:98 builds orders with `PaperOrder.model_validate(dict(r))` from
+the `paper_orders` table, which (per services/api/models.py) has NO
+`last_reconciled_at` column -- only `broker_orders` does (models.py:262). So the
+REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:152
+is the route that joins it. Determine which payload the frozen observation
+actually reads BEFORE changing anything, and do not add a column/migration
+without justification.

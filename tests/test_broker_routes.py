@@ -246,6 +246,112 @@ async def test_broker_order_status_is_mapped_local_value_not_uppercased_broker_t
 
 
 @pytest.mark.anyio
+async def test_broker_order_unacknowledged_reports_null_broker_id_not_empty_string(
+    test_engine, override_config, monkeypatch
+):
+    """A broker id the broker never issued must read as null, never as "".
+
+    broker_orders.broker_order_id is NULL until the broker acknowledges the
+    order. The route coerced that NULL to an empty STRING, so the payload
+    asserted that a broker id existed and merely had no characters. Every
+    `is not None` check on that field -- including the REPLAY-vs-broker
+    comparison the observer performs -- read an unacknowledged order as a
+    genuinely-issued one. It is the same fabrication as the `quantity: 0`
+    coercion: inventing a value hides the inconsistency rather than surfacing
+    it.
+    """
+    async def mock_stop(self) -> None:
+        pass
+
+    monkeypatch.setattr("services.alpaca_paper.worker.AlpacaPaperWorker.start", lambda self: None)
+    monkeypatch.setattr("services.alpaca_paper.worker.AlpacaPaperWorker.stop", mock_stop)
+
+    from services.api.main import create_app
+
+    app = create_app()
+    run_id, s_id, rd_id = insert_baseline(test_engine)
+
+    with test_engine.begin() as conn:
+        from sqlalchemy import delete
+
+        from services.api.models import (
+            broker_fills,
+            broker_orders,
+            broker_portfolio_snapshots,
+            paper_orders,
+        )
+
+        conn.execute(delete(broker_fills))
+        conn.execute(delete(broker_orders))
+        conn.execute(delete(paper_orders))
+        conn.execute(delete(broker_portfolio_snapshots))
+
+        conn.execute(
+            insert(broker_portfolio_snapshots).values(
+                provider="alpaca",
+                status="ACTIVE",
+                cash=Decimal("100"),
+                market_value=Decimal("0"),
+                equity=Decimal("100"),
+                unrealized_pnl=Decimal("0"),
+                buying_power=Decimal("100"),
+                last_reconciled_at=datetime.now(UTC),
+            )
+        )
+
+        # Accepted by the bot, never acknowledged by the broker: the row is
+        # present and the local status is SUBMITTING (the executor's persisted
+        # intent, services/alpaca_paper/executor.py:138 -- the last state before
+        # the broker replies), but the broker id is NULL.
+        order_id = uuid4()
+        conn.execute(
+            insert(paper_orders).values(
+                order_id=order_id,
+                run_id=run_id,
+                signal_id=s_id,
+                risk_decision_id=rd_id,
+                symbol="AAPL",
+                side="BUY",
+                quantity=Decimal("1"),
+                filled_quantity=Decimal("0"),
+                status="SUBMITTING",
+                requested_at=datetime.now(UTC),
+                idempotency_key=order_id,
+                reason="test",
+            )
+        )
+        conn.execute(
+            insert(broker_orders).values(
+                order_id=order_id,
+                client_order_id=str(order_id),
+                # The broker never returned an id.
+                broker_order_id=None,
+                status="new",
+                filled_quantity=Decimal("0"),
+                last_reconciled_at=datetime.now(UTC),
+            )
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/broker/portfolio")
+        assert response.status_code == 200
+        order = response.json()["orders"][0]
+
+        # The invariant the bug broke: absent means null, not an empty string.
+        assert order["broker_order_id"] is None
+        # The local correlation key survives, so the order stays traceable.
+        assert order["client_order_id"] == str(order_id)
+        # The raw broker status is still surfaced verbatim in its own field.
+        assert order["broker_status"] == "new"
+
+    with test_engine.begin() as conn:
+        conn.execute(delete(broker_fills))
+        conn.execute(delete(broker_orders))
+        conn.execute(delete(paper_orders))
+        conn.execute(delete(broker_portfolio_snapshots))
+
+
+@pytest.mark.anyio
 async def test_broker_order_requested_at_is_submit_time_not_reconcile_time(
     test_engine, override_config, monkeypatch
 ):

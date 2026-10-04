@@ -1400,3 +1400,47 @@ which is the harness to copy for this function.
 `PaperConfig` and `PaperBook` both live in `packages.domain.paper`. There is no
 `packages/config/` directory and no `packages.config.paper` module; importing it
 is an immediate ModuleNotFoundError.
+
+## An absent value must stay absent: `or ""` fabricates a broker id
+
+`broker_orders.broker_order_id` is `nullable=True` (services/api/models.py:257)
+and NULL until the broker acknowledges the order; it legitimately stays NULL for
+a submission the broker never accepted. `PaperOrder.broker_order_id` is
+`str | None = None` (packages/contracts/paper.py:45). The broker route passed
+`o["broker_order_id"] or ""`, so the payload CLAIMED an id existed and merely had
+no characters: any `is not None` check read an unacknowledged order as a real
+one, and it disagreed with the REPLAY constructor, which reports the contract
+default None for the same field. Same class as the `quantity: 0` coercion in that
+constructor -- inventing a value hides the inconsistency instead of surfacing it.
+
+Reusable rules:
+
+- `x or ""` is a bug the moment the column is nullable and the consumer can test
+  presence. `if x:` is a bug the moment presence must be distinguished from
+  emptiness. Pick per the CONSUMER, not per taste.
+- When two constructors of the same contract model are supposed to agree, diff
+  their field lists. Here one passed `None` (contract default) and the other
+  `""` for the identical NULL row.
+- Consumer check before changing a payload field: services/api/static/
+  mission-control.html:104 renders `r.broker_order_id||r.order_id`, a falsy
+  test, so None and "" render identically there -- the fix has no UI effect and
+  no production consumer branches on the distinction yet. The payload is still
+  the contract the observer reads.
+
+Test-harness trap (cost one failed run this cycle): inserting a `paper_orders`
+row with a status outside `ck_paper_orders_state_m7` (services/api/models.py:219)
+fails at the DB, not at the assertion. The allowed set is
+`SUBMITTING, NEW, ACCEPTED, PENDING_NEW, PARTIALLY_FILLED, FILLED,
+PENDING_CANCEL, CANCELED, REJECTED, EXPIRED, REPLACED, UNKNOWN` -- note there is
+NO `SUBMITTED`. The pre-acknowledgement local status the executor actually writes
+is `SUBMITTING` ("Persistir intent", services/alpaca_paper/executor.py:138), so
+that is the value to use for an unacknowledged order. These tests run against a
+real Postgres (DIALECT postgresql.psycopg), so constraint violations surface as
+IntegrityError with a `violates check constraint` line rather than as a lint or
+type error -- grep the output for `violates` when a fixture insert fails.
+
+Lint baseline re-confirmed this cycle with the stdin form:
+`git show HEAD:tests/test_broker_routes.py | ruff check --stdin-filename
+tests/test_broker_routes.py -` reported 7 errors, identical to the worktree
+file's 7, so the added test introduced none. The file's import block is
+already unsorted on HEAD (I001) -- do not "fix" it in an unrelated cycle.

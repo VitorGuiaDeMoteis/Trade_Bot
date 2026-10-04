@@ -153,7 +153,19 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
                     idempotency_key=uuid5(NAMESPACE_URL, o["client_order_id"]),
                     reason="Broker Order",
                     client_order_id=o["client_order_id"],
-                    broker_order_id=o["broker_order_id"] or "",
+                    # broker_orders.broker_order_id is NULL until the broker
+                    # acknowledges the order, and NULL legitimately persists for
+                    # a submission the broker never accepted. `or ""` turned
+                    # that absence into an empty STRING: the payload claimed a
+                    # broker id existed and merely had no characters, so a
+                    # consumer testing `is not None` read an unacknowledged
+                    # order as a real one. That is the same fabrication as the
+                    # `quantity: 0` coercion above -- inventing a value hides
+                    # the inconsistency instead of surfacing it -- and it also
+                    # disagreed with the REPLAY constructor, which reports this
+                    # same field as the contract default None. Pass the NULL
+                    # through so both constructors mean the same thing.
+                    broker_order_id=o["broker_order_id"],
                     # The raw broker string stays raw, in its own field.
                     broker_status=o["status"],
                 )
