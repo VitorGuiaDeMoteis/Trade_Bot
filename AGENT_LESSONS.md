@@ -1928,6 +1928,44 @@ Read the whole file before filing: `paper_queries.portfolio` stamps
   re-doing finished work. Verify a backlog claim with grep/pytest at PICK time, not
   only when it was written.
 
+## A harness that edits repo files at runtime is worse than no limit at all
+- `scripts/smoke_test.py` "capped" an evaluation run with `limit_candles()` /
+  `restore_candles()`: it read tracked `scripts/evaluation_lab.py`, wrote a
+  `.bak` next to it, patched a line with `str.replace`, ran, then restored in a
+  `finally`. Three separate failure modes: the patch anchor
+  (`n = len(candles)`) no longer existed, so the whole rewrite achieved NOTHING;
+  a crash/kill between the two calls left tracked production source mangled with
+  no `.bak` guarantee; and the `.bak` was written wherever CWD pointed, i.e. into
+  whatever checkout ran it. Bounding a run is a function argument, never a source
+  edit. `evaluation_lab.py:80` bakes its own `n = min(len(candles), 200)`.
+- Corollary: an anchored `str.replace` in a "temporary patch" is a silent no-op
+  once the target drifts. If a helper rewrites a file, assert the anchor was
+  found (`assert old in content`) or nothing is being tested.
+- Corollary for stale tests: these two tests had failed for several cycles and
+  were parked as "known environmental". They were NOT environmental. Production
+  `scripts/smoke_test.py` had been refactored into an offline evaluation-lab
+  reporter and simply had no `Settings` / `AlpacaMarketDataProvider` /
+  `regular_session` attributes left, while the tests still monkeypatched them.
+  A test that patches an attribute the module does not have is a test for code
+  that was deliberately deleted -- fix the TEST, do not restore the seam.
+- How to tell a stale test from a regression without git archaeology: read the
+  production module's imports. If the symbol the test injects is absent from the
+  imports AND the module still works, the test outlived its feature.
+- Regression-test hygiene here: to prove "the harness no longer mutates tracked
+  source", compare `read_bytes()` before/after and glob for `*.bak` -- do NOT
+  re-introduce the bug to watch the test go red. Scan `tmp_path`, not
+  `Path.cwd()`: after `monkeypatch.chdir(tmp_path)` a `Path.cwd().rglob` walks
+  the entire repo tree, which is slow and couples the test to repo size.
+
+## Environment facts that will bite the next cycle on this host
+- `execute_code` and `python -c` are BLOCKED in unattended/single-query mode
+  ("script execution via -e/-c flag" needs approval, nobody is present). In
+  autonomous cycles, read JSON evidence with `read_file`, not a Python one-liner.
+- `ruff check scripts/` reports 110 errors at HEAD, so `scripts/` is NOT
+  lint-gated; `tests/` is effectively clean. Do not read a `scripts/` ruff error
+  as regression -- diff it against HEAD (`git show HEAD:<file> | ruff check
+  --stdin-filename <file> -`) before acting.
+
 ## An append-only state file rots the section a cycle reads FIRST
 - `AGENT_STATE.md` grew to 2747 lines because each cycle appended its entry at the
   END, while the authoritative `## Next task` section sat frozen at line 1071. The
@@ -1946,3 +1984,9 @@ Read the whole file before filing: `paper_queries.portfolio` stamps
   name, or a grep whose remaining hits are all benign). A CLOSED claim with no
   pinning check is indistinguishable from a stale one, and costs a cycle to
   re-derive either way.
+- Corollary, observed while finishing this very cycle's own WIP: a patch anchored
+  at the last line of the file silently indents whatever it did not explicitly
+  re-emit, demoting a top-level `##` heading into a continuation of the section
+  above it. `AGENT_LESSONS.md` is the file a cycle reads to decide what to do, so
+  check the heading structure of a lessons edit (`^## `) before committing it --
+  the prose still reads fine while the structure lies.

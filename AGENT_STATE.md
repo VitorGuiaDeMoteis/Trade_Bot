@@ -104,13 +104,119 @@ Each line is pinned by an executable check; a violation now fails a test.
   (lines 116-129, not from the length of the limited lists), and takes `mode` from
   the run row (line 75) with the CHECK constraint documented inline.
 
+- `smoke_test` rewrote tracked `scripts/evaluation_lab.py` at runtime -- CLOSED
+  (this cycle, `193699b`). The harness "capped" a run by rewriting the tracked
+  module and leaving a `.bak`; the anchor it patched is gone
+  (`evaluation_lab.py:80` already has `n = min(len(candles), 200)`), so the
+  rewrite only risked leaving tracked source mangled on a crash. Helpers deleted;
+  pinned by `test_smoke_harness_never_rewrites_tracked_production_source` and
+  `test_smoke_harness_never_opens_a_broker_provider`.
+- The 2 long-standing `smoke_test` failures in `tests/test_alpaca_provider.py` --
+  CLOSED (this cycle). Root cause: production `scripts/smoke_test.py` is an
+  offline evaluation-lab reporter and has had NO broker seam (`Settings`,
+  `AlpacaMarketDataProvider`, `regular_session`) for several commits; only the
+  tests were stale. Not a missing seam -- nothing to restore. Replaced by 3
+  executable pins; the file is now 66 passed / 0 failed.
+
 ### Verified OPEN candidates (ordered; verify before starting)
 
-_None open. The former top candidate (`health.market_data` staleness verdict) was
-resolved this cycle -- see the latest-cycle entry below: the verdict EXISTS in
-production and is now pinned executably._
+1. `RUN_ALPACA_SMOKE_TEST` doc drift (verified by grep this cycle, NOT fixed):
+   the flag is documented as the live-smoke opt-in in `.env.example:26`,
+   `docs/DEMO.md:144`, `docs/DECISIONS.md:152` (D035), `docs/SECURITY.md:85`,
+   `docs/RUNBOOK.md:195,202` and `README.md:126`, but nothing in production reads
+   it -- the only code references are `tests/conftest.py:52` (sets it to `0`) and
+   `.env.example`. Those docs still promise a broker smoke that cannot run.
+   Task: correct them to the offline reporter reality (or restore a real opt-in
+   deliberately). `README.md`/`docs/RUNBOOK.md` are written in Portuguese.
 
 ## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
+
+- Task: finish the inherited WIP, no new task. The WIP was the previous cycle's
+  recorded next candidate: the 2 `smoke_test` failures.
+- Confirmed no temporary breakage in the WIP: `git status` showed only
+  `scripts/smoke_test.py` + `tests/test_alpaca_provider.py`; no `scripts/*.bak`
+  remained and `scripts/evaluation_lab.py` was unmodified (so an earlier crashed
+  smoke run had not left tracked source mangled).
+- Verified the WIP's central claim before keeping it: the anchor the deleted
+  helpers patched (`n = len(candles)`) really is gone from
+  `scripts/evaluation_lab.py` -- line 80 now reads
+  `n = min(len(candles), 200)`. So `limit_candles()`/`restore_candles()` were
+  rewriting a tracked production module to achieve nothing, and a crash between
+  the two calls would have left it mangled.
+- Also verified the second claim: the production harness has NO broker seam (it
+  imports only `json`, `asyncio`, `pathlib`, `collections.Counter`,
+  `run_evaluation`). So the 2 old tests were stale, not a regression, and there
+  was no seam to restore.
+- Fixes I made INSIDE the WIP before committing (lint/hygiene only, no behavior
+  change): the WIP's new line `tests/test_alpaca_provider.py:461` tripped the
+  repo's own `line-length = 100` (`E501`), so it was wrapped; and its `.bak`
+  assertion scanned `Path.cwd()` (the whole repo tree, after
+  `monkeypatch.chdir`) -- replaced with `tmp_path.rglob`, which covers the same
+  CWD-relative path the deleted helpers used, at bounded cost.
+- Validation: `pytest tests/test_alpaca_provider.py -q` -> 66 passed, 0 failed
+  (was 2 failed in this file). `ruff check tests/test_alpaca_provider.py` ->
+  All checks passed. `mypy scripts/smoke_test.py tests/test_alpaca_provider.py`
+  -> Success. `ruff check scripts/smoke_test.py` still reports 2 errors (`I001`
+  import order, `E501` on the pre-existing `subdirs = sorted(...)` line): both
+  pre-existing at HEAD (HEAD has 4) and part of the 110 errors
+  `ruff check scripts/` already reports, so `scripts/` is not lint-gated. Left
+  alone to keep this recovery cycle to one task.
+- PAPER_REVIEW: observed_at 2026-10-04T11:06:58Z, run ACTIVE,
+  `health.status=degraded`, `paper.paused=false`, `paper.degraded=false`,
+  `paper.reconciled=true` (last_reconciled_at 2026-10-04T11:06:49Z, fresh);
+  positions AAPL/SPY/TSLA (~10 USD each);
+  orders_count_reported=0 vs actual=13; fills_count_reported=0 vs actual=11;
+  unrealized_pnl=-0.0367 (equity 99951.28, cash 99921.35). market_data
+  state=`market_closed`, last_bar_at 2026-10-02T21:00Z, last_message_at
+  2026-10-04T03:03:51Z -- a Sunday reading, so `market_closed` is correct. All
+  three standing anomalies remain CLOSED as `explained-by-runtime-lag`; no new
+  actionable Paper finding. (Read for context only; this cycle began DIRTY, so
+  the mandatory clean-cycle gate does not apply.)
+- Next candidate: the `RUN_ALPACA_SMOKE_TEST` doc drift above (one coherent docs
+  task).
+
+## Cycle 2026-10-04 (RECOVERY MODE -- worktree DIRTY again at start; doc-only WIP)
+
+- Task: finish the inherited WIP. That WIP was NOT production code -- it was the
+  previous cycle's uncommitted `AGENT_STATE.md` + `AGENT_LESSONS.md` bookkeeping
+  for code already committed as `193699b`. Confirmed via `git diff --name-only`:
+  only the two `.md` files, no `scripts/` or `tests/` change, no temporary
+  breakage anywhere.
+- Re-verified the WIP's central claims rather than trusting them (they describe
+  committed code, but a wrong handoff steers the next cycle): both pin tests
+  exist (`tests/test_alpaca_provider.py:421` and `:546`); the anchor the deleted
+  helpers patched really is gone (`scripts/evaluation_lab.py:80` is now
+  `n = min(len(candles), 200)`); `scripts/smoke_test.py` still imports only
+  `json`, `asyncio`, `pathlib`, `Counter`, `run_evaluation` -- so no broker seam
+  exists to restore; and no `scripts/*.bak` remains from an earlier crashed run.
+- The one real defect was in the WIP itself, not in code: the lessons patch had
+  demoted the top-level heading `## An append-only state file rots the section a
+  cycle reads FIRST` into an indented continuation of the section above it, so a
+  whole durable lesson read as if it were a bullet of "Environment facts". Fixed
+  by restoring the `## ` heading and its bullets to column 0. Note the
+  `patch` tool CANNOT fix this: it preserves the indentation of the block it
+  matched, so an un-indent needs a small script (written to the scratch dir and
+  run as a file -- `python -c` is blocked on this host). Added the corollary to
+  that same lesson so the next cycle checks `^## ` before committing.
+- Validation: `tests/test_alpaca_provider.py` -> 66 passed, 0 failed. The 6 tests
+  that parse `AGENT_STATE.md` as a contract
+  (`test_guard_in_flight_fail_closed`, `test_daily_loss_equity_missing`,
+  `test_broker_snapshot_not_null_contract`, `test_guard_position_aggregation`,
+  `test_paper_order_reconciled_at_contract`,
+  `test_worker_broker_numeric_fail_closed`) -> 43 passed. `grep -c '^  ## '`
+  returns 0 for both files, so no heading is nested anymore.
+- Standing environment reminder for the next cycle: pytest only runs with
+  `DATABASE_ROLE=test EXECUTION_MODE=local_paper MARKET_DATA_PROVIDER=simulator`
+  and the `TradingBot-unified/.venv` interpreter; the bare `python` on PATH has
+  no pytest installed.
+- PAPER_REVIEW: not re-read this cycle -- the observation was ~1h old at the
+  previous cycle and this cycle began DIRTY, so the clean-cycle gate does not
+  apply. Next CLEAN cycle must read `.agent-runtime/paper-latest.json` and emit
+  the mandatory `PAPER_REVIEW:` line before picking the backlog task.
+- Next candidate: still the `RUN_ALPACA_SMOKE_TEST` doc drift (candidate 1 in
+  the authoritative backlog above).
+
+## Previous latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
 
 - Task: finish the inherited WIP. The WIP was the previous cycle's recorded next
   candidate: pin the `market_data` staleness verdict so Mission Control can tell
