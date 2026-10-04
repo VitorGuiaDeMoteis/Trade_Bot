@@ -106,18 +106,76 @@ Each line is pinned by an executable check; a violation now fails a test.
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
-- `health.market_data` staleness has no distinct verdict. In
-  `paper-latest.json` @ `2026-10-04T10:28:21Z`, `health.status=degraded` while
-  `paper.degraded=false, reconciled=true`, and the only reason recorded is
-  `market_data.state="market_closed"` with `last_bar_at=2026-10-02T21:00:00Z` /
-  `last_persisted_at=2026-10-02T21:01:55Z` — two days stale — while
-  `last_message_at=2026-10-04T03:03:51Z` proves the feed socket is still alive.
-  Candidate: Mission Control cannot distinguish "feed died" from "no new bar
-  yet" because staleness has no verdict of its own. Verify by grepping the
-  `/health` producer for where `market_data` feeds into `status`, before
-  assuming it is a defect.
+_None open. The former top candidate (`health.market_data` staleness verdict) was
+resolved this cycle -- see the latest-cycle entry below: the verdict EXISTS in
+production and is now pinned executably._
 
-### Latest cycle (2026-10-04, RECOVERY MODE — worktree was DIRTY at start)
+## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
+
+- Task: finish the inherited WIP. The WIP was the previous cycle's recorded next
+  candidate: pin the `market_data` staleness verdict so Mission Control can tell
+  "feed died" from "no new bar yet".
+- First verification result, which changes the framing: the verdict is NOT
+  missing. Production already implements it in two places --
+  `services/market_data/alpaca_provider.py:326-346` (`get_status` returns
+  `market_closed` when the session is shut, `delayed` when the session is open
+  past 2h and `last_bar_at` is older than 2h or absent) and
+  `services/api/main.py:177` (`ready = ... state in {"connected",
+  "market_closed"}`, so `delayed` correctly yields 503/degraded). So this was a
+  MISSING-TEST defect, not a missing-code defect, and no production change was
+  warranted. The AGENT_STATE candidate text said staleness "has no distinct
+  verdict"; that was a false premise, now closed.
+- WIP as inherited (test-only, 2 files, +91/-2):
+  `tests/test_alpaca_provider.py` tightened
+  `test_auth_and_subscription_acknowledged` from an unfalsifiable
+  `state == "connected" or state == "delayed"` to the single exact verdict
+  `== "delayed"`, and added two staleness tests (mid-session silent feed is
+  `delayed` not `market_closed`; outside the session / first 2h the same stale
+  bar must stay silent). `tests/test_health.py` added a parametrized
+  ready-set test pinning `connected`/`market_closed` -> 200 ok and
+  `delayed`/`stalled`/`reconnecting` -> 503 degraded.
+- Defect found IN the WIP and fixed before committing:
+  `test_health_verdict_covers_market_data_states` introduced one NEW mypy
+  error -- `client.app.state.simulator.provider` in the `patch.object` target
+  had no `# type: ignore` while the adjacent `.simulator.state` line did
+  (`Callable[...] has no attribute "state"`). Fixed with the same inline
+  ignore, matching the file's existing convention.
+- Confirmed the new health test reaches the real `/health` producer and cannot
+  pass incidentally: `SimulatorRuntime.status`
+  (`services/api/simulator_runtime.py:57-67`) only copies the provider's state
+  when the runtime state is `connected` (the test sets it), and its
+  `stalled` override is gated on `status.provider == "simulator"` while the
+  stub reports `alpaca`, so the pinned verdicts are genuinely the
+  `main.py:177` set membership.
+- Validation: `pytest tests/test_alpaca_provider.py tests/test_health.py -q`
+  -> 85 passed, 2 failed; both failures are the documented pre-existing
+  `smoke_test` ones (`scripts/smoke_test.py` has no `Settings` attribute, see
+  AGENT_STATE.md:1667), untouched by this WIP. The 8 WIP-relevant nodes
+  (3 provider + 5 parametrized health cases) pass individually.
+  `ruff check` both files -> All checks passed. `mypy` both files -> the WIP's
+  error is gone; only the 2 pre-existing `test_alpaca_provider.py:427/499`
+  `no-untyped-call` errors on `smoke_test.main` remain (same pre-existing
+  class as the 2 test failures).
+- PAPER_REVIEW: run ACTIVE, `health.status=degraded`, `paper.paused=false`,
+  `paper.degraded=false`, `paper.reconciled=true` (last_reconciled_at
+  2026-10-04T10:45:31Z, fresh); positions AAPL/SPY/TSLA (all micro, ~$10);
+  orders_count_reported=0 vs actual=13; fills_count_reported=0 vs actual=11;
+  unrealized_pnl=-0.0367 (equity 99951.28, cash 99921.35). market_data
+  state=`market_closed`, last_bar_at=2026-10-02T21:00Z / last_persisted_at
+  2026-10-02T21:01:55Z vs last_message_at=2026-10-04T03:03:51Z. This is a
+  Sunday 10:45Z reading, so `market_closed` is CORRECT and the two-day-old bar
+  is expected, not a stall -- the very distinction this cycle's tests pin.
+  All three standing anomalies (degraded-with-reconciled, 0-vs-13/11 counts,
+  `last_reconciled_at: null` on orders) remain registered CLOSED as
+  `explained-by-runtime-lag`; no new actionable Paper finding.
+- Next candidate: the two `smoke_test` failures are now blocking a fully green
+  `tests/test_alpaca_provider.py` for several cycles running, so promoting
+  them from "known environmental" to a real task is worth it: verify whether
+  `scripts/smoke_test.py` was refactored to drop its `Settings` import while
+  the tests still monkeypatch it, and either restore the seam or update the
+  tests. Confirm first that the target behavior is not intentionally gone.
+
+### Previous latest cycle (2026-10-04, RECOVERY MODE — worktree was DIRTY at start)
 
 - Task: finish the inherited WIP, do not choose new work.
 - WIP found uncommitted: `scripts/paper_runtime_parity.py` +

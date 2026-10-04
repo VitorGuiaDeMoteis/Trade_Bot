@@ -214,7 +214,10 @@ def test_missing_or_incomplete_ack_is_failure(messages):  # type: ignore
 def test_auth_and_subscription_acknowledged():  # type: ignore
     p, socket = provider(), FakeSocket([WELCOME, AUTH, SUB])  # type: ignore
     asyncio.run(p.handshake(socket))
-    assert p.get_status().state == "connected" or p.get_status().state == "delayed"
+    # Exact, not "connected or delayed": NOW is 3.5h into the regular session
+    # and a handshake has never produced a bar, so the staleness verdict is the
+    # only correct answer here. The old `or` form could not fail.
+    assert p.get_status().state == "delayed"
     assert socket.sent[0]["action"] == "auth"
     assert socket.sent[1] == {
         "action": "subscribe",
@@ -319,6 +322,51 @@ def test_weekend_holiday_early_close_and_evening_not_stalled(now):  # type: igno
     assert p.get_status().session == "regular"
     p._state = "configuration_error"
     assert p.get_status().state == "configuration_error"
+
+
+def test_bar_staleness_is_reported_as_delayed_not_market_closed():  # type: ignore
+    """A feed that is alive but silent must not read as `market_closed`.
+
+    This is the distinction Mission Control cannot otherwise make: the socket
+    keeps delivering messages (`last_message_at` fresh) while no bar has closed
+    for hours. Reporting `market_closed` there claims "no bars are expected",
+    which is false during an open session and hides a stalled feed.
+    """
+    p = provider()  # type: ignore
+    p.clock = lambda: NOW  # 17:00 UTC, mid-session on 2026-09-03
+    p._state = "connected"
+    p._last_message = datetime(2026, 9, 3, 16, 59, tzinfo=UTC)
+    # No bar has ever closed in this session.
+    assert p.get_status().state == "delayed"
+    # A bar from 90 minutes ago is inside the 2h tolerance.
+    p._last_bar = datetime(2026, 9, 3, 15, 30, tzinfo=UTC)
+    assert p.get_status().state == "connected"
+    # A bar from 3h ago exceeds it.
+    p._last_bar = datetime(2026, 9, 3, 14, tzinfo=UTC)
+    status = p.get_status()
+    assert status.state == "delayed"
+    # The verdict must not discard the evidence an operator needs.
+    assert status.last_bar_at == datetime(2026, 9, 3, 14, tzinfo=UTC)
+    assert status.last_message_at == datetime(2026, 9, 3, 16, 59, tzinfo=UTC)
+    assert status.error is None
+
+
+def test_staleness_verdict_stays_silent_outside_the_session():  # type: ignore
+    """Closed session or the first 2h of one must NOT be called `delayed`.
+
+    The same stale `last_bar_at` is correct evidence when the market is shut,
+    so the verdict has to stay conditional on an open session rather than
+    treating any age as a fault.
+    """
+    p = provider()  # type: ignore
+    p._state = "connected"
+    p._last_bar = datetime(2026, 9, 3, 14, tzinfo=UTC)
+
+    p.clock = lambda: datetime(2026, 9, 5, 17, tzinfo=UTC)  # Saturday
+    assert p.get_status().state == "market_closed"
+    # 30 minutes into the session: too early to judge, tolerance not reached.
+    p.clock = lambda: datetime(2026, 9, 3, 14, tzinfo=UTC)
+    assert p.get_status().state == "connected"
 
 
 def test_calendar_dst_transition():  # type: ignore

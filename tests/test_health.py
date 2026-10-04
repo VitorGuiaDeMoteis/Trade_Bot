@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
 from sqlalchemy.exc import OperationalError
 
+from packages.contracts.market import MarketDataStatus
 from services.api.config import Settings
 from services.api.database import SCHEMA_REVISION, check_database
 from services.api.main import create_app
@@ -45,6 +46,46 @@ def test_health_contract(settings, database, code, status):  # type: ignore
     assert body["correlation_id"] == response.headers["X-Correlation-ID"] == correlation_id
     assert response.headers["Cache-Control"] == "no-store"
     assert "fake_test_only" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("provider_state", "code", "status"),
+    [
+        ("connected", 200, "ok"),
+        ("market_closed", 200, "ok"),
+        # A stalled feed is a fault even though the socket is alive, so it must
+        # NOT be lumped in with the two healthy states above.
+        ("delayed", 503, "degraded"),
+        ("stalled", 503, "degraded"),
+        ("reconnecting", 503, "degraded"),
+    ],
+)
+def test_health_verdict_covers_market_data_states(settings, provider_state, code, status):  # type: ignore
+    """Every ProviderState needs a verdict; `delayed` must not fall through.
+
+    The provider distinguishes `market_closed` (no bars expected) from
+    `delayed` (bars expected and missing). That verdict is only useful if
+    /health honours it, so pin the ready-set membership directly instead of
+    trusting that an unpinned state happens to behave.
+    """
+    with patch("services.api.main.check_database", return_value="up"):
+        with TestClient(create_app(settings)) as client:
+            client.app.state.simulator.state = "connected"  # type: ignore
+            with patch.object(
+                client.app.state.simulator.provider,  # type: ignore
+                "get_status",
+                return_value=MarketDataStatus(
+                    state=provider_state,
+                    provider="alpaca",
+                    session="regular",
+                    last_bar_at=datetime(2026, 9, 3, 14, tzinfo=UTC),
+                ),
+            ):
+                response = client.get("/health")
+    assert response.status_code == code
+    body = response.json()
+    assert body["status"] == status
+    assert body["market_data"]["state"] == provider_state
 
 
 def test_invalid_correlation_id_and_log_redaction(settings, caplog):  # type: ignore

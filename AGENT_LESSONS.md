@@ -2,6 +2,54 @@
 
 Durable engineering memory for autonomous development.
 
+## Verify a "missing X" backlog item before writing code for it
+
+An open candidate claimed Mission Control could not tell "feed died" from "no
+new bar yet", because `health.market_data` staleness "has no distinct verdict".
+The verdict already existed in production:
+
+- `AlpacaMarketDataProvider.get_status`
+  (`services/market_data/alpaca_provider.py:326-346`): when connected, it
+  returns `market_closed` if the regular session is not open, else `delayed`
+  once the session is more than 2h in and `last_bar_at` is either absent or
+  older than 2h. So the 2h grace period and the session gate both live here,
+  and the status keeps `last_message_at`/`last_bar_at` so the operator can see
+  the socket alive while bars go missing.
+- `services/api/main.py:177`:
+  `ready = database == "up" and state in {"connected", "market_closed"}`, so
+  `delayed` (and `stalled`/`reconnecting`) publish 503/degraded. The ready-set
+  is an explicit allow-list, so a new ProviderState fails CLOSED by default --
+  a good pattern worth preserving when states are added.
+
+So the real defect was a MISSING TEST, not missing code. Before implementing a
+backlog item that asserts something "does not exist", grep for it first; a
+candidate written from an observation file is evidence of a SYMPTOM, not proof
+of a mechanism. Cheap check: the runtime is FROZEN at an older commit than
+HEAD, so a feature can exist in HEAD and still be absent from the runtime --
+here the observation said `market_closed` with a 2-day-old bar, which on a
+SUNDAY is the CORRECT verdict. Reading the calendar before reading the code
+would have prevented the candidate from being filed at all.
+
+Corollary for tests: `assert x == "connected" or x == "delayed"` cannot fail
+when both are plausible outcomes. Pin the exact verdict, and pin the whole
+ready-set membership, not one lucky state.
+
+## `/health` tests must defeat the SimulatorRuntime wrapper
+
+Patching `simulator.provider.get_status` is not enough to control what `/health`
+reports. `SimulatorRuntime.status`
+(`services/api/simulator_runtime.py:57-67`) post-processes the provider
+status: it only copies the provider's state when the RUNTIME state is
+`connected`, and it can override to `stalled` when
+`status.provider == "simulator"` and progress is old. A test that patches only
+the provider therefore gets whatever the runtime state says. Set
+`client.app.state.simulator.state = "connected"` explicitly, and have the stub
+report a non-simulator provider (`alpaca`) if the assertion is about the
+provider's own state. Both attributes need `# type: ignore` -- mypy sees
+`app.state` as a `Callable` -- and the `patch.object` TARGET line needs its
+own ignore, not just the preceding line, or the new test introduces a mypy
+error while ruff stays green.
+
 ## A test that passes for an environmental reason is not coverage
 
 `build_report(runtime, branch, *, git=subprocess_run_git)` binds its git
