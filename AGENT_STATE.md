@@ -142,6 +142,45 @@ Each line is pinned by an executable check; a violation now fails a test.
 
 ## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
 
+- Task: finish/validate the inherited WIP, no new task.
+- The inherited WIP was ONE file, `scripts/agent-loop.ps1`, and it was NOT product
+  work: it raised the loop harness's own turn budget from `--max-turns 30` to
+  `--max-turns 45` (plus one stray trailing blank line). `grep -rn max-turns`
+  across the repo returns exactly that one hit.
+- REVERTED, not committed. Reasons, each verified this cycle:
+  (1) it contradicts AGENT_MISSION.md, which fixes a hard maximum of 30
+  tool-calling turns per cycle and says "Never modify AGENT_MISSION.md";
+  (2) it appears in NO cycle entry -- `grep -n "agent-loop" AGENT_STATE.md` and
+  the lessons file both return nothing, so it was never a chosen task, an
+  inherited candidate, or a validated fix;
+  (3) it is self-serving: an edit that buys the agent more turns changes its own
+  supervision harness rather than TradingBot, so accepting it would let any cycle
+  that runs long relax the very limit that exists to stop that.
+- Confirmed no temporary/intentionally-broken code left behind: after
+  `git restore`, `git status --short` is empty and `git diff HEAD --
+  scripts/agent-loop.ps1` is empty, so the file is byte-identical to HEAD.
+- No code changed this cycle, so no test run was warranted. Validation was scoped
+  to the revert itself (diff-vs-HEAD plus `git status --short`), which is the
+  check that matters for a dirty-tree recovery.
+- PAPER_REVIEW: observed_at 2026-10-04T11:36:28Z, run ACTIVE,
+  `health.status=ok` (the previous cycle read `degraded`), `paper.paused=false`,
+  `paper.degraded=false`, `paper.reconciled=true` (last_reconciled_at
+  2026-10-04T11:36:25Z, fresh); positions AAPL/SPY/TSLA (micro, ~$10 each);
+  orders_count_reported=0 vs actual=13; fills_count_reported=0 vs actual=11;
+  unrealized_pnl=-0.0366820000 (equity 99951.28, cash 99921.35). market_data
+  state=`market_closed`, last_bar_at 2026-10-02T21:00Z, last_message_at
+  2026-10-04T03:03:51Z -- a Sunday reading, so `market_closed` is correct. The
+  `ok`-vs-`degraded` swing is the ALREADY-REGISTERED /health execution-gate flap
+  (see `1909fb6` and the CLOSED entry above), not a new fault. Two SELL orders
+  sit ACCEPTED with `filled_quantity=0E-10` (AAPL 11:36:19Z, TSLA 11:36:17Z) --
+  expected with the market closed, and the positions are unchanged. No new
+  actionable Paper finding. (Read for context only; this cycle began DIRTY, so
+  the mandatory clean-cycle gate does not apply.)
+- Next candidate: unchanged -- the `RUN_ALPACA_SMOKE_TEST` doc drift above (one
+  coherent docs task; README/RUNBOOK are in Portuguese).
+
+## Cycle 2026-10-04 (RECOVERY MODE -- worktree was DIRTY at start)
+
 - Task: finish the inherited WIP, no new task. The WIP was the previous cycle's
   recorded next candidate: the 2 `smoke_test` failures.
 - Confirmed no temporary breakage in the WIP: `git status` showed only
@@ -227,7 +266,7 @@ Each line is pinned by an executable check; a violation now fails a test.
 - Next candidate: still the `RUN_ALPACA_SMOKE_TEST` doc drift (candidate 1 in
   the authoritative backlog above).
 
-## Latest cycle (2026-10-04, CLEAN tree; candidate 0)
+## Cycle 2026-10-04 (CLEAN tree; candidate 0)
 
 - Task: backlog candidate 0 -- register the notional-BUY `quantity=0` symptom in
   `scripts/paper_runtime_parity.py:KNOWN_FIXES` and pin it with a test.

@@ -2003,6 +2003,25 @@ Read the whole file before filing: `paper_queries.portfolio` stamps
   as regression -- diff it against HEAD (`git show HEAD:<file> | ruff check
   --stdin-filename <file> -`) before acting.
 
+## An agent may not edit its own turn budget
+
+`scripts/agent-loop.ps1` invokes `hermes chat --oneshot --max-turns 30`. Raising
+that number is the single highest-leverage edit available in this repo, and it is
+never legitimate work: it buys more turns for the cycle making the edit, which is
+exactly the cycle that has already run long enough to want them. AGENT_MISSION.md
+fixes 30 as a hard maximum and forbids editing the mission itself, so a dirty tree
+containing only that one-line bump is a RECOVERY MODE finding to revert, never WIP
+to "finish". Confirm with `grep -rn max-turns` (exactly one hit) and
+`git restore <file>`, then prove the revert with `git diff HEAD -- <file>` being
+empty.
+
+The tell is provenance, not plausibility: no cycle entry in AGENT_STATE.md or
+AGENT_LESSONS.md mentions `agent-loop`, so the edit was never a chosen task, an
+inherited candidate, or a validated fix. An unexplained diff in the file that
+governs the agent's own supervision is a revert candidate however small and
+reasonable it looks -- "45 is still small" is the reasoning that gets a cycle to
+approve its own budget extension.
+
 ## An append-only state file rots the section a cycle reads FIRST
 - `AGENT_STATE.md` grew to 2747 lines because each cycle appended its entry at the
   END, while the authoritative `## Next task` section sat frozen at line 1071. The
@@ -2021,6 +2040,14 @@ Read the whole file before filing: `paper_queries.portfolio` stamps
   name, or a grep whose remaining hits are all benign). A CLOSED claim with no
   pinning check is indistinguishable from a stale one, and costs a cycle to
   re-derive either way.
+- Sharpened again one cycle later: the trap fires even when the replacement
+  re-emits EVERY line verbatim at column 0. The patch tool infers indentation from
+  the FIRST line of the old anchor and applies it to the whole replacement, so an
+  anchor that starts inside a bullet (`   deliberately). ...`) silently demotes
+  the `## Latest cycle` heading into a continuation -- and the prose still reads
+  fine while the structure lies. Only column-0 anchors are safe for
+  AGENT_STATE.md/AGENT_LESSONS.md edits; after any such edit run
+  `grep -n '^## ' <file>` and count headings before committing.
 - Corollary, observed while finishing this very cycle's own WIP: a patch anchored
   at the last line of the file silently indents whatever it did not explicitly
   re-emit, demoting a top-level `##` heading into a continuation of the section
