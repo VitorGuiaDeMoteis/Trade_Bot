@@ -100,7 +100,11 @@ class _StubConnection:
     def execute(self, statement: Any, params: Any = None) -> _Result:
         text = str(statement)
         if "paper_runs" in text:
-            row: dict[str, Any] = {"created_at": BUY_AT - timedelta(days=1)}
+            # `provider` is NOT NULL on paper_runs and scopes every broker-owned read below.
+            row: dict[str, Any] = {
+                "created_at": BUY_AT - timedelta(days=1),
+                "provider": "alpaca",
+            }
             if self._initial_cash is not None:
                 row["initial_cash"] = self._initial_cash
             return _Result([row])

@@ -89,8 +89,15 @@ class _StubConnection:
     def execute(self, statement: Any, params: Any = None) -> _Result:
         text = str(statement)
         if "paper_runs" in text:
+            # `provider` is NOT NULL on paper_runs and scopes every broker-owned read below.
             return _Result(
-                [{"created_at": BUY_AT - timedelta(days=1), "initial_cash": Decimal("1000")}]
+                [
+                    {
+                        "created_at": BUY_AT - timedelta(days=1),
+                        "initial_cash": Decimal("1000"),
+                        "provider": "alpaca",
+                    }
+                ]
             )
         if "MAX(last_reconciled_at)" in text:
             return _Result([{"end_time": NOW}])

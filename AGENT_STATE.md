@@ -2214,3 +2214,66 @@ test pinning the count.
 Second candidate task (carried forward): reconcile `return_pct` with
 docs/M4_CORE.md:67 (`(equity_final - initial_cash) / initial_cash * 100`); it
 still numerates from `total_pnl`.
+
+===============================================================================
+CYCLE 2026-10-04 (RECOVERY MODE -- worktree was dirty, WIP finished)
+
+TASK: finish the uncommitted provider-scoping fix in `get_session_analytics`.
+No new task was chosen, per the dirty-tree rule.
+
+The WIP was coherent and already explained: three of the broker-owned reads in
+`services/api/analytics.py` had no `provider` predicate, but
+`broker_portfolio_snapshots` is keyed by `provider` (PK, upserted in place --
+m7 migration db6f20ef0e19) and `broker_positions` by `(provider, symbol)`.
+With the simulator account and the Alpaca paper account both registered, a
+session's P&L mixed in the other account's state:
+- `MAX(last_reconciled_at)` spanned both, so `ended_at` reported the OTHER
+  account's reconciliation time;
+- the position aggregate summed both books into `pnl_unrealized`,
+  `avg_exposure`/`max_exposure` and `symbols_data`;
+- `... LIMIT 1` on the snapshot read returned an ARBITRARY provider's equity
+  (no ORDER BY), corrupting `equity_final` and therefore `return_pct`.
+
+I confirmed this is the only unscoped reader in the API: `broker_routes.py:65`
+already filters `broker_positions.c.provider == "alpaca"`, and the orders,
+fills and risk_decisions reads are scoped by `run_id`.
+
+CHANGES:
+- services/api/analytics.py: selects `provider` on the paper_runs row and binds
+  it into all three broker-owned reads. The position SQL was also wrapped to
+  keep the touched line inside the 100-char limit (the rest of the file's
+  E501s are pre-existing and were left alone).
+- tests/test_session_analytics_provider_scope.py (new): a stub serving BOTH
+  providers that filters only when the statement actually carries
+  `provider = :provider`, so dropping the WHERE clause reproduces the mixed
+  numbers instead of silently passing; a CONTROL case runs the same stub with
+  the other provider to pin that scoping follows the run row.
+- tests/test_session_analytics_{equity_initial,return_pct,unmatched_sells}.py:
+  paper_runs stub rows now carry `provider` (NOT NULL on the column).
+
+VALIDATION:
+- 21 tests matching `-k analytics` pass (incl. the 5 new ones).
+- Discrimination proven WITHOUT touching tracked code: `git show HEAD:services/
+  api/analytics.py` was written to the scratch dir and driven with the same
+  two-provider stub. HEAD returns pnl_unrealized=-130 (20 plus the other
+  account's -150), equity_final=8000, return_pct=700, symbols=[AAPL, MSFT] and
+  the other account's later reconciliation; the fix returns 20, 1020, 2.00,
+  [AAPL] and its own. The test genuinely fails against old behaviour.
+- ruff: no new findings (remaining 9 are pre-existing E501/I001/F401 on
+  untouched lines). mypy: 2 pre-existing `var-annotated` errors on the
+  untouched `fifo_buys` / `rejections` dicts.
+- tests/test_alpaca_deepseek.py also calls get_session_analytics but needs
+  Postgres (down) -- known environmental class, skipped, not re-investigated.
+
+CORRECTION to the previous cycle's handoff: its "second candidate" -- reconcile
+`return_pct` with docs/M4_CORE.md:67 -- is ALREADY DONE (commit df7df33; see the
+comment at analytics.py:141-151 and the return_pct comment at line 50). Do not
+spend a cycle on it again.
+
+Next candidate task (first in line, carried forward): give
+`anomalies.unmatched_sells` the same counted, attributed summary the other
+anomaly keys get, with a test pinning the count.
+
+Second candidate task (carried forward): clear the 2 pre-existing mypy
+`var-annotated` errors in services/api/analytics.py (`fifo_buys`, `rejections`),
+and decide separately whether the file's remaining E501s are worth rewrapping.

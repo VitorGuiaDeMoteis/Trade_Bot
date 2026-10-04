@@ -8,7 +8,7 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     run_id_str = str(run_id)
     
     run_row = conn.execute(
-        text("SELECT created_at, initial_cash FROM paper_runs WHERE run_id = :run_id"),
+        text("SELECT created_at, initial_cash, provider FROM paper_runs WHERE run_id = :run_id"),
         {"run_id": run_id_str}
     ).mappings().first()
     
@@ -17,8 +17,17 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
         
     start_time = run_row["created_at"]
     
+    # Every broker-owned table below is keyed by provider, so each read is scoped to the
+    # run's own provider: an unscoped MAX()/LIMIT 1/aggregate would mix a second provider's
+    # account state into this run's P&L.
+    provider = run_row["provider"]
+
     end_time = conn.execute(
-        text("SELECT MAX(last_reconciled_at) as end_time FROM broker_portfolio_snapshots")
+        text(
+            "SELECT MAX(last_reconciled_at) as end_time "
+            "FROM broker_portfolio_snapshots WHERE provider = :provider"
+        ),
+        {"provider": provider},
     ).scalar() or start_time
     
     orders = conn.execute(
@@ -27,7 +36,11 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     ).mappings().fetchall()
     
     positions = conn.execute(
-        text("SELECT symbol, quantity, average_price, current_price, market_value, unrealized_pnl, updated_at FROM broker_positions")
+        text(
+            "SELECT symbol, quantity, average_price, current_price, market_value, "
+            "unrealized_pnl, updated_at FROM broker_positions WHERE provider = :provider"
+        ),
+        {"provider": provider},
     ).mappings().fetchall()
     
     unrealized_pnl = sum([Decimal(str(p["unrealized_pnl"])) for p in positions])
@@ -39,7 +52,10 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     # it equal to `equity_final`. The run's own starting cash is the only correct opener.
     initial_cash = Decimal(str(run_row["initial_cash"]))
 
-    snap = conn.execute(text("SELECT cash, equity FROM broker_portfolio_snapshots LIMIT 1")).mappings().first()
+    snap = conn.execute(
+        text("SELECT cash, equity FROM broker_portfolio_snapshots WHERE provider = :provider"),
+        {"provider": provider},
+    ).mappings().first()
     final_equity = Decimal(str(snap["equity"])) if snap else initial_cash
 
     fills = conn.execute(

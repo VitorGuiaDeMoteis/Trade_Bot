@@ -1568,3 +1568,22 @@ Reusable rules:
 - When closing a stale lead, record which prohibitions lifted and which remain.
   "Do not touch `requested_at`, do not weaken the uuid5 derivation, do not
   dedupe" stayed correct here; only the hunt for a phantom emitter closed.
+- In a multi-provider system, EVERY read of a provider-keyed table needs the
+  provider predicate -- including `MAX()`, `SUM()` and `LIMIT 1`, which look
+  scoped because they return one value. `broker_portfolio_snapshots` (PK
+  `provider`) and `broker_positions` (PK `provider, symbol`) hold one row set
+  PER ACCOUNT; an unscoped read mixes the simulator and Alpaca paper books, and
+  `LIMIT 1` without `ORDER BY` returns an arbitrary account's equity. Audit the
+  same way as the earlier sum-vs-last-wins divergence: grep how EACH caller
+  aggregates. A reader that is scoped by `run_id` is fine even though its
+  underlying table is provider-keyed, because the run pins the provider.
+- Test the scoping, don't just assert the fixed numbers: a stub that serves BOTH
+  providers and filters only when the SQL actually carries
+  `provider = :provider` makes the regression loud if the WHERE clause is ever
+  dropped, and a CONTROL case with the other provider proves the predicate
+  follows the run row instead of a hardcoded account.
+- To prove a regression test discriminates without dirtying the tree: `git show
+  HEAD:<file>` into the scratch dir, import it alongside the current module, and
+  drive both with the same stub. HEAD gave pnl_unrealized -130 vs 20,
+  equity_final 8000 vs 1020, return_pct 700% vs 2%. Same technique as the
+  `return_pct` case recorded above; it costs one scratch file and zero risk.
