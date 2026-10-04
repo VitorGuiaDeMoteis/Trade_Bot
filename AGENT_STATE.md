@@ -2446,3 +2446,59 @@ Re-validated the carried WIP before committing, in this repo's own `.venv`
   default format's per-finding source echo.
 
 Committed the 2-annotation change plus these state/lessons updates. Tree clean.
+
+--------------------------------------------------------------------------------
+CYCLE 2026-10-04 c (RECOVERY MODE: this cycle found the tree dirty)
+
+No Paper review gate was run: the mission gates it on a CLEAN cycle, and the
+PAPER_REVIEW line from cycle 2026-10-04 (06:45Z, healthy, mismatches already
+fixed-but-not-deployed) is same-date and still current.
+
+The dirty tree was ONE untracked file, no tracked modifications:
+  ?? tests/test_worker_pending_broker_state_required.py (207 lines, 7 tests)
+So this was a continuation, not a half-applied patch: nothing tracked was
+modified, nothing was reverted, and no production code needed to change.
+
+WHAT THE WIP WAS: pure unit coverage for the fail-closed guard at
+services/alpaca_paper/worker.py:375-376 -- `_process_pending_submits` raises
+RuntimeError("broker_state_not_supplied_to_execution") whenever there IS
+approved-but-unsubmitted work and the caller passed no broker account/positions.
+That guard already existed at HEAD (uncommitted work added only the test), so
+this cycle validated and committed it rather than re-deriving it.
+
+VALIDATION (this repo's own `.venv`; the `python` on PATH is NOT this project's
+interpreter):
+- `.venv/Scripts/python.exe -m pytest tests/test_worker_pending_broker_state_required.py -q`
+  -> 7 passed in 0.10s, against unmodified HEAD code.
+- `.venv/Scripts/python.exe -m ruff check <that file> --output-format=concise`
+  -> All checks passed! (no E501, unlike most files in this repo).
+- DISCRIMINATION proven without touching tracked code: a scratch script
+  (profile scratch dir, NOT the repo) read worker.py, stripped EXACTLY the two
+  guard lines from its own AST-resolved function source, re-exec'd that copy and
+  bound it onto the class in memory, then ran pytest IN-PROCESS against the
+  patched class. Result: exactly the 2 fail-closed tests failed
+  (test_pending_buy_without_account_raises,
+  test_pending_sell_without_positions_raises) and the other 5 still passed. So
+  the suite pins the guard, not an incidental path.
+- Regression scope, the worker/guard family (8 files): 70 passed, 1 failed.
+  The single failure is PRE-EXISTING AT HEAD and unrelated to the WIP -- see
+  the new first-in-line task below.
+
+NEW FIRST-IN-LINE TASK (was: broker_order_quantity_divergence coverage):
+`tests/test_alpaca_worker.py::test_worker_process_pending_submits_idempotency`
+fails at HEAD, standalone, with no WIP present:
+  assert 0 == 1  -- `adapter_mock.submit_order.call_count` is ZERO, so
+  `_process_pending_submits` never submitted the APPROVED decision at all.
+  Both workers are opened (degraded=False, reconciliation_ready=True) and given
+  account={"equity": "1000"}, positions=[]. This is the same
+  `_process_pending_submits` path the newly committed guard sits in, and 0 calls
+  means the decision was silently NOT executed rather than double-executed, so
+  the idempotency invariant the test names is currently untested-but-unmet.
+  NOTE: it may also be an over-strict fixture (the test mocks submit_order and
+  may rely on Postgres; it inserts rows via a real engine at
+  test_alpaca_worker.py:248-266). Establish WHY nothing submits before assuming
+  a worker bug -- this cycle did not chase it.
+
+Second candidate task (carried forward, unchanged):
+`broker_order_quantity_divergence` (worker.py:255) still has no pure unit
+coverage; same stub-only approach as the guard test just committed.

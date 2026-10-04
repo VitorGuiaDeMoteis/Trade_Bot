@@ -1644,3 +1644,29 @@ Reusable rules:
   it. Naming the exact fix (`fifo_buys: dict[str, list[dict[str, Any]]]`,
   `rejections: dict[str, int]`) lets the next cycle verify it is gone by running
   mypy instead of by re-reading `git show HEAD`.
+
+- The WIP handoff can be TEST-ONLY with production code already at HEAD. Before
+  treating an untracked file as unfinished work, check `git status` for tracked
+  modifications: `?? tests/...` alone means a previous cycle added coverage for
+  existing behaviour, and the correct continuation is validate-and-commit, not
+  re-derive or re-implement.
+- To prove a fail-closed regression test discriminates WITHOUT editing tracked
+  production code (mission forbids TEMP-BUG-RESTORE), do it in memory: parse the
+  module with `ast`, resolve the target function's `lineno`/`end_lineno`, drop
+  the guard lines from that source, `textwrap.dedent` + `exec` the copy, bind it
+  onto the class, then call `pytest.main(...)` IN-PROCESS -- a subprocess would
+  re-import the real module and silently test HEAD instead of the patched copy.
+  Keep the script in the profile scratch dir, never in the repo.
+- `_process_pending_submits` has THREE ordered boundaries, and the middle one is
+  a fail-closed raise, not a guard predicate: (1) `degraded or not
+  reconciliation_ready` returns before ANY database read, (2) empty pending work
+  returns before the raise so a paused/idle system never degrades itself for
+  having no broker payload, (3) only non-empty pending work plus a missing
+  account/positions raises `broker_state_not_supplied_to_execution`. A test that
+  stubs `engine.connect` and asserts `connection.calls == 0` is the cheapest way
+  to pin boundary (1).
+- A regression test must distinguish "raised the fail-closed error" from
+  "reached the sizing path". Asserting only `pytest.raises(...)` passes even if
+  the raise fires for the wrong reason; capturing the first consumer of both
+  payloads (here `ExecutionGuard.evaluate` via monkeypatch, returning a
+  rejection so nothing is submitted) proves they actually arrived.
