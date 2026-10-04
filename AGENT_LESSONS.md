@@ -1704,3 +1704,44 @@ Reusable rules:
   mean the file was already red, so it is a separate queued task, not blast
   radius from the commit under test. Record that as the next first-in-line task
   and STOP, rather than folding a second root cause into a small cycle.
+
+## A worker fixture that never OPENED the worker
+- `AlpacaPaperWorker.__init__` starts `degraded=True`, `reconciliation_ready=False`
+  (worker.py:57-58), and `_process_pending_submits` returns on line 1 of its body
+  while that holds (worker.py:343). A test that constructs a worker and calls
+  `_process_pending_submits()` with no arguments therefore reads ZERO rows and
+  asserts NOTHING -- and it fails as `assert 0 == 1`, which reads like "the
+  worker refuses to submit", the exact opposite of the real cause.
+- Three separate gates must be open before a unit test exercises execution:
+  1. `worker.degraded = False; worker.reconciliation_ready = True` -- what
+     `reconcile_once` does in production.
+  2. `account=` and `positions=` must be passed, or worker.py:375 raises
+     `RuntimeError("broker_state_not_supplied_to_execution")` (the intentional
+     fail-closed guard committed in `991647a`).
+  3. `account` needs `last_equity` for a BUY, or `ExecutionGuard` fails closed in
+     the Daily Breaker and never reaches the rule under test.
+- Consequence for review: an assertion of `count == 0` plus a REJECTED decision is
+  only meaningful WITH all three gates open. Asserting the DB row count and the
+  decision's REASON, not just that a mock was or was not called -- an injected
+  double proved nothing, since the worker builds its own executor from the adapter.
+- Same trap, different symptom: a test asserting a flag the method never clears
+  (`assert worker.degraded == False` after `_snapshot_broker_portfolio`, which
+  only `reconcile_once` clears) asserts a property of the wrong code path.
+  Drop the bogus assertion and assert the method's actual contract instead.
+- Cheap discrimination for this class: if fixing the fixture flips the test to
+  green, the fixture was the defect. Do NOT add `last_equity` mechanically -- an
+  inverted assertion (expects REJECTED) can flip the wrong way, and one sibling
+  test is an intentional degraded-path test that must stay bare.
+
+## A state file entry is not a commit
+- A cycle that writes "DONE ... committed" into `AGENT_STATE.md` and then runs out
+  of turns leaves the tree dirty. The next cycle starts in RECOVERY MODE and must
+  re-verify from scratch anyway, so the uncommitted claim buys nothing.
+- When inheriting such a cycle: re-run the targeted tests yourself rather than
+  trusting the entry, because a state entry records INTENT, not a verified result.
+- Rule: write the state entry only in the same turn as the commit, and word it
+  with what you actually ran. "`git status` clean" is the only proof of committed.
+- Second habit worth keeping: `python -c` and `execute_code` are BLOCKED in
+  unattended single-query mode on this host. Validate with
+  `./.venv/Scripts/python.exe -m pytest ...` instead, and read JSON evidence with
+  read_file / search_files rather than a python one-liner.

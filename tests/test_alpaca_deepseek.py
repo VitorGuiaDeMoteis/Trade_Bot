@@ -97,16 +97,20 @@ async def test_adapter_404_returns_none():
 
 @pytest.mark.anyio
 async def test_worker_calls_execution_guard(test_engine):
+    # `AlpacaPaperWorker` builds its OWN `AlpacaPaperExecutor` from the adapter, so there is
+    # no executor to inject here. The observable proof that the guard ran is that the
+    # APPROVED decision is rewritten to REJECTED and NO paper_orders row is written --
+    # asserting on an injected double, as this test used to, proved nothing.
     class DummyAdapter:
         async def get_account(self): return {"equity": "1000"}
         async def get_positions(self): return [{"symbol": "AAPL", "quantity": "10", "market_value": "20.00"}]
-            
-    class DummyExecutor:
-        submitted = False
-        async def submit(self, *args, **kwargs): self.submitted = True
 
-    executor = DummyExecutor()
-    worker = AlpacaPaperWorker(test_engine, DummyAdapter(), executor)
+    worker = AlpacaPaperWorker(test_engine, DummyAdapter(), None)
+    # `reconcile_once` is what opens a worker in production. Stand in for it here rather
+    # than leaving the worker fail-closed, which made `_process_pending_submits` return
+    # before reading a single row (so this test asserted nothing at all).
+    worker.degraded = False
+    worker.reconciliation_ready = True
     
     run_id, candle_id, signal_id, dec_id = uuid4(), uuid4(), uuid4(), uuid4()
     
@@ -119,9 +123,14 @@ async def test_worker_calls_execution_guard(test_engine):
         conn.execute(risk_decisions.insert().values(decision_id=dec_id, signal_id=signal_id, run_id=run_id, decided_at=datetime.now(UTC), decision='APPROVED', reason='test'))
 
     try:
-        await worker._process_pending_submits()
-        assert executor.submitted == False
+        # `last_equity` is required here: without a baseline the BUY fails closed in the
+        # Daily Breaker check and never reaches the pyramiding rule under test.
+        await worker._process_pending_submits(
+            account={"equity": "1000", "cash": "1000", "last_equity": "1000"},
+            positions=[{"symbol": "AAPL", "quantity": "10", "market_value": "20.00"}],
+        )
         with test_engine.begin() as conn:
+            assert conn.execute(text("SELECT COUNT(*) FROM paper_orders")).scalar() == 0
             dec = conn.execute(text("SELECT decision, reason FROM risk_decisions WHERE decision_id = :d"), {"d": str(dec_id)}).mappings().first()
             assert dec["decision"] == "REJECTED"
             assert "no pyramiding" in dec["reason"] or "Máximo 1 posição" in dec["reason"]
@@ -135,14 +144,22 @@ async def test_worker_calls_execution_guard(test_engine):
 
 @pytest.mark.anyio
 async def test_worker_snapshot_runs_without_nameerror(test_engine):
+    # This test guards a historical crash: the snapshot writer referenced an undefined name
+    # while summing unrealized P&L. The contract under test is that the snapshot persists
+    # correctly -- it never claimed to clear `degraded` (only `reconcile_once` does that),
+    # so that assertion asserted nothing about the code path it meant to cover.
     class DummyAdapter:
-        async def get_account(self): return {"cash": "500", "equity": "1000"}
+        async def get_account(self): return {
+            "cash": "500",
+            "equity": "1000",
+            "portfolio_value": "1000",
+            "buying_power": "1000",
+        }
         async def _request(self, method, endpoint): return [{"symbol": "AAPL", "qty": "1", "avg_entry_price": "10", "current_price": "15", "market_value": "15", "unrealized_pl": "5"}]
         async def get_positions(self): return [{"symbol": "AAPL", "qty": "1", "avg_entry_price": "10", "current_price": "15", "market_value": "15", "unrealized_pl": "5"}]
             
     worker = AlpacaPaperWorker(test_engine, DummyAdapter(), None)
     await worker._snapshot_broker_portfolio()
-    assert worker.degraded == False
     
     with test_engine.begin() as conn:
         snap = conn.execute(text("SELECT status, unrealized_pnl FROM broker_portfolio_snapshots WHERE provider = 'alpaca'")).mappings().first()
@@ -214,6 +231,8 @@ async def test_worker_sell_uses_exact_quantity_and_no_notional(test_engine):
             return {"id": str(uuid.uuid4()), "status": "accepted", "filled_qty": "0", "filled_avg_price": "0"}
             
     worker = AlpacaPaperWorker(test_engine, DummyAdapter(), None)
+    worker.degraded = False
+    worker.reconciliation_ready = True
     
     run_id, candle_id, signal_id, dec_id = uuid4(), uuid4(), uuid4(), uuid4()
     
@@ -226,7 +245,12 @@ async def test_worker_sell_uses_exact_quantity_and_no_notional(test_engine):
         conn.execute(risk_decisions.insert().values(decision_id=dec_id, signal_id=signal_id, run_id=run_id, decided_at=datetime.now(UTC), decision='APPROVED', reason='test'))
 
     try:
-        await worker._process_pending_submits()
+        await worker._process_pending_submits(
+            account={"equity": "1000", "cash": "1000", "buying_power": "1000"},
+            positions=[
+                {"symbol": "TSLA", "qty": "0.5", "quantity": "0.5", "market_value": "15.00"}
+            ],
+        )
         with test_engine.begin() as conn:
             bo = conn.execute(text("SELECT * FROM broker_orders LIMIT 1")).mappings().first()
             po = conn.execute(text("SELECT * FROM paper_orders LIMIT 1")).mappings().first()
@@ -260,6 +284,12 @@ async def test_worker_inflight_prevents_pyramiding(test_engine):
             return {"id": str(uuid.uuid4()), "status": "accepted", "filled_qty": "0", "filled_avg_price": "0"}
             
     worker = AlpacaPaperWorker(test_engine, DummyAdapter(), None)
+    # A fresh worker starts degraded (`AlpacaPaperWorker.__init__` sets degraded=True /
+    # reconciliation_ready=False) and `_process_pending_submits` returns at its first
+    # line while that holds -- so the worker must be OPENED the way `reconcile_once`
+    # opens it in production, otherwise nothing is ever fetched or submitted.
+    worker.degraded = False
+    worker.reconciliation_ready = True
     
     run_id, candle_id, sig1, sig2, dec1, dec2 = uuid4(), uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     
@@ -277,7 +307,18 @@ async def test_worker_inflight_prevents_pyramiding(test_engine):
         conn.execute(risk_decisions.insert().values(decision_id=dec2, signal_id=sig2, run_id=run_id, decided_at=datetime.now(UTC) + timedelta(seconds=1), decision='APPROVED', reason='test'))
 
     try:
-        await worker._process_pending_submits()
+        # `last_equity` is the Daily Breaker baseline: without it the guard fails CLOSED
+        # on the first BUY and no order is ever submitted, so the assertion below would
+        # hold for the wrong reason. Positions come from the broker, not the fixture.
+        await worker._process_pending_submits(
+            account={
+                "equity": "1000",
+                "cash": "1000",
+                "last_equity": "1000",
+                "buying_power": "1000",
+            },
+            positions=[],
+        )
         with test_engine.begin() as conn:
             from services.api.models import paper_orders
             # Only 1 order should be in paper_orders
@@ -309,6 +350,10 @@ async def test_worker_inflight_double_sell(test_engine):
             return {"id": str(uuid.uuid4()), "status": "accepted", "filled_qty": "0", "filled_avg_price": "0"}
             
     worker = AlpacaPaperWorker(test_engine, DummyAdapter(), None)
+    # Same gate as `test_worker_inflight_prevents_pyramiding`: open the worker the way
+    # `reconcile_once` does, otherwise `_process_pending_submits` returns immediately.
+    worker.degraded = False
+    worker.reconciliation_ready = True
     
     run_id, candle_id, sig1, sig2, dec1, dec2 = uuid4(), uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
     
@@ -326,7 +371,19 @@ async def test_worker_inflight_double_sell(test_engine):
         conn.execute(risk_decisions.insert().values(decision_id=dec2, signal_id=sig2, run_id=run_id, decided_at=datetime.now(UTC) + timedelta(seconds=1), decision='APPROVED', reason='test'))
 
     try:
-        await worker._process_pending_submits()
+        # Positions must be the BROKER's (0.03 AAPL), not the fixture's: the second SELL
+        # is only rejected because the in-flight quantity is no longer available to sell.
+        await worker._process_pending_submits(
+            account={
+                "equity": "1000",
+                "cash": "1000",
+                "last_equity": "1000",
+                "buying_power": "1000",
+            },
+            positions=[
+                {"symbol": "AAPL", "qty": "0.03", "quantity": "0.03", "market_value": "5.00"}
+            ],
+        )
         with test_engine.begin() as conn:
             from services.api.models import paper_orders
             count = len(conn.execute(text("SELECT * FROM paper_orders")).mappings().all())

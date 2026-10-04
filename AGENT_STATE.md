@@ -2553,3 +2553,77 @@ rule was deliberately changed and these 5 tests were left behind. Do NOT bulk-ad
 `last_equity` to all of them -- one of these may be the intended degraded-path
 assertion. Same order-of-operations as this cycle: git-archaeology FIRST, decide
 fixture-vs-intent, and confirm any resulting change is test-only.
+
+## Cycle: 2026-10-04 d + e (RECOVERY MODE: cycle d found the tree dirty)
+
+RESULT: the first-in-line task is DONE -- all 5 red tests in
+`tests/test_alpaca_deepseek.py` are green and test-only. Cycle d finished the
+repair but ran out of turns before committing, so the tree was still dirty at the
+start of cycle e; cycle e re-validated the diff independently and committed it.
+No production code touched in either cycle.
+
+PAPER_REVIEW (cycle e, read-only): status ACTIVE, paused=false, degraded=false,
+reconciled=true, last_reconciled_at=2026-10-04T08:15:54Z (fresh at
+observed_at=08:16:01Z), open positions AAPL/SPY/TSLA, unrealized P&L -0.0366820,
+orders_count_reported 0 vs orders_count_actual 13, fills_count_reported 0 vs
+fills_count_actual 11. Health block says `degraded` only because market_data
+`state=market_closed`; paper itself is healthy. The reported-vs-actual count gap
+is the KNOWN observability gap already recorded above (see the
+`orders_count_reported` notes), not a new anomaly -- no action taken.
+
+WHAT THE WIP WAS: the previous cycle left a partial repair of those 5 failures --
+3 tests fixed, 2 (`test_worker_inflight_prevents_pyramiding`,
+`test_worker_inflight_double_sell`) still red. I finished the same job rather than
+starting anything new.
+
+ROOT CAUSE (one class, three gates -- all fixture, zero worker bugs):
+`AlpacaPaperWorker.__init__` sets `degraded=True` / `reconciliation_ready=False`
+(services/alpaca_paper/worker.py:57-58) and `_process_pending_submits` returns at
+worker.py:343 while that holds, so a fixture that merely constructs a worker reads
+ZERO rows. The failure reads `assert 0 == 1`, which looks like "the worker refuses
+to submit" -- the opposite of the truth. Three gates must all be open in a unit
+test: (1) `worker.degraded = False; worker.reconciliation_ready = True`, as
+`reconcile_once` does in production, (2) `account=`/`positions=` passed or
+worker.py:375 raises the intentional `broker_state_not_supplied_to_execution`,
+(3) `last_equity` present or the Daily Breaker fails the BUY closed before the
+pyramiding rule under test.
+
+CHANGES (1 test file, +70/-13):
+- Both `test_worker_inflight_*` tests: open the worker, pass broker state, and give
+  the BUY path a `last_equity` baseline equal to `equity` (0.00 daily delta, so the
+  breaker is satisfied without being loosened). Positions passed are the BROKER's
+  (0.03 AAPL for the double-SELL), matching the DummyAdapter's `get_positions` --
+  the second SELL is only rejected because the in-flight quantity is no longer
+  sellable.
+- Split 5 over-long lines this change had introduced, so the file's E501 count
+  drops instead of rising.
+- Removed, from the earlier WIP: an injected `DummyExecutor` (the worker builds its
+  OWN executor from the adapter, so that double asserted nothing) and an
+  `assert worker.degraded == False` after `_snapshot_broker_portfolio` -- only
+  `reconcile_once` clears `degraded`, so that assertion covered a different method
+  than the one named.
+
+VALIDATION (this repo's `.venv`; the `python` on PATH is NOT this interpreter):
+- `pytest tests/test_alpaca_deepseek.py -q` -> 11 passed (was 2 failed, 9 passed).
+- Worker/guard family (deepseek, alpaca_worker, alpaca_guard, daily_loss_baseline,
+  worker_pending_broker_state_required, paper_v1_stabilization) -> 52 passed. Those
+  5 tests are the entire delta; nothing else moved.
+- ruff on the touched file: 90 findings at HEAD -> 88 now, identical code
+  distribution (I001 5, F401 7, F821 2, E501 74). Proven by `git stash push --
+  <only this file>` + re-run + `git stash pop`, not assumed.
+- RE-VERIFIED INDEPENDENTLY in cycle e with this repo's own
+  `./.venv/Scripts/python.exe`: `pytest tests/test_alpaca_deepseek.py -q` -> 11
+  passed; the worker/guard family -> 52 passed; `ruff check
+  tests/test_alpaca_deepseek.py --output-format=concise` -> 88 errors.
+
+NEW FIRST-IN-LINE TASK:
+`broker_order_quantity_divergence` (services/alpaca_paper/worker.py:314) still has
+NO pure unit coverage. Same stub-only approach as the guard test committed in
+`991647a`: pin that a fill whose cumulative `filled_quantity` does not reconcile
+against the broker's own order state raises
+`RuntimeError("broker_order_quantity_divergence:...")` instead of silently
+correcting it. It is fail-closed financial safety and no existing test touches it.
+
+Second candidate (carried, unchanged): `AGENT_STATE.md` is now ~2600 lines and its
+backlog has already produced one false-premise task. Move the per-cycle narrative
+into dated sections with a short current-backlog summary at the top.
