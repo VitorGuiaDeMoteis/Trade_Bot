@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import Connection, func, select
@@ -40,10 +41,21 @@ def portfolio(c: Connection, store: PaperStore, limit: int = 50) -> PaperPortfol
         slippage_bps=store.config.slippage_bps,
     )
     if not control or not control["active_run_id"]:
+        # No active run: nothing was reconciled, so the portfolio is NOT
+        # reconciled. `PaperPortfolio.reconciled` defaults to True, which
+        # would publish an unreconciled opening-balance book as verified.
+        result.reconciled = False
+        result.last_reconciled_at = None
         return result
     run_id = control["active_run_id"]
     run = c.execute(select(paper_runs).where(paper_runs.c.run_id == run_id)).mappings().one()
     book = store.reconcile(c, run)
+    # `reconcile` rebuilt the book from the durable tables just now, so this
+    # portfolio IS reconciled -- and the stamp is that reconcile, not the
+    # request time. Stamped explicitly so the flag can never be inherited
+    # from the contract default again.
+    result.reconciled = True
+    result.last_reconciled_at = datetime.now(UTC)
     for name in (
         "initial_cash",
         "cash",

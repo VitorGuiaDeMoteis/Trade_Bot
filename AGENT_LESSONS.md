@@ -1362,3 +1362,41 @@ Latch reachability: `broker_portfolio_snapshots.status` is only ever written
 (`_enter_degraded`, worker.py:329). `STALE` appears in the route's membership
 test defensively and is never written. So inverting on that set covers every
 reachable value, and no third status can slip through as "reconciled".
+
+## Every `PaperPortfolio` constructor is its own fail-closed site (sibling of fbdbac1)
+
+`PaperPortfolio.reconciled` defaults to True (packages/contracts/paper.py:106) and
+`last_reconciled_at` defaults to None. There are exactly TWO constructors of
+that model:
+
+- services/api/broker_routes.py -- fixed in fbdbac1 (derived from the snapshot latch).
+- services/api/paper_queries.py:29 -- fixed this cycle.
+
+The second one was "accidentally right" on the active-run path only because the
+default happened to equal the truth, which is indistinguishable in the payload
+from the NO-active-run path, where it published a book of nothing but the
+configured opening balance as `"reconciled": true`.
+
+Reusable rules:
+
+- Grep for EVERY constructor of a contract model, not just the one a bug report
+  named. A defaulted field is an UNSET field: the sibling route was fixed one
+  commit before this one and the same class of defect survived next door.
+- After `store.reconcile(...)` returns, the book IS reconciled, so stamp the flag
+  explicitly (`reconciled = True`, `last_reconciled_at = datetime.now(UTC)`).
+  That makes "flag" and "stamp" agree on every path, so no third UNSET outcome
+  can be constructed later.
+- Contract models here are Pydantic, NOT dataclasses: introspect defaults with
+  `Model.model_fields[name].default`. `__dataclass_fields__` raises AttributeError
+  through Pydantic's `__getattr__`.
+
+Test-harness trap (cost two failed runs this cycle): a stub `Connection` whose
+`execute()` returns an object whose `mappings()` returns ITSELF must also
+implement `__iter__`. `paper_queries.portfolio` iterates `.mappings()` directly
+for the marks/orders/fills queries, so a bare first/one/all stand-in is not
+enough -- see the `_Mappings` + `_Result` split in tests/test_paper_portfolio_mode.py,
+which is the harness to copy for this function.
+
+`PaperConfig` and `PaperBook` both live in `packages.domain.paper`. There is no
+`packages/config/` directory and no `packages.config.paper` module; importing it
+is an immediate ModuleNotFoundError.

@@ -1768,3 +1768,89 @@ constructor of the observation payload is the suspect: grep the `PaperOrder(` /
 `PaperPortfolio(` constructors in services/alpaca_paper/ and services/api/
 (paper_routes.py already supplies it correctly; services/api/paper_queries.py:28
 builds the second `PaperPortfolio` for the simulator path).
+
+================================================================================
+CYCLE 2026-10-04 (worktree DIRTY at start -> RECOVERY MODE, work finished & committed)
+
+TASK: none chosen. The tree was dirty (`M services/api/paper_queries.py`,
+`M AGENT_LESSONS.md`, `?? tests/test_paper_portfolio_reconciled.py`), so per the
+recovery rule this cycle only reviewed, validated and committed that unfinished
+work -- exactly the "next candidate task" recorded at the end of the prior state
+file: the SECOND `PaperPortfolio` constructor in services/api/paper_queries.py,
+built for the simulator/REPLAY path.
+
+REVIEW OF THE WIP: no temporary or intentionally-broken code present; the change
+is two explicit stamps plus focused tests. `PaperPortfolio.reconciled` defaults to
+True (packages/contracts/paper.py:106) and the constructor never supplied it, so
+BOTH return paths published the contract default. The no-active-run path was
+genuinely wrong: it returned a book that is nothing but the configured opening
+balance and published it as `"reconciled": true`. The active-run path was
+"accidentally right" -- the default happened to equal the truth -- which is
+indistinguishable in the payload from the broken case next to it. The fix stamps
+both fields on every return path (`reconciled=False`/no stamp with no active run,
+`reconciled=True`/stamp after `store.reconcile` rebuilt the book), which makes a
+third UNSET outcome structurally impossible. This is the sibling of the
+broker-route defect fixed in fbdbac1 one commit earlier.
+
+CHANGES (already made by the interrupted cycle; verified, NOT rewritten -- no
+production code was edited by this cycle):
+- services/api/paper_queries.py: added `from datetime import UTC, datetime`, the
+  two fail-closed stamps, and comments explaining why a defaulted contract field
+  is an unset one.
+- tests/test_paper_portfolio_reconciled.py (new, 4 tests): no-active-run is never
+  reconciled; absent control row is never reconciled; active-run still reports
+  reconciled=True WITH a tz-aware stamp (the control, so a blanket
+  `reconciled = False` would fail); and a mechanism guard asserting
+  `PaperPortfolio.model_fields[...]` defaults plus flag/stamp agreement on both
+  paths.
+- AGENT_LESSONS.md: the reusable entry for this defect class and the harness trap.
+
+VALIDATION (re-run independently, not taken on trust):
+- 4 passed in 0.10s for tests/test_paper_portfolio_reconciled.py.
+- 32 passed in 0.44s for the three-file regression set (test_paper_portfolio_reconciled,
+  test_paper_portfolio_mode, test_broker_portfolio_counts) -- the sibling tests
+  that build the same payload through the other two constructors.
+- `ruff check` clean on both changed files; `mypy services/api/paper_queries.py`
+  clean (no issues in 1 source file).
+- Non-vacuity proven WITHOUT editing any tracked file: `git show HEAD:services/api/paper_queries.py
+  | grep reconciled` returns NO match, i.e. the field was never assigned on HEAD
+  and therefore defaulted to True on both paths. Read-only; no bug restore.
+- Consumer check: `grep -rn "\.reconciled|reconciled=" services/` finds only the
+  two constructors, so no production consumer branches on the flag and no
+  downstream contract changes. tests/test_paper_routes.py does not exist (the
+  route test file is tests/test_paper_page_mode.py), so it was not in the set.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle; observed_at
+2026-10-04T02:11:59Z): health.status=ok, health.database=up,
+market_data.state=market_closed (provider alpaca, last_bar_at 2026-10-02T21:00Z),
+paper.status=ACTIVE, paused=false, paper.degraded=false, reconciled=true,
+last_reconciled_at=2026-10-04T02:11:57Z. Open position symbols AAPL, SPY, TSLA,
+all still micro-sized (AAPL $9.987, SPY $9.993, TSLA $9.953).
+orders_count_reported=0 vs orders_count_actual=13; fills_count_reported=0 vs
+fills_count_actual=11. unrealized_pnl=-0.0366820000, equity=99951.28,
+cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: `health.status` is `ok` again (it was `degraded` last cycle)
+-- the known execution-gate flap, not a new fault. Equity, cash, market_value,
+P&L and both totals are IDENTICAL to the last two cycles, so this is still the
+documented undeployed pre-fix reading of the counted report (the fix is committed
+but the frozen runtime predates it), not new drift. The two newest orders remain
+the expected intraday SELL pair for the AAPL and TSLA micro-lots, both ACCEPTED
+with filled_quantity 0. No broker/local divergence, no duplicate execution, no
+stale reconciliation, no accounting inconsistency. Every `latest_orders[*].
+last_reconciled_at` is STILL null while the portfolio-level field is populated --
+that long-standing candidate task remains open. Nothing here justifies overriding
+the recovery-mode work.
+
+Next candidate task (carried forward, still first): the observation path null
+`last_reconciled_at`, now confirmed in SEVEN consecutive Paper samples. The
+portfolio-level constructor work is now exhausted (all three sites derive the flag
+explicitly), so the remaining suspect is the ORDER payload: `PaperOrder`
+(packages/contracts/paper.py:47) also defaults `last_reconciled_at` to None, and
+paper_queries.py:98 builds orders with `PaperOrder.model_validate(dict(r))` from
+the `paper_orders` table, which (per services/api/models.py) has NO
+`last_reconciled_at` column -- only `broker_orders` does (models.py:262). So the
+REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:152
+is the route that joins it. Determine which payload the frozen observation actually
+reads before changing anything, and do not add a column/migration without
+justification.
