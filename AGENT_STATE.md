@@ -97,6 +97,22 @@ Each line is pinned by an executable check; a violation now fails a test.
   `services/alpaca_paper/executor.py:38` (no default, raises on missing),
   `services/api/market_store.py:237` (a sequence cursor, not broker numerics), and
   `services/observer/ollama_provider.py:91` (a model-confidence default).
+- `tests/test_alpaca_executor.py::test_duplicate_intent_one_post` known-RED —
+  CLOSED this cycle. It was red on a clean tree because the test's broker-order
+  stub omitted `filled_qty`, which `reconcile_order` now requires via
+  `_required_decimal` (`executor.py:294`); the duplicate-intent branch
+  (`executor.py:186-195`) reaches it. Fixture corrected to a realistic order
+  entity, NOT weakened; the idempotency assertions (`post_count == 1`,
+  `reason == "duplicate_intent"`) are intact and the executor fail-closed family
+  is now fully green. The file is 3 passed.
+- `test_concurrent_intent_one_post` false pass — CLOSED this cycle. It was green
+  WHILE raising `RuntimeError('invalid_broker_filled_qty')`, because
+  `asyncio.gather(..., return_exceptions=True)` swallowed the raise and the test
+  asserted only `post_count == 1`. It now asserts no gathered value is a
+  `BaseException` and that the reasons are exactly `["duplicate_intent",
+  "submitted_to_broker"]`. Mutation-proven: deleting `filled_qty` from a scratch
+  copy of the file turns it RED with the expected message. The executor
+  fail-closed family (numeric + timestamp) is now fully closed and fully pinned.
 - SIMULATOR portfolio constructor `services/api/paper_queries.py:29` — CLOSED, and
   this was a FALSE PREMISE carried as a live candidate. Read in full this cycle:
   it stamps `reconciled`/`last_reconciled_at` explicitly on both branches
@@ -130,10 +146,17 @@ Each line is pinned by an executable check; a violation now fails a test.
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
-- None currently registered. The two most recent candidates (the notional-BUY
-  `quantity=0` parity symptom and the `RUN_ALPACA_SMOKE_TEST` doc drift) are both
-  CLOSED and pinned above. A clean cycle must FIRST run the mandatory PAPER_REVIEW
-  gate, then derive its task from that observation plus
+- `tests/test_alpaca_executor.py` pre-existing lint debt — OPEN, first in line.
+  The file carries 9 `ruff check` findings plus `ruff format` drift, verified
+  pre-existing this cycle by `git stash`-and-diff (`comm -13` on the normalized
+  findings was EMPTY, so this cycle added nothing). Unfixed deliberately: it is
+  formatting-only and must not mix with behavioural work. Next cycle must first
+  confirm the findings are mechanical, then land it as its own commit and re-run
+  the executor tests to prove the reformat changed no behaviour.
+- Otherwise none currently registered. The two candidates before this cycle (the
+  notional-BUY `quantity=0` parity symptom and the `RUN_ALPACA_SMOKE_TEST` doc
+  drift) are both CLOSED and pinned above. A clean cycle must FIRST run the
+  mandatory PAPER_REVIEW gate, then derive its task from that observation plus
   `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` output rather than
   from a carried-over guess.
 
@@ -177,6 +200,54 @@ Each line is pinned by an executable check; a violation now fails a test.
   below records as CLOSED and pinned.
 
 ## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
+
+- Task: finish/validate/land the inherited WIP, no new task. The WIP was the
+  previous cycle's `test_alpaca_executor.py` work: it was COMPLETE (fix +
+  regression tests + state/lessons written) but UNCOMMITTED -- the cycle hit
+  its turn budget before the commit step. Files: `tests/test_alpaca_executor.py`
+  plus the two state/lessons docs. No production file was touched by it.
+- INDEPENDENT REVALIDATION (not taken on trust). `tests/test_alpaca_executor.py`
+  + `tests/test_executor_broker_numeric_fail_closed.py` -> 23 passed;
+  `tests/test_alpaca_deepseek.py` + `tests/test_alpaca_paper_incident.py` ->
+  16 passed. 39 total, matching what the prior cycle recorded. Ruff was
+  re-verified by a different method than the prior cycle used: instead of
+  `git stash`, the HEAD blob was piped through `ruff --stdin-filename`. Both
+  sides report the SAME 9 findings with the SAME codes
+  (3x E722, 2x F841, 4x E501); only line numbers shift, because the diff inserts
+  lines above them. The diff adds no lint.
+- NO TEMPORARY BREAKAGE. Verified by inspection of the complete diff: the only
+  non-doc file is a test file, and its changes are a fixture correction plus
+  STRICTER assertions (added `errors`/`isinstance`/`sorted(reason)` checks).
+  Nothing was loosened and no `TEMP-BUG-RESTORE`-style edit is present. Safe to
+  commit.
+- PAPER_REVIEW: observed_at 2026-10-04T12:39:45Z, paper status ACTIVE,
+  `health.status=degraded`, `paper.paused=false`, `paper.degraded=false`,
+  `paper.reconciled=true` (last_reconciled_at 2026-10-04T12:39:37Z, fresh);
+  open positions AAPL/SPY/TSLA (micro, ~$10 each);
+  orders_count_reported=0 vs actual=13; fills_count_reported=0 vs actual=11;
+  unrealized_pnl=-0.0366820000 (equity 99951.28, cash 99921.35). market_data
+  `market_closed`, last_bar_at 2026-10-02T21:00Z. Substantively IDENTICAL to the
+  last three cycles' observations -- only `last_reconciled_at` advanced -- so
+  there is no new actionable Paper finding. The two `orders_count_*` mismatches
+  are the ALREADY-CLOSED agent-side defect registered in
+  `scripts/paper_runtime_parity.py:94`; the `degraded` health reading is the
+  registered /health execution-gate flap, not a new fault.
+- Outcome: WIP validated as safe and committed; worktree clean.
+
+## Previous latest cycle (2026-10-04, CLEAN tree -- closed the known-RED executor test)
+
+- Task: the FIRST-IN-LINE candidate, `tests/test_alpaca_executor.py::
+  test_duplicate_intent_one_post`, which had been red on a pristine tree since
+  the numeric fail-closed work.
+- Outcome: fixed by correcting the STALE FIXTURE, not the production code. The
+  duplicate-intent branch calls `reconcile_order`, which fail-closes on a broker
+  payload with no `filled_qty`; real Alpaca order entities always carry it. Also
+  found and closed an UNRECORDED false pass in `test_concurrent_intent_one_post`
+  (green while raising, hidden by `gather(return_exceptions=True)`).
+  Details, mutation evidence and validation are in the cycle entry at the end of
+  this file. Paper review this cycle: no new actionable finding.
+
+## Previous latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
 
 - Task: finish/validate the inherited WIP, no new task. The WIP was the
   `RUN_ALPACA_SMOKE_TEST` doc drift (backlog candidate 1 at start).
@@ -3350,3 +3421,56 @@ cycle. Confirm first with `git stash`-and-run that it is red on a pristine tree;
 this cycle verified it is. Read the test's intent before changing it: it asserts
 idempotency (one POST on a duplicate intent), so any fix must preserve that
 assertion.
+
+## 2026-10-04 — known-red executor test: stale order stub (fixture corrected)
+
+- TASK. The FIRST-IN-LINE task above, now closed. `test_duplicate_intent_one_post`
+  was red on a clean tree: `RuntimeError: invalid_broker_filled_qty` raised from
+  `reconcile_order` (`services/alpaca_paper/executor.py:294`), reached via the
+  duplicate-intent branch at `executor.py:186-195`. Reproduced on the current
+  tree before editing, as the prior cycle instructed.
+- ROOT CAUSE. Not a production defect — a stale fixture. The locally-blocked
+  duplicate intent calls `reconcile_order`, which now fail-closes on an
+  unsourceable broker numeric via `_required_decimal(remote_order, "filled_qty")`.
+  The test stubbed the broker order entity as `{"id": ..., "status": "accepted"}`.
+  A real Alpaca order entity ALWAYS carries `filled_qty`, so the stub was
+  unrealistic; it only ever passed because the executor used to tolerate its
+  absence. Same class as the `transaction_time` FILL fixture corrected in the
+  previous entry.
+- FIXTURE CORRECTED, NOT WEAKENED. Both stubs now return a full realistic order
+  entity (`filled_qty`, `qty`, `submitted_at`, `filled_at`, ...). No production
+  file was touched and no test assertion was relaxed: the idempotency assertion
+  the task required be preserved (`post_count == 1`, plus
+  `res2.reason == "duplicate_intent"`) is intact and now exercises the real
+  reconcile path end to end.
+- SECOND, UNRECORDED FALSE PASS FOUND AND CLOSED. `test_concurrent_intent_one_post`
+  passed while hitting the SAME missing-`filled_qty` `RuntimeError`: it used
+  `asyncio.gather(..., return_exceptions=True)` and asserted only `post_count == 1`,
+  so the losing task of the insert race raised inside the gather and the failure
+  was swallowed. It is now asserted to raise nothing, that both results are
+  `AlpacaSubmitResult`, and that their reasons are exactly
+  `["duplicate_intent", "submitted_to_broker"]`. `return_exceptions=True` is kept
+  deliberately (it is what stops the race from cancelling the winner).
+- MUTATION-PROVEN, not assumed. Removed `filled_qty` from a scratch COPY of the
+  test file (never the tracked file) and re-ran: the concurrency test fails
+  loudly with `submit raised under concurrency:
+  RuntimeError('invalid_broker_filled_qty')`. The new assertion bites; it is not
+  another green-that-proves-nothing. Probe deleted afterwards.
+- SIBLING CHECK. Grepped all test stubs for broker order payloads lacking
+  `filled_qty`. `tests/test_alpaca_deepseek.py` GET stubs and
+  `tests/test_alpaca_paper_incident.py:133` already carry it; the POST-response
+  stubs there are never reconciled, so no other stale stub of this shape remains.
+- VALIDATION. `tests/test_alpaca_executor.py`,
+  `tests/test_executor_broker_numeric_fail_closed.py`, `tests/test_alpaca_deepseek.py`,
+  `tests/test_alpaca_paper_incident.py`: `39 passed`. Ruff diffed before/after via
+  `git stash`: 9 findings on both sides, `comm -13` empty — this change adds NO
+  new lint. The file's 9 findings and its `ruff format` drift are PRE-EXISTING
+  and left untouched (reformatting a whole test file is not this task).
+- No broker state, runtime database, or credential was touched. Nothing pushed.
+
+FIRST-IN-LINE TASK (for the next cycle): the executor fail-closed family is now
+fully closed and its tests green. Best candidate: `tests/test_alpaca_executor.py`
+carries 9 ruff findings and `ruff format` drift, all pre-existing and inherited by
+several cycles. Confirm the file is not a ruff-excluded path and that the findings
+are in fact mechanical, then make the formatting-only cleanup in a commit of its
+own so it never mixes with behavioural work.

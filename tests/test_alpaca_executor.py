@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient, MockTransport, Response
 from test_market_integration import market as market
 
+from packages.domain.paper import AlpacaSubmitResult
 from packages.domain.risk import RiskDecision
 from services.alpaca_paper.adapter import AlpacaPaperAdapter
 from services.alpaca_paper.executor import AlpacaPaperExecutor
@@ -110,12 +111,29 @@ async def test_duplicate_intent_one_post(db_connection):
     conn = ConnProxy()
     post_count = 0
 
+    # A real Alpaca order entity ALWAYS carries filled_qty, so the duplicate-intent
+    # branch can reconcile it. The stub used to omit it and only "passed" before the
+    # executor started failing closed on unsourceable broker numerics.
+    broker_order = {
+        "id": "alpaca-123",
+        "client_order_id": "m7_test",
+        "status": "accepted",
+        "symbol": "AAPL",
+        "side": "buy",
+        "type": "market",
+        "time_in_force": "day",
+        "qty": "10",
+        "filled_qty": "0",
+        "filled_avg_price": None,
+        "submitted_at": "2026-10-04T12:00:00Z",
+        "filled_at": None,
+    }
+
     def handler(request):
         nonlocal post_count
         if request.method == "POST":
             post_count += 1
-            return Response(200, json={"id": "alpaca-123", "status": "accepted"})
-        return Response(200, json={"id": "alpaca-123", "status": "accepted"})
+        return Response(200, json=broker_order)
 
     adapter = AlpacaPaperAdapter("k", "s", AsyncClient(transport=MockTransport(handler)))
     executor = AlpacaPaperExecutor(adapter)
@@ -166,13 +184,30 @@ async def test_concurrent_intent_one_post(db_connection):
     conn = ConnProxy()
     post_count = 0
 
+    # Same real-entity rule as test_duplicate_intent_one_post: Alpaca always
+    # returns filled_qty. It also has to: the loser of the insert race reaches
+    # reconcile_order, so a stub without it raises inside the gather.
+    broker_order = {
+        "id": "alpaca-456",
+        "client_order_id": "m7_test_concurrent",
+        "status": "accepted",
+        "symbol": "AAPL",
+        "side": "buy",
+        "type": "market",
+        "time_in_force": "day",
+        "qty": "10",
+        "filled_qty": "0",
+        "filled_avg_price": None,
+        "submitted_at": "2026-10-04T12:00:00Z",
+        "filled_at": None,
+    }
+
     async def slow_handler(request):
         nonlocal post_count
         if request.method == "POST":
             post_count += 1
             await asyncio.sleep(0.1)
-            return Response(200, json={"id": "alpaca-456", "status": "accepted"})
-        return Response(200, json={"id": "alpaca-456", "status": "accepted"})
+        return Response(200, json=broker_order)
 
     adapter = AlpacaPaperAdapter("k", "s", AsyncClient(transport=MockTransport(slow_handler)))
     executor = AlpacaPaperExecutor(adapter)
@@ -186,7 +221,7 @@ async def test_concurrent_intent_one_post(db_connection):
         decided_at=datetime.now(UTC),
     )
 
-    await asyncio.gather(
+    results = await asyncio.gather(
         executor.submit(engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
         ),
         executor.submit(engine, run_id, signal_id, risk, "AAPL", "BUY", 10, order_id, datetime.now(UTC)
@@ -194,6 +229,14 @@ async def test_concurrent_intent_one_post(db_connection):
         return_exceptions=True,
     )
 
+    # return_exceptions=True keeps the race from cancelling the winner, but it
+    # also SWALLOWS failures: the loser of the insert race reaches
+    # reconcile_order, and a raise there used to leave this test green. Assert
+    # that neither submit blew up, and that the loser reported the duplicate.
+    errors = [r for r in results if isinstance(r, BaseException)]
+    assert not errors, f"submit raised under concurrency: {errors!r}"
+    assert all(isinstance(r, AlpacaSubmitResult) for r in results)
+    assert sorted(r.reason for r in results) == ["duplicate_intent", "submitted_to_broker"]
     assert post_count == 1
 
 
