@@ -136,6 +136,7 @@ class _StubConnection:
         order_total: int,
         fill_total: int,
         snapshot_status: str = "ACTIVE",
+        run_initial_cash: Decimal | None = Decimal("100000"),
     ) -> None:
         self._control = control
         self._positions = positions
@@ -143,6 +144,11 @@ class _StubConnection:
         self._fills = fills
         self._order_total = order_total
         self._fill_total = fill_total
+        # The run's STARTING cash. Deliberately different from `_SNAPSHOT["cash"]`
+        # (the post-trade balance) so a test can prove the route did not publish
+        # the balance as the starting basis.
+        self._run_initial_cash = run_initial_cash
+        self.run_bind_params: str | None = None
         # `status` is the reconciliation LATCH the worker writes (see
         # `_save_broker_snapshot` / `_enter_degraded`), not a health probe, so
         # a test can drive the portfolio's flags by setting it per case.
@@ -164,9 +170,14 @@ class _StubConnection:
             return _Result(self._fills)
         raise AssertionError(f"unexpected statement: {text}")
 
-    def scalar(self, statement: Any) -> int:
+    def scalar(self, statement: Any) -> Any:
         text = str(statement)
         self.statements.append(text)
+        if "paper_runs" in text:
+            # The run id is a BIND PARAMETER, so `str(statement)` alone cannot
+            # prove which run was read. Record the compiled bindings too.
+            self.run_bind_params = str(statement.compile().params)
+            return self._run_initial_cash
         if "broker_fills" in text:
             return self._fill_total
         if "broker_orders" in text:
@@ -602,3 +613,84 @@ def test_reconciled_and_degraded_can_never_disagree(status: str) -> None:
     portfolio = _call(_conn_for_status(status))
 
     assert portfolio.reconciled is not portfolio.degraded
+
+
+def test_initial_cash_is_the_run_starting_cash_not_the_post_trade_balance() -> None:
+    """`initial_cash` must be the run's starting basis, never the live balance.
+
+    The route passed `snapshot["cash"]` -- the balance AFTER trading -- as the
+    starting basis. Both fields then held the same number, so any P&L computed
+    from `equity - initial_cash` was structurally zero: a book with realised
+    positions and non-zero P&L reported itself as having opened flat.
+    `paper_runs.initial_cash` is the one definition of the concept (REPLAY reads
+    the same column via `store.config.initial_cash`, paper_queries.py:32).
+    """
+    order_rows = [_order_row()]
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": order_rows[0]["run_id"]},
+        positions=[_position_row()],
+        orders=order_rows,
+        fills=[],
+        order_total=1,
+        fill_total=0,
+        run_initial_cash=Decimal("100000"),
+    )
+
+    portfolio = _call(conn)
+
+    # Distinct values in the fixture: any pass is a real read of the run row.
+    assert _SNAPSHOT["cash"] == Decimal("99941.36")
+    assert portfolio.initial_cash == Decimal("100000")
+    assert portfolio.initial_cash != portfolio.cash
+
+
+def test_initial_cash_is_null_when_no_run_is_active() -> None:
+    """With no active run the starting cash is UNKNOWN, not zero.
+
+    `PaperPortfolio.initial_cash` is `Decimal | None`. Falling back to the
+    snapshot balance (or to 0) would invent a starting basis for a book whose
+    opening capital was never recorded; NULL is the honest report.
+    """
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": None},
+        positions=[_position_row()],
+        orders=[],
+        fills=[],
+        order_total=0,
+        fill_total=0,
+        run_initial_cash=None,
+    )
+
+    portfolio = _call(conn)
+
+    assert portfolio.run_id is None
+    assert portfolio.initial_cash is None
+    # The live balance is still reported -- only the starting basis is absent.
+    assert portfolio.cash == _SNAPSHOT["cash"]
+
+
+def test_initial_cash_is_scoped_to_the_active_run_row() -> None:
+    """The run lookup is keyed on the control row's `active_run_id`.
+
+    An unfiltered read of `paper_runs` (or of some other run) would publish the
+    wrong starting basis, so the statement must carry the run predicate.
+    """
+    order_rows = [_order_row()]
+    run_id = order_rows[0]["run_id"]
+    conn = _StubConnection(
+        control={"paused": False, "active_run_id": run_id},
+        positions=[],
+        orders=order_rows,
+        fills=[],
+        order_total=1,
+        fill_total=0,
+    )
+
+    _call(conn)
+
+    run_query = next(s for s in conn.statements if "paper_runs" in s)
+    assert "paper_runs.initial_cash" in run_query
+    assert "paper_runs.run_id = " in run_query
+    # The bind must carry the control row's ACTIVE run, not some other run.
+    assert conn.run_bind_params is not None
+    assert str(run_id) in conn.run_bind_params

@@ -1444,3 +1444,54 @@ Lint baseline re-confirmed this cycle with the stdin form:
 tests/test_broker_routes.py -` reported 7 errors, identical to the worktree
 file's 7, so the added test introduced none. The file's import block is
 already unsorted on HEAD (I001) -- do not "fix" it in an unrelated cycle.
+
+## Two money fields with one meaning must not share one source
+
+The broker route set `initial_cash=Decimal(str(snapshot["cash"]))`. Both fields
+are cash, so the payload looked self-consistent -- but they mean different
+things: `initial_cash` is the run's STARTING capital (a basis for P&L), while
+`broker_portfolio_snapshots.cash` is the balance AFTER trading (a current fact).
+Because they came from one source they were always equal, so every downstream
+`equity - initial_cash` was structurally ZERO: the payload reported a book with
+three open positions and non-zero P&L as having opened flat. The observation file
+showed exactly that signature -- `unrealized_pnl=-0.0367` next to a zero total
+return.
+
+This is the `or ""` lesson (above) with a currency instead of a string: an absent
+or mismatched concept gets filled from a NEARBY value rather than left NULL, and
+the substitution is invisible because the types agree. Numeric decoys are harder
+to spot than empty strings, because `Decimal(str(None))` fails loudly while
+`Decimal(str(<the wrong column>))` succeeds quietly.
+
+Rules:
+
+- For every numeric field, name its unit, its SOURCE OF TRUTH and its instant
+  (opening vs current). Two fields sharing a unit must never share a source.
+- `PaperPortfolio.initial_cash` is `Decimal | None` on purpose. `None` means "the
+  starting capital was never recorded"; a fallback to the balance or to 0 would
+  invent a basis that no ledger supports.
+- When two constructors of the same contract are meant to agree, grep the CONCEPT
+  across both, not just the field name. REPLAY's
+  `initial_cash=store.config.initial_cash` (services/api/paper_queries.py:32) is
+  the existing single definition; the broker route was the odd one out.
+- A NULL column is a legitimate value, not a gap to fill. Gate the lookup
+  (`if run_id is not None`) rather than reading an unrelated row.
+
+Harness traps hit while pinning this:
+
+- SQLAlchemy renders WHERE values as BIND PARAMETERS, so
+  `str(select(...).where(t.c.id == some_uuid))` contains
+  `WHERE paper_runs.run_id = :run_id_1` -- never the literal. Asserting the
+  literal id in the string fails even when the query is perfectly correct. To
+  prove WHICH row was targeted, record `statement.compile().params` in the stub
+  and assert on that. (`tests/test_broker_portfolio_counts.py`, stub records
+  `run_bind_params`.)
+- The WIP prepared the stub (`run_initial_cash` ctor arg + scalar branch) but
+  wrote no test. A green suite therefore proved nothing. When a previous cycle
+  leaves a fixture extended and unasserted, the fixture IS the unfinished work:
+  grep the test file for the new stub parameter and require at least one
+  assertion that varies it.
+- `tests/test_broker_portfolio_counts.py` calls the route with a pure stub
+  connection (no Postgres), unlike the sibling `tests/test_broker_routes.py`
+  which inserts real rows and therefore hits CHECK constraints. Prefer the stub
+  file for pure payload-construction assertions.

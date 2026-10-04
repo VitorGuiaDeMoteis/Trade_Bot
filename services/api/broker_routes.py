@@ -12,6 +12,7 @@ from services.api.models import (
     broker_portfolio_snapshots,
     broker_positions,
     paper_orders,
+    paper_runs,
     system_controls,
 )
 
@@ -44,6 +45,20 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
 
         if not snapshot:
             raise HTTPException(404, "No broker snapshot available")
+
+        # `initial_cash` is the run's STARTING cash, so it comes from the run
+        # row -- never from the snapshot. The snapshot's `cash` is the balance
+        # AFTER trading, so reusing it published the current balance as the
+        # starting basis and reported a realised book as having opened flat.
+        # One definition per concept: REPLAY reads the same run field via
+        # `store.config.initial_cash` (see paper_queries.portfolio).
+        # NULL when no run is active: the starting cash is genuinely unknown,
+        # and the contract already allows `initial_cash: Decimal | None`.
+        run_initial_cash = None
+        if run_id is not None:
+            run_initial_cash = conn.scalar(
+                select(paper_runs.c.initial_cash).where(paper_runs.c.run_id == run_id)
+            )
 
         # Read positions
         b_positions = (
@@ -215,7 +230,9 @@ async def get_broker_portfolio(request: Request, response: Response) -> PaperPor
             provider="alpaca",
             paused=paused,
             as_of=datetime.now(UTC),
-            initial_cash=Decimal(str(snapshot["cash"])),
+            initial_cash=(
+                Decimal(str(run_initial_cash)) if run_initial_cash is not None else None
+            ),
             cash=Decimal(str(snapshot["cash"])),
             market_value=Decimal(str(snapshot["market_value"])),
             equity=Decimal(str(snapshot["equity"])),

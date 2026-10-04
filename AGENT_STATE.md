@@ -1941,3 +1941,88 @@ REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:1
 is the route that joins it. Determine which payload the frozen observation
 actually reads BEFORE changing anything, and do not add a column/migration
 without justification.
+
+================================================================================
+CYCLE 2026-10-04 (worktree DIRTY at start -> RECOVERY MODE, work finished & committed)
+
+TASK: none chosen. The tree was dirty (`M services/api/broker_routes.py`,
+`M tests/test_broker_portfolio_counts.py`), so per the recovery rule this cycle
+only reviewed, completed, validated and committed that unfinished work: the broker
+route published the post-trade BALANCE as the run's starting basis.
+
+REVIEW OF THE WIP: no temporary or intentionally-broken code. The production
+change was already correct and complete (one guarded `paper_runs.initial_cash`
+scalar read keyed on `system_controls.active_run_id`, plus the `None` passthrough).
+On HEAD:218 the route passed `initial_cash=Decimal(str(snapshot["cash"]))`, so
+`initial_cash == cash` on every payload, and any `equity - initial_cash` was
+structurally ZERO -- a book with three open positions and non-zero P&L reported
+itself as having opened flat. Premise verified before completing the work:
+`paper_runs.initial_cash` is `nullable=False` (services/api/models.py:116) and is
+the ONE definition of the concept -- REPLAY reads the same column via
+`store.config.initial_cash` (services/api/paper_queries.py:32), which is exactly
+the divergence the `or ""` lesson generalises to.
+
+WHAT THIS CYCLE ADDED (the only edits -- test-side, no production change): the WIP
+had already extended `_StubConnection` to serve `run_initial_cash`, but had NOT
+written a single assertion, so the prepared stub was dead code and the fix was
+unpinned. Added the three missing regression tests:
+- `test_initial_cash_is_the_run_starting_cash_not_the_post_trade_balance` --
+  proves 100000 (run) != 99941.36 (snapshot balance); the distinct values make a
+  pass non-vacuous.
+- `test_initial_cash_is_null_when_no_run_is_active` -- no active run => NULL
+  starting basis, not zero and not the balance; `cash` still reported.
+- `test_initial_cash_is_scoped_to_the_active_run_row` -- pins the run predicate.
+Also had to widen the stub's `scalar` return annotation from `int` to `Any`
+(the WIP already did) and add `run_bind_params`, because the first version of
+the scoping assertion FAILED: SQLAlchemy renders the run id as a BIND
+PARAMETER (`WHERE paper_runs.run_id = :run_id_1`), so `str(statement)` cannot
+prove WHICH run was read. Recorded `statement.compile().params` in the stub
+instead. That is a harness trap worth remembering -- see lessons.
+
+VALIDATION (run independently, not taken on trust):
+- 39 passed in 1.46s across the four-file sibling set (test_broker_portfolio_counts,
+  test_broker_routes, test_paper_portfolio_reconciled, test_paper_portfolio_mode)
+  -- the other constructors that build the same contract.
+- `mypy services/api/broker_routes.py`: no issues in 1 source file.
+- `ruff check` on BOTH touched files: All checks passed (this file is clean on
+  HEAD too -- unlike test_broker_routes.py, it has no pre-existing baseline debt).
+- Non-vacuity proven WITHOUT editing any tracked file:
+  `git show HEAD:services/api/broker_routes.py | grep -n initial_cash` returns
+  `initial_cash=Decimal(str(snapshot["cash"])),`. Read-only; no bug restore.
+
+PAPER_REVIEW (frozen runtime, read-only, this cycle; observed_at
+2026-10-04T04:11:31Z): health.status=degraded, health.database=up,
+market_data.state=market_closed (provider alpaca, feed iex, last_bar_at
+2026-10-02T21:00Z, last_message_at 2026-10-04T03:03:51Z),
+paper.status=ACTIVE, paused=false, paper.degraded=false, reconciled=true,
+last_reconciled_at=2026-10-04T04:11:27Z, run_id=bf39805a. Open position symbols
+AAPL, SPY, TSLA, all still micro-sized (AAPL $9.987, SPY $9.993, TSLA $9.953).
+orders_count_reported=0 vs orders_count_actual=13; fills_count_reported=0 vs
+fills_count_actual=11. unrealized_pnl=-0.0366820000, equity=99951.28,
+cash=99921.35, market_value=29.93.
+
+CHANGE vs last cycle: `health.status` is `degraded` again (was `degraded` last
+cycle, `ok` the one before) -- the known execution-gate flap, not a new fault.
+Equity, cash, market_value, P&L and BOTH totals are IDENTICAL across the last
+four cycles, so this is still the documented undeployed pre-fix reading of the
+counted report (the fix is committed but the frozen runtime predates it), not
+new drift. The two newest orders are the intraday SELL pair for the AAPL and TSLA
+micro-lots, both ACCEPTED; total still 13, so no duplicate execution. No
+broker/local divergence, no accounting inconsistency, no stale reconciliation.
+Every `latest_orders[*].last_reconciled_at` is STILL null while the
+portfolio-level field is populated -- now NINE consecutive samples; that
+candidate task remains open and unaddressed. Nothing here justifies overriding
+the recovery-mode work.
+
+Next candidate task (carried forward, still first): the observation path null
+`last_reconciled_at`, now confirmed in NINE consecutive Paper samples. The
+portfolio-level constructor work is exhausted (all three sites derive the flag
+explicitly), so the remaining suspect is the ORDER payload: `PaperOrder`
+(packages/contracts/paper.py:47) also defaults `last_reconciled_at` to None, and
+paper_queries.py:98 builds orders with `PaperOrder.model_validate(dict(r))` from
+the `paper_orders` table, which (per services/api/models.py) has NO
+`last_reconciled_at` column -- only `broker_orders` does (models.py:262). So the
+REPLAY/simulator payload cannot stamp it from the row at all; broker_routes.py:152
+is the route that joins it. Determine which payload the frozen observation actually
+reads BEFORE changing anything, and do not add a column/migration without
+justification.
