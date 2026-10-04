@@ -152,12 +152,35 @@ Each line is pinned by an executable check; a violation now fails a test.
   tests/test_alpaca_executor.py` reports "All checks passed". This entry was
   stale for at least one cycle and is retired here so it cannot seed the next
   cycle with an already-closed task.
-- `tests/test_paper_audit.py` + `tests/test_replay_live.py` — 14 failures, NEW,
-  first in line. Observed 2026-10-04: `pytest tests/ -k "alpaca or paper or
-  incident"` gives 14 failed / 212 passed / 26 skipped. Proven PRE-EXISTING and
-  unrelated to test-file lint by `git stash`-and-rerun: the identical 14 fail at
-  baseline. NOT yet root-caused. Start by reading one failing test and its
-  traceback before assuming a cause.
+- `tests/test_paper_audit.py` + `tests/test_replay_live.py` — was carried as "14
+  failures, NOT yet root-caused". CORRECTED this cycle: it is 3 failures in 2
+  files, and all 3 now have a proven cause. Do not re-run the 14-failure count.
+  Verified 2026-10-04 by running the two files directly (13 passed, 3 failed):
+  - `test_insufficient_capital_persists_rejections_without_financial_mutation`
+    (`tests/test_paper_audit.py:175`) — the assertion compares the SERIALIZED
+    order `quantity` to the string `"0"`, but a `Numeric(28,10)` column
+    round-trips `Decimal(0)` as `'0E-10'`. Proven, not inferred: the probe
+    printed `[('REJECTED', "'0E-10'"), ...]`. Column at
+    `services/api/models.py:212`; contract field `quantity: Decimal`
+    (`packages/contracts/paper.py:25`). This is a SCALE-REPRESENTATION
+    mismatch, NOT the `last_reconciled_at` wall-clock issue the previous cycle
+    recorded — see the falsified-premise note below.
+  - `test_pause_waits_for_atomic_batch_then_blocks_next_batch`
+    (`tests/test_paper_audit.py:148`) — `assert state(store) == before` differs
+    ONLY in `last_reconciled_at` (e.g. `14:50:14.597670Z` vs `14:50:14.516178Z`).
+    The previous cycle's diagnosis was right FOR THIS TEST ONLY.
+  - `test_replay_process_needs_no_env_database_network_or_alpaca_imports` —
+    ENVIRONMENTAL (Windows). The test scrubs the child env so thoroughly that
+    `SystemRoot`/`ComSpec` are absent, and the child's `subprocess.Popen`
+    cannot spawn at all: `FileNotFoundError: [WinError 2]`. Not a TradingBot
+    defect; a Windows-only harness problem.
+- FALSIFIED PREMISE (recorded so it cannot seed another cycle): the prior cycle
+  wrote that BOTH `test_paper_audit.py` failures "compare a full `state(store)`
+  snapshot against an earlier one, and the differing key is `last_reconciled_at`
+  only". Only the second test does that. The FIRST fails on a completely
+  different assertion (line 175, order `quantity`) with a completely different
+  cause. A root cause generalized from one failure of a pair was applied to
+  both. Verified by reading the actual assertion and by the probe output.
 - Otherwise none currently registered. A clean cycle must FIRST run the
   mandatory PAPER_REVIEW gate, then derive its task from that observation plus
   `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` output rather than
@@ -3722,6 +3745,92 @@ line must be checked for accidental edits to string content. Alternative
 candidate, still bounded: the remaining 49 F401/I001 across `tests`/`scripts` —
 but apply the metadata-registration probe FIRST to any F401 naming an ORM model,
 per the lesson recorded this cycle.
+
+## Cycle 2026-10-04 — RECOVERY MODE: falsified root cause corrected, probe removed
+
+MODE: recovery. The cycle opened on a dirty worktree: one untracked file,
+`tests/test_zz_probe.py`. No tracked file was modified. Per mission, no new task
+was chosen; the inherited WIP was inspected, the investigation it started was
+finished, and the result was recorded.
+
+THE WIP, as found: a 26-line probe whose own docstring said "TEMPORARY probe --
+deleted before commit" and which ended in `raise AssertionError("probe only")`.
+It was a diagnostic for the two `test_paper_audit.py` failures the previous
+cycle had "root-caused". The previous cycle recorded the cause as
+`last_reconciled_at` wall-clock drift and left the probe behind instead of
+running it to ground.
+
+WHAT THE PROBE PROVED — THE RECORDED CAUSE WAS WRONG FOR ONE OF THE TWO TESTS.
+Running the probe (`pytest tests/test_zz_probe.py -q -s`) printed:
+
+    PROBE_ORDERS [('REJECTED', "'0E-10'"), ('REJECTED', "'0E-10'"), ('REJECTED', "'0E-10'")]
+
+`test_insufficient_capital_persists_rejections_without_financial_mutation` fails
+at `tests/test_paper_audit.py:175` on `o["quantity"] == "0"`. The actual value
+is `'0E-10'`, because `paper_orders.quantity` is `Numeric(28, 10)`
+(`services/api/models.py:212`) and `Decimal(0)` round-trips from a scale-10
+column in exponent form. `money()` (`packages/domain/paper.py:11`) quantizes to
+`UNIT = Decimal("0.0000000001")` — the same 10 places. This has nothing to do
+with `last_reconciled_at`, which that test never compares.
+
+The SECOND test, `test_pause_waits_for_atomic_batch_then_blocks_next_batch:148`,
+does fail on `last_reconciled_at` and only on it:
+
+    {'last_reconciled_at': '2026-10-04T14:50:14.597670Z'} != {'...14.50:14.516178Z'}
+
+So the previous cycle's diagnosis was correct for one test and silently
+generalized to both. Both tests share a file and a `seed()` fixture — a
+correlation of setup, not of mechanism.
+
+THE COUNT WAS ALSO WRONG. The backlog carried "14 failures" for these two files,
+taken from a `-k`-filtered run that matched more files than the entry named.
+Running the two files directly: `test_paper_audit.py` 2 failed / 11 passed,
+`test_replay_live.py` 1 failed / 14 passed. Total 3, not 14, and all 3 now have a
+cause.
+
+The third, `test_replay_process_needs_no_env_database_network_or_alpaca_imports`,
+is ENVIRONMENTAL (Windows): the test scrubs the child environment so thoroughly
+that `SystemRoot`/`ComSpec` are gone, and the child's `subprocess.Popen` cannot
+spawn — `FileNotFoundError: [WinError 2]` from `subprocess.py:1538`. Not a
+TradingBot defect.
+
+CHANGES:
+- Deleted the untracked `tests/test_zz_probe.py`. It was scratch by its own
+  docstring and had no place in any commit.
+- Rewrote the `test_paper_audit.py` + `test_replay_live.py` backlog entry: stale
+  count corrected, each of the 3 failures given its proven cause, and an explicit
+  FALSIFIED-PREMISE note recorded so this diagnosis cannot be re-derived.
+- Added two lessons: generalizing a cause across a pair of failures, and why a
+  `Numeric(28,10)` column never returns the string you wrote.
+
+VALIDATION (targeted only; the full suite was never run, per mission):
+- `pytest tests/test_paper_audit.py -q`: 2 failed, 11 passed — both failures
+  read line-by-line and their differing key/field extracted from the live output,
+  not assumed.
+- `pytest tests/test_replay_live.py -q`: 1 failed, 14 passed.
+- Probe run (`-q -s`) supplied the `'0E-10'` evidence above, then was deleted and
+  its absence from `git status` confirmed.
+- No production code was touched this cycle, so no test/lint/type gate applies to
+  production; `git diff --check` is clean.
+- TOOLING NOTE (re-confirmed): piping pytest through `tail`/`grep` reports the
+  FILTER's exit status, not pytest's — the harness flagged one run as FAILED for
+  this reason. Read the summary line, not `$?`.
+
+NEXT CANDIDATE TASK: fix the two failures with their own proven causes, one at a
+time, smallest blast radius first.
+1. `test_paper_audit.py:175` — compare `Decimal(o["quantity"]) == 0` instead of
+   the string `"0"`. This is a TEST-BUG fix: the production value is correct, and
+   changing the `Numeric` scale to emit `'0'` would corrupt money handling
+   project-wide to satisfy a string literal. Must keep the `status == "REJECTED"`
+   and `reason == "position_size_below_one_share"` assertions intact.
+2. `test_paper_audit.py:148` — make `last_reconciled_at` deterministic across two
+   reads of an unchanged run, by exposing the stamp read from the run row rather
+   than `datetime.now(UTC)` at `services/api/paper_queries.py:58`. WITHOUT
+   weakening the concurrent-visibility assertion, which is the entire point of
+   the test: it proves no uncommitted fill is exposed to a concurrent reader.
+3. Optional, environmental: the `test_replay_live.py` Windows spawn failure —
+   keep `SystemRoot`/`ComSpec` in the scrubbed child env. Not a TradingBot bug;
+   record as a known platform limitation if not worth fixing.
 
 ## Cycle 2026-10-04 — RECOVERY MODE: `run_id` field/DB parity WIP finished and committed
 

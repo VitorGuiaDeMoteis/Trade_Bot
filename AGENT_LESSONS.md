@@ -123,6 +123,49 @@ registered (`last_reconciled_at: null`, `orders_count_reported=0`,
 lag. A zero beside a positive is the first registered symptom that looks like
 **corruption**, which is why it needed registration more than the others did.
 
+## A root cause generalized from ONE failure of a pair is a falsified premise
+
+The prior cycle recorded that both `test_paper_audit.py` failures "compare a full
+`state(store)` snapshot against an earlier one, and the differing key is
+`last_reconciled_at` only". Only ONE of them does that.
+
+The other fails at `tests/test_paper_audit.py:175` on an assertion that has
+nothing to do with snapshots:
+
+    assert all(o["status"] == "REJECTED" and o["quantity"] == "0" for o in result["orders"])
+
+and the real cause is scale representation: `paper_orders.quantity` is
+`Numeric(28, 10)` (`services/api/models.py:212`), so `Decimal(0)` reads back
+from the DB as `'0E-10'`, never `'0'`. A probe printed the actual value
+(`[('REJECTED', "'0E-10'"), ...]`) in one run.
+
+Two lessons, both reusable:
+
+1. **A failing-test COUNT is not a task.** The backlog carried "14 failures"
+   from a `-k`-filtered run. Running the two named files directly gave 3. The
+   count came from a filter that matched more files than the entry named. Name
+   the file and run the file before quoting any number.
+2. **Two tests in the same file failing together is not evidence of one cause.**
+   They share a file, a fixture and a `seed()` helper — that is a correlation of
+   setup, not of mechanism. Read the failing ASSERTION for each one separately;
+   the assertion names the field that actually differs. Where a probe is cheap
+   (print the real value), prefer it over reasoning about what "should" differ.
+
+Corollary on the fix itself: `o["quantity"] == "0"` is a *string* comparison
+against a `Decimal` contract field, so it is a fragile assertion regardless of
+the cause. The durable fix is to compare numerically (`Decimal(o["quantity"]) ==
+0`) rather than to teach the DB to emit `'0'` — do not "fix" the Numeric scale
+to satisfy a string literal.
+
+## A Numeric(28,10) column never returns the string you wrote
+
+Any assertion comparing a serialized numeric field to a hand-written string is
+testing scale representation, not value. `Decimal(0)` in a `Numeric(28,10)`
+column round-trips as `0E-10`; `money()` (`packages/domain/paper.py:11`)
+quantizes to `UNIT = 0.0000000001`, which is the same 10 decimal places. So
+zero, and anything below the scale, comes back in exponent form. Compare
+`Decimal(value)` in tests; do not normalize the column to satisfy prose.
+
 ## Never quote the frozen runtime's sha from prose; read it
 
 Cycle notes recorded the runtime at `72d37d8`; this cycle found it at
