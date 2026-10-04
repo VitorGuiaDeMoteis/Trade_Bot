@@ -1990,3 +1990,16 @@ Read the whole file before filing: `paper_queries.portfolio` stamps
   above it. `AGENT_LESSONS.md` is the file a cycle reads to decide what to do, so
   check the heading structure of a lessons edit (`^## `) before committing it --
   the prose still reads fine while the structure lies.
+- The compression rule in AGENT_MISSION.md (`If the session compresses a SECOND
+  time`) is a STOP signal, not a speed signal. The pull in that moment is to
+  "just land the small fix I already understand" -- and that is precisely the
+  failure it guards against: an edit to a registry plus its new test is the exact
+  WIP shape that put the last three cycles into RECOVERY MODE. Record the
+  derivation (symptom, root cause, the commit sha, the ancestry proof, the verify
+  command) in CURRENT BACKLOG and stop; a verified-but-unimplemented finding with
+  its proof attached is worth more than an unverified half-edit.
+- When a symptom is missing from a KNOWN_FIXES-style registry, check its SIBLINGS
+  before treating it as new. `quantity="0"` on a notional BUY looked like a fresh
+  defect, but three other symptoms of the same runtime lag were already registered;
+  the right question was not "is this a bug" but "why did the lag's other
+  symptoms get registered and this one did not".
