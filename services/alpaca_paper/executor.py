@@ -42,6 +42,34 @@ class AlpacaPaperExecutor:
             raise RuntimeError(f"invalid_broker_{label}")
         return result
 
+    @staticmethod
+    def _required_timestamp(
+        payload: dict[str, Any], key: str, field: str | None = None
+    ) -> datetime:
+        """Parse a REQUIRED broker timestamp, failing CLOSED when unsourceable.
+
+        `broker_fills.filled_at` is NOT NULL and is what the fill-window
+        analytics and the fill list ORDER BY. Substituting `datetime.now(UTC)`
+        for a missing or mangled `transaction_time` silently rewrites WHEN a
+        fill happened - an accounting-truth defect, not a cosmetic one. Raises
+        RuntimeError("invalid_broker_<field>"), which the worker turns into
+        DEGRADED via `_enter_degraded` and retries on the next cycle.
+        """
+        label = field or key
+        raw = payload.get(key)
+        if not isinstance(raw, str) or not raw.strip():
+            raise RuntimeError(f"invalid_broker_{label}")
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise RuntimeError(f"invalid_broker_{label}") from error
+        if parsed.tzinfo is None:
+            # A naive timestamp bound for a timestamptz column is interpreted in
+            # the SERVER's zone: ambiguous by construction, so refuse it rather
+            # than let the value silently shift.
+            raise RuntimeError(f"invalid_broker_{label}")
+        return parsed
+
     async def _handle_timeout_or_disconnect(
         self, engine: Engine, order_id: UUID, client_order_id: str
     ) -> None:
@@ -294,15 +322,10 @@ class AlpacaPaperExecutor:
                 qty = self._required_decimal(act, "qty", "fill_quantity")
                 price = self._required_decimal(act, "price", "fill_price")
 
-                # Fetch transaction_time and fee properly
-                t_time = act.get("transaction_time")
-                if t_time:
-                    try:
-                        filled_at_val = datetime.fromisoformat(t_time.replace("Z", "+00:00"))
-                    except Exception:
-                        filled_at_val = datetime.now(UTC)
-                else:
-                    filled_at_val = datetime.now(UTC)
+                # filled_at is NOT NULL and orders the fill list, so it must come
+                # from the broker. A missing/garbled transaction_time must fail
+                # closed, never be back-dated to "now".
+                filled_at_val = self._required_timestamp(act, "transaction_time", "fill_time")
 
                 fee_val = None
                 # Represent unavailable as None explicitly

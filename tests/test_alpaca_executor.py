@@ -262,9 +262,21 @@ async def test_reconcile_order_partially_filled(db_connection):
         if path.endswith(client_order_id):
             return {"id": "broker-123", "status": "partially_filled", "filled_qty": "4.5"}
         if path == "/account/activities/FILL":
+            # Alpaca FILL activities always carry transaction_time; the executor
+            # fails closed rather than inventing filled_at when it is absent.
             return [
-                {"id": "fill-1", "qty": "2", "price": "100.0"},
-                {"id": "fill-2", "qty": "2.5", "price": "101.0"},
+                {
+                    "id": "fill-1",
+                    "qty": "2",
+                    "price": "100.0",
+                    "transaction_time": "2026-10-04T12:00:00Z",
+                },
+                {
+                    "id": "fill-2",
+                    "qty": "2.5",
+                    "price": "101.0",
+                    "transaction_time": "2026-10-04T12:00:05Z",
+                },
             ]
         return None
 

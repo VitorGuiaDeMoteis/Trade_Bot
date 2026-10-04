@@ -3295,3 +3295,58 @@ register the notional-BUY `quantity=0` symptom against `a05d136` in
 `./.venv/Scripts/python.exe -m pytest tests/test_paper_runtime_parity.py -q`.
 Both are read-only. If that cycle compresses twice before finishing, record and
 stop again rather than landing a partial edit.
+
+RESOLVED THIS CYCLE: that first-in-line task landed as `395777e` ("fix(parity):
+register the notional-BUY quantity=0 symptom"), which is already in HEAD. The
+CURRENT BACKLOG has no verified-`OPEN` item, so this cycle derived its task from
+fresh evidence instead.
+
+## 2026-10-04 — fill timestamp fabrication (executor fail-closed family)
+
+- TASK. `services/alpaca_paper/executor.py:297-305` parsed a fill's
+  `transaction_time` and, on a missing value OR an unparseable one, silently
+  substituted `datetime.now(UTC)`. `broker_fills.filled_at` is `nullable=False`
+  (`services/api/models.py:273`) and is the sort key the fill list and the
+  fill-window analytics read (`services/api/broker_routes.py:202`). So the
+  fallback did not merely lose information: it asserted a fill happened NOW,
+  which is exactly the class of defect `_required_decimal` was introduced to
+  stop. This closes the timestamp half of the executor fail-closed family; the
+  numeric half was already closed.
+- FIX. New `AlpacaPaperExecutor._required_timestamp` (mirrors `_required_decimal`,
+  raises `RuntimeError("invalid_broker_fill_time")`) replaces the inline
+  try/except at the call site. Rejects missing key, explicit `None`, empty
+  string, non-string, unparseable text, and NAIVE datetimes (a naive value bound
+  for a `timestamptz` column is read in the SERVER's zone, so accepting it would
+  reintroduce a silent shift by another route). Accepts `...Z` and explicit
+  offsets. Per `AGENT_LESSONS.md`, `None` must be rejected explicitly: a
+  truthiness guard (`if t_time:`) treats present-but-None exactly as absent, which
+  is how the `dict.get(key, 0)` trap worked.
+- A worker-level `RuntimeError` here is DEGRADED-and-retried via `_enter_degraded`
+  (`AGENT_LESSONS.md:466-468`); it does not crash the worker or the runtime.
+- TESTS. 12 new cases in `tests/test_executor_broker_numeric_fail_closed.py`
+  (reusing its existing stub engine/adapter), including the over-rejection guard
+  `test_reconcile_order_still_accepts_a_good_fill_time` and the no-partial-write
+  guard `test_reconcile_order_raises_when_fill_time_missing`.
+- FIXTURE CORRECTED, NOT WEAKENED. `tests/test_alpaca_executor.py:264` stubbed
+  Alpaca FILL activities WITHOUT `transaction_time` and only passed because of
+  the bug under repair. Real FILL activities always carry it, so the fixture now
+  does. This was a false-pass, not a regression: the old assertion proved nothing
+  about `filled_at` because the value was invented.
+- VALIDATION. `./.venv/Scripts/python.exe -m pytest` over the 5 executor/worker
+  callers plus the parity tests: `1 failed, 105 passed`. The one failure is
+  `tests/test_alpaca_executor.py::test_duplicate_intent_one_post`, PRE-EXISTING
+  and unrelated: it fails on `invalid_broker_filled_qty` from the earlier numeric
+  work, and it was reproduced on a pristine tree this cycle by stashing only
+  these two files (`1 failed, 2 passed`, same test). It is a genuine candidate for
+  a future cycle — its stub order payload has no `filled_qty` and the executor
+  now fails closed on it — but fixing it is out of scope here.
+- No broker state, runtime database, or credential was touched. Nothing pushed.
+
+FIRST-IN-LINE TASK (for the next cycle): `tests/test_alpaca_executor.py::
+test_duplicate_intent_one_post` is a known-red test caused by the numeric
+fail-closed work. Decide whether its stub payload (no `filled_qty`) is the thing
+to correct, the same way the `transaction_time` fixture was corrected this
+cycle. Confirm first with `git stash`-and-run that it is red on a pristine tree;
+this cycle verified it is. Read the test's intent before changing it: it asserts
+idempotency (one POST on a duplicate intent), so any fix must preserve that
+assertion.

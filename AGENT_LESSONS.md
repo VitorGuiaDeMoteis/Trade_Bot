@@ -2,6 +2,45 @@
 
 Durable engineering memory for autonomous development.
 
+## A fallback timestamp is a falsified fact, and a test fixture can hide it
+
+`executor.py` read a fill's `transaction_time` from the broker and, when the key
+was missing or the string unparseable, quietly stored `datetime.now(UTC)` in
+`broker_fills.filled_at`. It was defensible-looking code — the column is
+`nullable=False`, so *something* had to go in it — and that is exactly the trap.
+
+`filled_at` is not a convenience column. It is what the fill list sorts by and
+what the fill-window analytics filter on. `now()` does not degrade gracefully
+here; it *asserts the fill occurred at the moment we reconciled it*, so an
+unsourceable event becomes a confidently wrong one. A missing `NOW()` reads as
+omission, a missing `filled_at` reads as truth. Never let a fallback invent a
+value that downstream code will treat as observed fact.
+
+Three rules that generalize:
+
+- Check `nullable=False` before reaching for a default. "The column demands a
+  value" is an argument for failing closed, not for inventing one.
+- Ask what a wrong value MEANS to the reader of the data, not just whether it
+  parses. `dict.get(key, 0)` and `except: now()` fail in the same way.
+- A truthiness guard hides the dangerous case. `if t_time:` treats a
+  present-but-`None` key exactly as a missing one, so the rejection must test
+  `isinstance(raw, str)` explicitly. Reject `None` and empty strings in their
+  own tests; do not assume the missing-key test covers them.
+
+A naive datetime is the same bug wearing a disguise: bound for a `timestamptz`
+column it is read in the *server's* zone and silently shifts. Refuse it.
+
+Corollary about the tests: a stub fixture missing the field is a false pass, not
+a harmless simplification. `tests/test_alpaca_executor.py` stubbed FILL
+activities with no `transaction_time` and passed *because of* the bug — its
+assertion proved nothing about `filled_at`, since the value was invented. When
+fail-closed hardening turns a test red, read the stub against the real broker
+payload before touching production code: if the broker always sends the field,
+the fixture is the wrong thing. Distinguish that from a real regression by
+stashing only your own files and re-running — a failure that reproduces on a
+pristine tree is pre-existing, and reporting it as your regression wastes the
+next cycle's budget.
+
 ## A "value 0" order quantity is notional-BUY by design, not a corrupt record
 
 `paper-latest.json` shows a FILLED BUY with `latest_orders[*].quantity="0"`
