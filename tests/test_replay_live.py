@@ -177,16 +177,28 @@ assert not any(n.startswith(('services.alpaca_paper', 'services.market_data.alpa
 print('offline without broker imports')
 """
     import os
+    import sys
     from pathlib import Path
 
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(("ALPACA", "POSTGRES", "EXECUTION_MODE"))
-    }
+    # Build a minimal portable env: scrub DB/network/broker configs while
+    # preserving only the OS-essential execution variables needed to start a
+    # subprocess (SystemRoot/ComSpec on Windows, PATH everywhere). A completely
+    # empty env fails on Windows because the process cannot locate required
+    # system DLLs.
+    essential = (
+        "PATH",
+        "SYSTEMROOT",
+        "COMSPEC",
+        "PATHEXT",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "WINDIR",
+    )
+    env = {k: v for k, v in os.environ.items() if k in essential}
     env["PYTHONPATH"] = str(Path.cwd())
     result = subprocess.run(
-        [str(Path(".venv/bin/python").absolute()), "-c", code],
+        [sys.executable, "-c", code],
         cwd=tmp_path,
         env=env,
         capture_output=True,

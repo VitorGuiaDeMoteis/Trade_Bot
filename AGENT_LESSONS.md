@@ -2433,3 +2433,13 @@ NOT safe to auto-delete
   rather than modifying production code. This preserves strong coverage of the remaining
   N-1 fields. The production-side fix (exposing the source-of-truth timestamp instead
   of wall-clock now) is deferred because it crosses runtime / PAPER_REVIEW boundaries.
+|- When spawning subprocesses in tests, never hardcode a venv path like
+  `.venv/bin/python` — it is Unix-only and raises FileNotFoundError on Windows.
+  Use `sys.executable` (the host interpreter), which is platform-agnostic and is
+  already the pattern used in `test_backtest_database.py`,
+  `test_observer_isolation.py`, `test_observer_real.py`.
+|- When building a minimal env for subprocess isolation, start from an explicit
+  allowlist rather than inheriting `os.environ` and excluding sensitive keys. A
+  completely empty env fails on Windows (no `SystemRoot`/`ComSpec`/PATH to locate
+  system DLLs); preserve only OS-essential vars (`PATH`, `SYSTEMROOT`, `COMSPEC`,
+  `PATHEXT`, `PROGRAMDATA`, `PROGRAMFILES`, `WINDIR`) plus `PYTHONPATH`.
