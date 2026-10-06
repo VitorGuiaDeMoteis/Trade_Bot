@@ -8,7 +8,11 @@ from services.observer.provider import Identity, ModelProvider
 
 
 class OllamaProvider(ModelProvider):
-    def __init__(self, model: str = "qwen2.5-coder:7b", base_url: str = "http://127.0.0.1:11434") -> None:
+    def __init__(
+        self,
+        model: str = "qwen2.5-coder:7b",
+        base_url: str = "http://127.0.0.1:11434",
+    ) -> None:
         self.identity = Identity("ollama", model, "latest")
         self.base_url = base_url
         self.client = httpx.AsyncClient(timeout=600.0)
@@ -45,7 +49,31 @@ class OllamaProvider(ModelProvider):
             "model": self.identity.model,
             "prompt": content,
             "stream": False,
-            "format": {"type": "object", "properties": {"schema_version": {"type": "string", "enum": ["1.0", "1.1"]}, "regime": {"type": "object", "properties": {"label": {"type": "string", "enum": ["TRENDING", "RANGING", "VOLATILE", "UNCERTAIN"]}, "confidence": {"type": "number"}, "evidence": {"type": "array", "items": {"type": "string"}}}, "required": ["label", "confidence", "evidence"]}, "bias": {"type": "string", "enum": ["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"]}, "risk_flags": {"type": "array", "items": {"type": "string"}}, "observations": {"type": "array", "items": {"type": "string"}}}, "required": ["schema_version", "regime", "bias", "risk_flags", "observations"]},
+            "format": {
+                "type": "object",
+                "properties": {
+                    "schema_version": {"type": "string", "enum": ["1.0", "1.1"]},
+                    "regime": {
+                        "type": "object",
+                        "properties": {
+                            "label": {
+                                "type": "string",
+                                "enum": ["TRENDING", "RANGING", "VOLATILE", "UNCERTAIN"],
+                            },
+                            "confidence": {"type": "number"},
+                            "evidence": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["label", "confidence", "evidence"],
+                    },
+                    "bias": {
+                        "type": "string",
+                        "enum": ["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"],
+                    },
+                    "risk_flags": {"type": "array", "items": {"type": "string"}},
+                    "observations": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["schema_version", "regime", "bias", "risk_flags", "observations"],
+            },
             "options": {
                 "temperature": 0.0
             }
@@ -77,7 +105,9 @@ class OllamaProvider(ModelProvider):
                 mapped_risks = []
                 for r in risk_flags_parsed[:5]:
                     if isinstance(r, str):
-                        mapped_risks.append({"code": "LOW_LIQUIDITY", "severity": "MEDIUM", "message": r[:100]})
+                        mapped_risks.append(
+                            {"code": "LOW_LIQUIDITY", "severity": "MEDIUM", "message": r[:100]}
+                        )
                     elif isinstance(r, dict):
                         mapped_risks.append({
                             "code": r.get("code", "LOW_LIQUIDITY"),
@@ -88,16 +118,33 @@ class OllamaProvider(ModelProvider):
                 mapped = {
                     "schema_version": "1.1",
                     "regime": {
-                        "label": parsed.get("regime", {}).get("label", "UNCERTAIN") if isinstance(parsed.get("regime"), dict) else "UNCERTAIN",
-                        "confidence": float(parsed.get("regime", {}).get("confidence", 0.5)) if isinstance(parsed.get("regime"), dict) else 0.5,
-                        "evidence": [str(e)[:230] for e in parsed.get("regime", {}).get("evidence", [])[:5]] if isinstance(parsed.get("regime"), dict) else []
+                        "label": (
+                            parsed.get("regime", {}).get("label", "UNCERTAIN")
+                            if isinstance(parsed.get("regime"), dict)
+                            else "UNCERTAIN"
+                        ),
+                        "confidence": (
+                            float(parsed.get("regime", {}).get("confidence", 0.5))
+                            if isinstance(parsed.get("regime"), dict)
+                            else 0.5
+                        ),
+                        "evidence": [
+                            str(e)[:230]
+                            for e in parsed.get("regime", {}).get("evidence", [])[:5]
+                        ] if isinstance(parsed.get("regime"), dict) else [],
                     },
-                    "bias": parsed.get("bias", "UNCERTAIN") if parsed.get("bias") in ["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"] else "UNCERTAIN",
+                    "bias": (
+                        parsed.get("bias", "UNCERTAIN")
+                        if parsed.get("bias") in ["BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"]
+                        else "UNCERTAIN"
+                    ),
                     "risk_flags": mapped_risks,
                     "observations": [str(o)[:230] for o in parsed.get("observations", [])[:5]]
                 }
                 if isinstance(mapped["observations"], dict):
-                    mapped["observations"] = [f"{k}: {v}" for k, v in mapped["observations"].items()][:5]
+                    mapped["observations"] = [
+                        f"{k}: {v}" for k, v in mapped["observations"].items()
+                    ][:5]
                 res_text = json.dumps(mapped)
                 self._cache[cache_key] = res_text
                 with open(self.cache_file, "w") as f:

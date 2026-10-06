@@ -30,7 +30,9 @@ def mission_control(request: Request) -> Response:
     elif mode == "night_lab":
         page = PAGE.read_text(encoding="utf-8").replace("<body>", '<body data-mode="night_lab">')
         page = page.replace("ALPACA PAPER — DINHEIRO VIRTUAL", "NIGHT LAB — SIMULAÇÃO EM LOTE")
-        page = page.replace("M7 / BROKER OBSERVABILITY / LOCAL DESK", "M8 / NIGHT LAB EXPERIMENT / OLLAMA AI")
+        page = page.replace(
+            "M7 / BROKER OBSERVABILITY / LOCAL DESK", "M8 / NIGHT LAB EXPERIMENT / OLLAMA AI"
+        )
         page = page.replace("M7 / BROKER OBSERVABILITY", "M8 / NIGHT LAB EXPERIMENT")
         return HTMLResponse(page, headers=headers)
     return FileResponse(PAGE, media_type="text/html", headers=headers)

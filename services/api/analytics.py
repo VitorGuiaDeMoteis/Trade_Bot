@@ -32,7 +32,11 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     ).scalar() or start_time
     
     orders = conn.execute(
-        text("SELECT order_id, symbol, side, quantity, filled_quantity, status, requested_at FROM paper_orders WHERE run_id = :run_id ORDER BY requested_at"),
+        text(
+            "SELECT order_id, symbol, side, quantity, filled_quantity, "
+            "status, requested_at FROM paper_orders WHERE run_id = :run_id "
+            "ORDER BY requested_at"
+        ),
         {"run_id": run_id_str}
     ).mappings().fetchall()
     
@@ -61,7 +65,8 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
 
     fills = conn.execute(
         text('''
-            SELECT f.broker_fill_id, f.quantity, f.price, f.fee, f.filled_at, p.symbol, p.side, r.decided_at, r.decision_id
+            SELECT f.broker_fill_id, f.quantity, f.price, f.fee, f.filled_at,
+                   p.symbol, p.side, r.decided_at, r.decision_id
             FROM broker_fills f
             JOIN broker_orders o ON f.order_id = o.order_id
             JOIN paper_orders p ON o.order_id = p.order_id
@@ -92,7 +97,9 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
         fee = Decimal(str(f["fee"])) if f["fee"] is not None else Decimal("0")
         
         if f["side"] == "BUY":
-            fifo_buys[sym].append({"qty": qty, "price": price, "timestamp": f["filled_at"], "fee": fee})
+            fifo_buys[sym].append(
+                {"qty": qty, "price": price, "timestamp": f["filled_at"], "fee": fee}
+            )
         elif f["side"] == "SELL":
             sell_qty = qty
             while sell_qty > 0 and fifo_buys[sym]:
@@ -100,7 +107,11 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
                 matched_qty = min(sell_qty, buy["qty"])
                 
                 gross_pnl = (price - buy["price"]) * matched_qty
-                chunk_buy_fee = buy["fee"] * (matched_qty / buy["qty"]) if buy["qty"] > 0 else Decimal("0")
+                chunk_buy_fee = (
+                    buy["fee"] * (matched_qty / buy["qty"])
+                    if buy["qty"] > 0
+                    else Decimal("0")
+                )
                 chunk_sell_fee = fee * (matched_qty / qty) if qty > 0 else Decimal("0")
                 net_pnl = gross_pnl - chunk_buy_fee - chunk_sell_fee
                 
@@ -227,11 +238,19 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     return_pct = (equity_delta / initial_cash) * 100 if initial_cash else Decimal("0")
     
     total_trades = total_wins + total_losses
-    win_rate = (Decimal(total_wins) / Decimal(total_trades)) * 100 if total_trades > 0 else Decimal("0")
+    win_rate = (
+        (Decimal(total_wins) / Decimal(total_trades)) * 100
+        if total_trades > 0
+        else Decimal("0")
+    )
     avg_win = gross_wins / Decimal(total_wins) if total_wins > 0 else Decimal("0")
     avg_loss = gross_losses / Decimal(total_losses) if total_losses > 0 else Decimal("0")
     
-    profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else (Decimal("999.99") if gross_wins > 0 else Decimal("0"))
+    profit_factor = (
+        (gross_wins / gross_losses)
+        if gross_losses > 0
+        else (Decimal("999.99") if gross_wins > 0 else Decimal("0"))
+    )
     expectancy = (win_rate/100 * avg_win) - ((1 - win_rate/100) * avg_loss)
     
     signals_data = conn.execute(
@@ -262,7 +281,9 @@ def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any
     errors = []
     for o in orders:
         if o["status"] == "CANCELED" or o["status"] == "REJECTED":
-            errors.append({"order_id": str(o["order_id"]), "symbol": o["symbol"], "status": o["status"]})
+            errors.append(
+                {"order_id": str(o["order_id"]), "symbol": o["symbol"], "status": o["status"]}
+            )
             
     dust = []
     for p in positions:
