@@ -1105,12 +1105,18 @@ Tests: tests/test_worker_reconcile_unknown_open_orders.py (18 pure unit tests).
 - Use the project venv interpreter for every pytest/ruff/mypy run:
   C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot-unified/.venv/Scripts/python.exe
   (run it with workdir set to the TradingBot-agent repo)
-- Postgres is not running in the agent environment, so DB-backed tests fail at
-  fixture setup: port 55432 is REFUSED (`ConnectionRefusedError`, not a timeout --
-  the process simply is not up on this host). These are environmental, not test
-  defects. This specifically blocks DB-backed validation of the Numeric-scale
-  assertion fix at `tests/test_paper_audit.py:179`.
-  tests/test_replay_live.py also fails on Windows for lack of ComSpec/SystemRoot.
+Postgres can be started from the agent host when Docker Desktop is not yet
+  running: launch `Docker Desktop.exe --start-report` as a background process,
+  wait for the daemon, then run `docker compose --profile test up -d
+  postgres_test` (pass dummy `POSTGRES_*` env vars only for compose
+  interpolation — the `postgres_test` service uses `test_only` /
+  `trading_bot_test` / `127.0.0.1:55432` from `conftest.py`-approved
+  fixtures). Then run `RUN_DB_TESTS=1 .venv/Scripts/python.exe -m pytest
+  <targeted test>`. `tests/conftest.py` hard-blocks any connection to the
+  runtime database, so this path only ever touches the isolated test DB
+  (tmpfs, `test_only` user). Note: `docker compose --profile test up -d
+  postgres_test` with dummy `POSTGRES_*` interpolation only starts the test
+  service, not the runtime service — confirm with `docker ps` before running.
 - Check whether a failure happens at SETUP before treating it as a regression.
 
 ## Fail-closed is per-entity; the blast radius decides whether it escalates

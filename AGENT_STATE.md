@@ -164,10 +164,13 @@ Each line is pinned by an executable check; a violation now fails a test.
     `services/api/models.py:212`; contract field `quantity: Decimal`
     (`packages/contracts/paper.py:25`). This is a SCALE-REPRESENTATION
     mismatch, NOT the `last_reconciled_at` wall-clock issue the previous cycle
-    recorded — see the falsified-premise note below. WIP (2026-10-05): the
-    numeric `Decimal(o["quantity"]) == 0` fix is applied in the tree but kept
-    UNCOMMITTED -- DB-backed validation is environment-blocked (PostgreSQL port
-    55432 refused); see AGENT_MENTOR_FEEDBACK.md.
+    recorded — see the falsified-premise note below. RESOLVED (2026-10-05, per
+    AGENT_MENTOR_FEEDBACK.md): the numeric `Decimal(o["quantity"]) == 0` fix is
+    committed as `1111754` and validated end-to-end against the isolated
+    PostgreSQL test database (`trading_bot_test` @ `127.0.0.1:55432`), started
+    from the agent host via `docker compose --profile test up -d postgres_test`
+    with `RUN_DB_TESTS=1`. `tests/conftest.py` hard-blocks any connection to the
+    runtime database. Postgres-procedure lesson updated in AGENT_LESSONS.md.
   - `test_pause_waits_for_atomic_batch_then_blocks_next_batch`
     (`tests/test_paper_audit.py:148`) — `assert state(store) == before` differs
     ONLY in `last_reconciled_at` (e.g. `14:50:14.597670Z` vs `14:50:14.516178Z`).
