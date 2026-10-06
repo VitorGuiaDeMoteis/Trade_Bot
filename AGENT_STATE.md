@@ -155,8 +155,12 @@ Each line is pinned by an executable check; a violation now fails a test.
   F401-clean. `ruff check services/api/analytics.py services/observer/features.py
   --select "B023,B017,B904,E722,F821,F811,F841,B007,F401"` → "All checks passed!".
   NOTE: the 3 residual `I001` import-sorting findings in `analytics.py`/`models.py`/
-  `features.py` are COSMETIC (§13) and intentionally NOT swept here — they stay in
+  `features.py` are COSMETIC (§13 line 2449) and intentionally NOT swept here — they stay in
   the separate formatting bucket.
+- `correctness-class lint debt in `scripts/` + tests/ (B023 closure-capture; B007
+  loop-var; E722 bare-except; F841 dead-assignment; F401 unused import) — CLOSED this
+  cycle. ruff §13 8-class gate = 0; F821 = 0; py_compile OK; 14 files; migration
+  `import sqlalchemy as sa` F401 §13-probe-verified safe (no `sqlalchemy`/`sa.` ref).
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
@@ -4169,3 +4173,57 @@ which is the point of the test.
   either (a) run the §13 formatting sweep for I001/E501, or (b) await a READY task
   from the coordinator, or (c) pick a fresh PAPER_REVIEW-derived task. No work is
   in progress; tree returns to clean.
+
+## Cycle 2026-10-06 (lint: retire B023/B007/E722/F841/F401 correctness-class debt in scripts/ + tests/)
+
+- Gate: worked tree CLEAN at cycle start. Per §13 this cycle retires the correctness
+  classes in the §13 8-class gate set (B023,B017,B904,E722,F821,F811,F841,B007,F401)
+  across `scripts/`, `tests/`, and the m7 CK-paper-order migration — `scripts/` was
+  never F401-clean; the prior cycle closed `services/`. PAPER_REVIEW gate carried
+  over from the 2026-10-06 F401 cycle: runtime ~670 commits behind HEAD; the 4 known
+  fixes are explained-by-runtime-lag; `1 of 130 anomalies` resolved by runtime lag —
+  no new paper anomaly. The WIP is deletion-only (F401/F841) or behavior-preserving
+  refactors (B023 default-arg binding, B007 `_` prefix, E722 `except Exception`),
+  touches zero runtime arguments and cannot change runtime behavior, so the gate's
+  observation remains valid. No broker / runtime DB read or mutated; no push.
+- Queue check: TRADEBOT_TASK_QUEUE.md — TASK-TB-001 and TASK-TB-002 are both RESOLVED;
+  no READY task (queue note line 71-72 permits choosing a safe high-value task when
+  the queue is empty). AGENT_MENTOR_FEEDBACK.md (2026-10-06) confirms no READY tasks
+  and that the `last_reconciled_at` production fix at `services/api/paper_queries.py:58`
+  stays DEFERRED (requires coordinator sign-off).
+- Task: scan `scripts/evaluation_lab.py`, `scripts/model_bench.py`, `scripts/m87_*`,
+  `scripts/night_lab.py`, `scripts/analytics.py`, `scripts/download_dataset.py`,
+  `scripts/fix_dataset2.py`, the 4 `tests/test_*.py`, and
+  `infrastructure/docker/migrations/versions/863267844740_fix_ck_paper_orders_state_m7.py`
+  for §13 correctness findings; retire every one. B023 (loop-var captured in nested
+  closure) -> bind as default arg; B007 (unused `loop` var in `enumerate`) -> `_`
+  prefix; E722 (bare `except`) -> `except Exception`; F841 (assigned-never-used) ->
+  delete; F401 (unused import, incl. the migration's `import sqlalchemy as sa`) -> delete.
+- Changes (no runtime behavior change; 14 files, +14/-63):
+  - `scripts/analytics.py`, `scripts/download_dataset.py`, `scripts/evaluation_lab.py`,
+    `scripts/fix_dataset2.py`, `scripts/m87_economic_ml.py`,
+    `scripts/m87_llm_challenger.py`, `scripts/m87_ml_tournament.py`,
+    `scripts/model_bench.py`, `scripts/night_lab.py`, `tests/test_anti_leakage.py`,
+    `tests/test_broker_routes.py`, `tests/test_feature_engine.py`,
+    `tests/test_fractional_db.py`: retired B023/B007/E722/F841/F401.
+  - `infrastructure/.../863267844740_fix_ck_paper_orders_state_m7.py`: removed unused
+    `import sqlalchemy as sa` (§13-probe-verified: `sqlalchemy`/`sa.` ref count = 0;
+    F821 = 0 -> no usage broke).
+- Validation:
+  - `ruff check <14 files> --select "B023,B017,B904,E722,F821,F811,F841,B007,F401"
+    --output-format=concise` -> "All checks passed!" (0 correctness findings).
+  - `ruff check <14 files>` (default) -> 92 findings, ALL pre-existing formatting
+    (E501x54, I001x18, E701x10, E402x1) + modernization (UP017x5, UP007x3, UP035x1);
+    F821 = 0 confirms no reference broke; correctness classes = 0 -> no regressions.
+  - `uv run python -m py_compile <14 files>` -> PYCOMP_OK (no syntax errors).
+  - No secrets / broker / runtime DB read or mutated; no push.
+- Committed locally (no push): `b95100c` ("fix(scripts,tests,migration): retire
+  B023/B007/E722/F841/F401 correctness-class lint debt").
+- NEXT CANDIDATE TASK: TRADEBOT_TASK_QUEUE.md remains empty (all RESOLVED). Safe
+  high-value follow-up is the §13 formatting sweep (I001 import-sorting: 3 findings in
+  `services/` analytics.py/models.py/features.py; plus E501/E701 in `scripts/`) as a
+  COSMETIC, formatting-only commit (§13 line 2449-2450: never bundle formatting with
+  correctness fixes). The `last_reconciled_at` production fix at
+  `services/api/paper_queries.py:58` stays DEFERRED (coordinator sign-off).
+  Alternatively, await a READY task from the coordinator. No work is in progress;
+  tree returns to clean.

@@ -794,6 +794,15 @@ Cheap correct method: run ruff on the working-tree file once with
 `--output-format=concise` and read the line numbers of every finding. If they all
 fall in lines that predate the diff, the WIP added none. One command, no copy.
 
+## The regression gate is correctness-class count = 0, not raw ruff count = 0
+ruff's default scan returns formatting debt (E501/I001/E701/E402) and modernization
+(UP0xx) that pre-exist in the tree and are unrelated to a change — a non-zero raw
+figure does not imply a regression. The regression gate for a lint-retirement WIP is
+the §13 8-class select set (B023,B017,B904,E722,F821,F811,F841,B007,F401) returning 0,
+F821 (undefined-name) staying 0 (proves no reference broke from a deletion), and
+`py_compile` OK. This cycle's 14-file WIP: the default scan still shows 92 findings, all
+formatting/modernization; the 8-class gate = 0 and F821 = 0 → no regressions.
+
 ## A reconcile timestamp is not a submit timestamp
 
 `get_broker_portfolio` mapped `PaperOrder.requested_at = o["last_reconciled_at"]`.
