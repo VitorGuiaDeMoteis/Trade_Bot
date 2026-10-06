@@ -202,7 +202,11 @@ Each line is pinned by an executable check; a violation now fails a test.
 - Otherwise none currently registered. A clean cycle must FIRST run the
   mandatory PAPER_REVIEW gate, then derive its task from that observation plus
   `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` output rather than
-  from a carried-over guess.
+  from a carried-over guess. If PAPER_REVIEW + parity yield no new findings,
+  a clean cycle may next scan production code for correctness-class lint debt
+  (E722, B904, F811, F401, B023, B007) and retire those before touching E501
+  formatting debt. The lint-derived task does NOT exempt it from the
+  PAPER_REVIEW gate — that gate ran first and reported `observation: ok`.
 
 ## Cycle 2026-10-04 (blind DB-constraint assertion -> pinned to the real invariant)
 
@@ -4046,3 +4050,47 @@ which is the point of the test.
   `services/api/paper_queries.py:58`) remains deferred — it crosses runtime /
   PAPER_REVIEW boundaries. Next clean cycle should either address that deferred
   fix or derive a task from fresh paper observations + parity output.
+
+## Cycle 2026-10-06 (lint: correctness-class debt in services/observer/ollama_provider.py)
+
+- Gate: worked tree clean at cycle start (`git status` → nothing to commit),
+  branch `agent/autonomous-dev`. Re-ran PAPER_REVIEW:
+  `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity` → runtime 66
+  commits behind HEAD; all 4 known fixes `explained-by-runtime-lag`; observation
+  ok; no new paper anomaly. NO broker/runtime state touched.
+- Task: correctness-class lint debt scan of production code. TRADEBOT_TASK_QUEUE.md
+  has no READY tasks (TB-001/TB-002 both committed). Per AGENT_STATE.md §202-205,
+  when PAPER_REVIEW + parity yield no new findings the cycle retires correctness-class
+  lint debt in production code. Ran `ruff check . --output-format=concise --select
+  "B023,B017,B904,E722,F821,F811,F841,B007"` → 1 correctness hit in production:
+  `services/observer/ollama_provider.py` (no B023/B904/F841 in services/scripts).
+- Changes (test-equivalent proxy; OllamaProvider has zero test coverage):
+  - F401: removed unused `from datetime import datetime` import (line 16).
+  - E401/I001: replaced `import json, os` inline with sorted module-level
+    imports; promoted `import os` to module scope.
+  - F811: removed redundant inline `import json` that shadowed the
+    module-level binding inside `generate()`.
+  - UP015: removed redundant `"r"` mode from `open(self.cache_file)`.
+  - E722: bare `except:` (swallowed `KeyboardInterrupt`/`SystemExit`) →
+    `except Exception:`.
+  - B904: `raise TimeoutError("ollama_timeout")` →
+    `raise TimeoutError("ollama_timeout") from err` (added `as err` to the
+    `except` clause); `raise RuntimeError(f"ollama_error: {e}")` →
+    `raise RuntimeError(f"ollama_error: {e}") from e`.
+  - I001: added PEP 8 two blank lines before class definition.
+  - 8 E501 line-too-long findings remain (1 function signature + 7 inline
+    JSON schema construction lines) — formatting-only, swept per AGENT_LESSONS
+    §13. No runtime behavior changed.
+- Validation:
+  - `ruff check services/observer/ollama_provider.py` → 8 E501 only (all
+    correctness-class findings resolved: 18 → 8, E722/B904/F811/F401 removed).
+  - `ruff check services/ --output-format=concise | grep -v E501` → no findings
+    in `ollama_provider.py`; remaining non-E501 debt (I001/F401) is in OTHER
+    files (`analytics.py`, `models.py`, `features.py`) — not this task's scope.
+  - `pytest tests/test_observer_real.py -q` → 42 passed (observer infra green).
+- Committed locally (no push): `f59a613` ("fix(observer): clear correctness-class lint debt
+  in ollama_provider.py"). Working tree clean after commit.
+- NEXT CANDIDATE TASK: the deferred production-side fix for `last_reconciled_at`
+  at `services/api/paper_queries.py:58` (expose run-row timestamp instead of
+  `datetime.now(UTC)`); OR derive a new task from fresh PAPER_REVIEW + parity
+  output when the next clean cycle runs.

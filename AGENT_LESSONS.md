@@ -2443,3 +2443,21 @@ NOT safe to auto-delete
   completely empty env fails on Windows (no `SystemRoot`/`ComSpec`/PATH to locate
   system DLLs); preserve only OS-essential vars (`PATH`, `SYSTEMROOT`, `COMSPEC`,
   `PATHEXT`, `PROGRAMDATA`, `PROGRAMFILES`, `WINDIR`) plus `PYTHONPATH`.
+
+## Correctness-class lint scan as a safe task when PAPER_REVIEW is clean
+
+When TRADEBOT_TASK_QUEUE.md has no READY tasks AND the PAPER_REVIEW gate reports
+no new findings, a clean cycle can retire correctness-class lint debt in
+production code. The scan:
+```bash
+.venv/Scripts/python.exe -m ruff check . --output-format=concise \
+  --select "B023,B017,B904,E722,F821,F811,F841,B007"
+```
+catches silent-failure modes in production code (bare `except:` swallowing
+`KeyboardInterrupt`, `raise`-without-`from` losing exception chains, shadowed
+or unused imports). These fixes change no runtime behavior, so they are safe
+even when the target file has zero test coverage (e.g. `ollama_provider.py`).
+RULE: never bundle E501 formatting fixes with correctness fixes in the same
+commit — formatting debt (E501, I001) is swept per §13, correctness debt is
+committed. After fixing, re-run the same targeted scan to confirm the class is
+cleared for that file.
