@@ -15,6 +15,7 @@ for i, c in enumerate(raw["candles"]):
 
 # re-encode properly with hash update
 from packages.domain.backtest import digest
+
 raw.pop("manifest_hash", None)
 raw["manifest_hash"] = digest(raw)
 path.write_text(json.dumps(raw, indent=2))

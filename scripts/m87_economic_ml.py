@@ -1,6 +1,7 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
 
@@ -37,12 +38,14 @@ def run_trading_sim(df, preds, probs, conf_thresh, horizon_bars):
             trade_pnl = ret - ROUND_TRIP_COST
             pnl.append(trade_pnl)
             trades += 1
-            if trade_pnl > 0: wins += 1
+            if trade_pnl > 0:
+                wins += 1
         elif pred == 2 and prob[2] >= conf_thresh:
             trade_pnl = -ret - ROUND_TRIP_COST
             pnl.append(trade_pnl)
             trades += 1
-            if trade_pnl > 0: wins += 1
+            if trade_pnl > 0:
+                wins += 1
         else:
             pnl.append(0)
             
@@ -117,10 +120,14 @@ def main():
             
             # Classes: 1 (BULLISH), 2 (BEARISH), 0 (NEUTRAL)
             def classify(ret):
-                if pd.isna(ret): return np.nan
-                if ret > THRESH: return 1
-                elif ret < -THRESH: return 2
-                else: return 0
+                if pd.isna(ret):
+                    return np.nan
+                if ret > THRESH:
+                    return 1
+                elif ret < -THRESH:
+                    return 2
+                else:
+                    return 0
                 
             g['target_class'] = g['target_return_real'].apply(classify)
             g = g.dropna().reset_index(drop=True)

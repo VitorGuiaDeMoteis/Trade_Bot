@@ -1,13 +1,15 @@
 import asyncio
 import json
-import pandas as pd
 from pathlib import Path
 
+import pandas as pd
+
+from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
 from services.backtesting.artifacts import load_manifest
+from services.observer.features import calculate_features
 from services.observer.ollama_provider import OllamaProvider
 from services.observer.prompt import PROMPT
-from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
-from services.observer.features import calculate_features
+
 
 async def main():
     dataset_full, base_config = load_manifest(Path("services/replay/data/large-history.json"))

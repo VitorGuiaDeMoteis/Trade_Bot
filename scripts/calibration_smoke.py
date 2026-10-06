@@ -1,14 +1,16 @@
 import asyncio
-import time
 import json
-import numpy as np
-from pathlib import Path
+import time
 from collections import Counter, defaultdict
+from pathlib import Path
+
+import numpy as np
 
 from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
 from services.backtesting.artifacts import load_manifest
 from services.observer.ollama_provider import OllamaProvider
 from services.observer.prompt import PROMPT
+
 
 async def main():
     print("Loading large-history.json...")

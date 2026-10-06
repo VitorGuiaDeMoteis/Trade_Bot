@@ -1,7 +1,9 @@
 from decimal import Decimal
 from typing import Any
-from sqlalchemy import Connection, text
 from uuid import UUID
+
+from sqlalchemy import Connection, text
+
 
 def get_session_analytics(conn: Connection, run_id: UUID | str) -> dict[str, Any]:
     run_id_str = str(run_id)

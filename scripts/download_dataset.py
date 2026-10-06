@@ -1,13 +1,14 @@
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
 from dataclasses import replace
+from datetime import datetime, timezone
+
 from dotenv import load_dotenv
 
-from services.market_data.alpaca_provider import AlpacaMarketDataProvider
-from packages.domain.backtest import Dataset, manifest, encode
+from packages.domain.backtest import Dataset, encode, manifest
 from packages.domain.paper import PaperConfig
+from services.market_data.alpaca_provider import AlpacaMarketDataProvider
 
 load_dotenv()
 

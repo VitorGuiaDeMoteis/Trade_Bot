@@ -1,11 +1,17 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
-    accuracy_score, balanced_accuracy_score, precision_score, recall_score,
-    confusion_matrix, roc_auc_score, brier_score_loss
+    accuracy_score,
+    balanced_accuracy_score,
+    brier_score_loss,
+    confusion_matrix,
+    precision_score,
+    recall_score,
+    roc_auc_score,
 )
 from sklearn.preprocessing import StandardScaler
 
@@ -185,8 +191,10 @@ def main():
     def ml_filter(row):
         sig = row['base_signal']
         prob = row['ml_prob_bull']
-        if sig == 1 and prob < 0.48: return np.nan
-        if sig == 0 and prob > 0.52: return np.nan
+        if sig == 1 and prob < 0.48:
+            return np.nan
+        if sig == 0 and prob > 0.52:
+            return np.nan
         return sig
     full_val['filter_1'] = full_val.apply(ml_filter, axis=1)
     print(run_simulation(full_val, "Base + Block(Prob < 0.48 / > 0.52)", 'filter_1'))
@@ -195,8 +203,10 @@ def main():
     def ml_agreement(row):
         sig = row['base_signal']
         ml_bull = row['ml_prob_bull'] > 0.5
-        if sig == 1 and ml_bull: return 1
-        if sig == 0 and not ml_bull: return 0
+        if sig == 1 and ml_bull:
+            return 1
+        if sig == 0 and not ml_bull:
+            return 0
         return np.nan
     full_val['filter_2'] = full_val.apply(ml_agreement, axis=1)
     print(run_simulation(full_val, "Base + Strict Agreement", 'filter_2'))

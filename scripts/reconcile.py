@@ -1,9 +1,12 @@
 import asyncio
-from services.api.config import Settings
-from services.alpaca_paper.worker import AlpacaPaperWorker
-from services.alpaca_paper.adapter import AlpacaPaperAdapter
-from services.api.database import create_database_engine
+
 from sqlalchemy import text
+
+from services.alpaca_paper.adapter import AlpacaPaperAdapter
+from services.alpaca_paper.worker import AlpacaPaperWorker
+from services.api.config import Settings
+from services.api.database import create_database_engine
+
 
 async def rec():
     settings = Settings(execution_mode="alpaca_paper")

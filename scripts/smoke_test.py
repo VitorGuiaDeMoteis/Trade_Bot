@@ -1,8 +1,10 @@
-import json
 import asyncio
-from pathlib import Path
+import json
 from collections import Counter
+from pathlib import Path
+
 from scripts.evaluation_lab import run_evaluation
+
 
 async def main() -> None:
     # NOTE: this harness used to "cap" the run by rewriting the tracked module

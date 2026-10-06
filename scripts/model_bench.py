@@ -1,19 +1,21 @@
 import asyncio
 import json
 import time
+from collections import defaultdict
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from collections import defaultdict
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score
 from sklearn.preprocessing import StandardScaler
 
+from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
 from services.backtesting.artifacts import load_manifest
+from services.observer.features import calculate_features
 from services.observer.ollama_provider import OllamaProvider
 from services.observer.prompt import PROMPT
-from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
-from services.observer.features import calculate_features
+
 
 async def main():
     semaphore = asyncio.Semaphore(15)

@@ -4,26 +4,30 @@ import json
 import logging
 import sys
 import uuid
-import uvicorn
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
-from packages.domain.backtest import Dataset
 from packages.contracts.observer import (
-    AIObserverSnapshot, ObserverCandle, ObserverSignal, ObserverPaper, ObserverPosition
+    AIObserverSnapshot,
+    ObserverCandle,
+    ObserverPaper,
+    ObserverPosition,
+    ObserverSignal,
 )
+from packages.domain.backtest import Dataset
+from services.api.mission_control import router as mc_router
 from services.backtesting.artifacts import load_manifest
 from services.backtesting.engine import replay_steps
 from services.observer.engine import evaluate
 from services.observer.ollama_provider import OllamaProvider
-from services.api.mission_control import router as mc_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 

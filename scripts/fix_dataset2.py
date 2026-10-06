@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from packages.domain.backtest import Dataset
 from services.backtesting.artifacts import Candle, CandleResponse
 
@@ -11,6 +12,7 @@ ds = Dataset(candles_obj)
 raw["dataset_hash"] = ds.hash
 
 from packages.domain.backtest import digest
+
 raw.pop("manifest_hash", None)
 raw["manifest_hash"] = digest(raw)
 path.write_text(json.dumps(raw, indent=2))

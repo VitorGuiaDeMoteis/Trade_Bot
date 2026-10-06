@@ -1,11 +1,11 @@
 from sqlalchemy import (
-    ForeignKeyConstraint,
     BigInteger,
     Boolean,
     CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     MetaData,
     Numeric,
     String,

@@ -1,21 +1,23 @@
-import json
-import uuid
 import asyncio
+import csv
 import dataclasses
-from pathlib import Path
-from decimal import Decimal
-import pandas as pd  # type: ignore
-from datetime import datetime
+import json
 import sys
 import time
-import csv
 import typing
+import uuid
+from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 
-from services.replay.runtime import replay_steps  # type: ignore
+import pandas as pd  # type: ignore
+
+from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
 from services.backtesting.artifacts import Dataset, load_manifest  # type: ignore
 from services.observer.engine import evaluate
 from services.observer.ollama_provider import OllamaProvider
-from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
+from services.replay.runtime import replay_steps  # type: ignore
+
 
 async def run_evaluation() -> None:
     eval_id = str(uuid.uuid4())

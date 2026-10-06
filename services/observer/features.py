@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculates technical features strictly based on past data (up to t).

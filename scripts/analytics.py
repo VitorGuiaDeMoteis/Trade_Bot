@@ -1,10 +1,13 @@
 import json
-import urllib.request
 import urllib.error
+import urllib.request
+
 from sqlalchemy import text
+
+from services.api.analytics import get_session_analytics
 from services.api.config import Settings
 from services.api.database import create_database_engine
-from services.api.analytics import get_session_analytics
+
 
 def get_ai_analysis(session_json: str) -> str:
     prompt = f"""

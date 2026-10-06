@@ -1,7 +1,9 @@
 import uvicorn
 from fastapi import FastAPI
+
 from services.api.config import Settings
 from services.api.main import create_app
+
 
 def create_active_paper_app() -> FastAPI:
     settings = Settings(execution_mode="alpaca_paper")
