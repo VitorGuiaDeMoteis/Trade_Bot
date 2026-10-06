@@ -4005,7 +4005,7 @@ which is the point of the test.
 - Validation: `git status` clean at cycle start. Targeted test passes 6/6
   consecutive runs (`pytest ... -q`, exit 0). `ruff check tests/test_paper_audit.py`
   — "All checks passed!".
-- Committed locally (no push): 4101a9c.
+- Committed locally (no push): 4038691.
 - NEXT CANDIDATE TASK: TASK-TB-002 (MEDIUM, READY) in TRADEBOT_TASK_QUEUE.md —
   `test_replay_process_needs_no_env_database_network_or_alpaca_imports` env scrubbing
   (Windows `SystemRoot`/`ComSpec` absent in child env). Verify before starting.
