@@ -303,6 +303,41 @@ Each line is pinned by an executable check; a violation now fails a test.
   Next READY task: TASK-TB-001 (`test_pause_waits_for_atomic_batch...`,
   nondeterministic `last_reconciled_at`).
 
+## Continuation cycle (2026-10-05, RECOVERY MODE -- worktree still DIRTY)
+
+- Same WIP as the prior cycle: `tests/test_paper_audit.py` one-line assertion
+  tightening (`"0"` -> `Decimal(o["quantity"]) == 0`). No new changes were needed;
+  the fix is already correct per AGENT_LESSONS.md ("A Numeric(28,10) column never
+  returns the string you wrote") and AGENT_MENTOR_FEEDBACK.md ("the correct
+  direction").
+- Re-validated: `ruff check tests/test_paper_audit.py` -> "All checks passed!".
+  Re-confirmed env block: DB-backed test still hits `ConnectionTimeout` to
+  `127.0.0.1:55432`; PostgreSQL is not running in the agent env.
+- Decision: PRESERVE the WIP uncommitted per mentor guidance. The change is
+  environment-blocked from end-to-end DB validation, not logically questionable.
+- No broker, runtime, or database state was touched. Worktree remains dirty
+  with one modified file. Next CLEAN cycle: validate against DB when PostgreSQL
+  55432 is available, then commit.
+
+## Re-verification (cycle restart 2026-10-05, RECOVERY MODE -- worktree still DIRTY)
+
+- This cycle is a restart of the same recovery. Re-ran `ruff check
+  tests/test_paper_audit.py` -> "All checks passed!". Performed a direct
+  read-only socket probe of `127.0.0.1:55432` -> `TimeoutError`: port closed,
+  PostgreSQL is not running in the agent env, so the DB-backed test cannot reach
+  its test database.
+- Confirmed via `tests/conftest.py`: the test DB is isolated (`trading_bot_test`,
+  user `test_only` @ `127.0.0.1:55432`) and the suite `pytest.exit`s on any
+  runtime-DB target (`DATABASE_URL`, or non-`test`/`POSTGRES_DB`), so the
+  environment block cannot touch the runtime database by design.
+- Conclusion unchanged and consistent with AGENT_MENTOR_FEEDBACK.md: the one-line
+  assertion tightening is the correct direction (Numeric(28,10) zero serializes
+  as `0E-10`); end-to-end validation is gated solely on PostgreSQL 55432 being
+  available. WIP preserved uncommitted; no broker/runtime/database state touched.
+- Next CLEAN cycle: start only if tree is clean; run the targeted test once 55432
+  is reachable, then commit the test WIP. Highest READY task remains
+  TASK-TB-001 (nondeterministic `last_reconciled_at`).
+
 ## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
 
 - Task: finish/validate/land the inherited WIP, no new task. The WIP was the
