@@ -4265,3 +4265,46 @@ which is the point of the test.
   movement"; never bundle E501 with correctness). The `last_reconciled_at`
   production fix at services/api/paper_queries.py:58 stays DEFERRED
   (coordinator sign-off). No work in progress; tree is clean.
+
+## Cycle 2026-10-06 (E501 production debt retirement)
+
+- Task: Retire the 18 E501 (line-too-long) violations in production code
+  (services/ + packages/), the safe high-value follow-up to the §13 formatting sweep.
+- Scope: 5 files, 18 errors:
+  - packages/contracts/health.py (1)
+  - services/api/analytics.py (7)
+  - services/api/mission_control.py (1)
+  - services/api/paper_integrity.py (1)
+  - services/observer/ollama_provider.py (8)
+- Method: Surgical `patch` tool — reflow only, NO argument movement, NO logic
+  changes. `ruff format` was rejected after it caused drive-by reformatting
+  (docstring style changes, trailing-whitespace removal, argument wrapping beyond
+  E501 lines). See "ruff format drive-by" lesson in AGENT_LESSONS.md.
+- Key techniques used:
+  - `text(...)` SQL string → implicit string concatenation across lines.
+  - `dict.append({...})` / `dict["key"] = [...]` → multi-line dict/list formatting.
+  - Conditional expressions (`x if cond else y`) → parenthesized multi-line form.
+  - Dense JSON-schema dict (685-char line) → full multi-line expansion with
+    nested dicts broken out. New long lines created by the expansion
+    (e.g. enum value lists) were further wrapped.
+  - SQL column list inside triple-quoted string → line break within the string
+    literal (safe, same string value at runtime).
+- Validation:
+  - `ruff check --select E501 services/ packages/` → "All checks passed!"
+  - `ruff check --select E722,B904,F811,F401,B023,B007 services/ packages/ scripts/` → "All checks passed!"
+  - `ruff check --select I001 services/ packages/ scripts/` → "All checks passed!"
+  - `py_compile` on all 5 files → OK
+  - PAPER_REVIEW gate: observation ok, all symptoms explained-by-runtime-lag
+  - `git diff` reviewed on all 5 files: diffs are purely line-wrapping, no
+    argument or logic changes (verified against §13 "reflow, prove no argument
+    movement").
+- Test run: 1 failure (`test_demo_factory_selects_observation_worker` at
+  `RuntimeError: alpaca_paper_startup_refused_schema_not_at_head`) — pre-existing
+  DB migration state issue, unrelated to line-wrapping.
+- Committed locally (no push): commit message documents the surgical nature of
+  the changes and references AGENT_LESSONS.md.
+- NEXT CANDIDATE TASK: 143 E501 violations remain in tests/ (formatting debt,
+  deferred per §13). Also available: TRADEBOT_TASK_QUEUE.md may list new READY
+  coordinator tasks. The `last_reconciled_at` production fix at
+  services/api/paper_queries.py:58 stays DEFERRED (coordinator sign-off).
+- Tree status: CLEAN.

@@ -803,6 +803,15 @@ F821 (undefined-name) staying 0 (proves no reference broke from a deletion), and
 `py_compile` OK. This cycle's 14-file WIP: the default scan still shows 92 findings, all
 formatting/modernization; the 8-class gate = 0 and F821 = 0 → no regressions.
 
+## Do not use `ruff format` for E501 retirement; it drives beyond target lines
+
+When retiring E501 (line-too-long) violations, `ruff format` is a tempting shortcut
+but is wrong: it rewrites docstring style, strips trailing whitespace, rewraps
+argument lists, and reformats dict/list literals far beyond the offending line,
+producing drive-by changes that break the §13 "reflow, prove no argument
+movement" contract. Use surgical `patch` reflow that keeps every argument on its
+original line and changes only line wrapping.
+
 ## A reconcile timestamp is not a submit timestamp
 
 `get_broker_portfolio` mapped `PaperOrder.requested_at = o["last_reconciled_at"]`.
