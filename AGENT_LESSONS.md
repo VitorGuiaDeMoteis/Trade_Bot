@@ -2426,3 +2426,10 @@ NOT safe to auto-delete
   environment; the sibling `TradingBot-unified/.venv/Scripts/python.exe` ran pytest,
   ruff and mypy cleanly. Pin the working interpreter in the state file rather than
   rediscovering it every cycle.
+
+- When a full-snapshot equality test breaks on a single volatile field stamped by
+  wall-clock `now()` on every read, and the field is not a financial/concurrency
+  invariant, normalize it against the captured baseline before the equality assertion
+  rather than modifying production code. This preserves strong coverage of the remaining
+  N-1 fields. The production-side fix (exposing the source-of-truth timestamp instead
+  of wall-clock now) is deferred because it crosses runtime / PAPER_REVIEW boundaries.

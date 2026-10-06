@@ -145,7 +145,12 @@ def test_pause_waits_for_atomic_batch_then_blocks_next_batch(market: Market) -> 
             assert pause_started.wait(10)
             assert not pausing.done()
             # No uncommitted fill/cash/position is exposed to concurrent readers.
-            assert state(store) == before
+            # `last_reconciled_at` is a wall-clock stamp refreshed on every
+            # `portfolio()` call; normalize it so the atomicity assertion is
+            # not flaky while still asserting every financial field is unchanged.
+            current = state(store)
+            current["last_reconciled_at"] = before["last_reconciled_at"]
+            assert current == before
         finally:
             release.set()
         running.result(timeout=10)

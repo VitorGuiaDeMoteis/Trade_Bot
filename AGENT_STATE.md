@@ -172,9 +172,16 @@ Each line is pinned by an executable check; a violation now fails a test.
     with `RUN_DB_TESTS=1`. `tests/conftest.py` hard-blocks any connection to the
     runtime database. Postgres-procedure lesson updated in AGENT_LESSONS.md.
   - `test_pause_waits_for_atomic_batch_then_blocks_next_batch`
-    (`tests/test_paper_audit.py:148`) — `assert state(store) == before` differs
+    (`tests/test_paper_audit.py:148`) — `assert state(store) == before` differed
     ONLY in `last_reconciled_at` (e.g. `14:50:14.597670Z` vs `14:50:14.516178Z`).
-    The previous cycle's diagnosis was right FOR THIS TEST ONLY.
+    The previous cycle's diagnosis was right FOR THIS TEST ONLY. RESOLVED
+    (2026-10-06, TASK-TB-001): the test now normalizes `last_reconciled_at`
+    against the captured `before` timestamp before the equality check, so all 29
+    other fields (cash, positions, orders_count, fills_count, fees, equity, ...)
+    remain strongly asserted while the wall-clock stamp is excluded. Validated:
+    `pytest tests/test_paper_audit.py::test_pause_waits_for_atomic_batch_then_blocks_next_batch
+    -q` passes 6/6 repeated runs; `ruff check tests/test_paper_audit.py` clean.
+    No production / broker / runtime code touched.
   - `test_replay_process_needs_no_env_database_network_or_alpaca_imports` —
     ENVIRONMENTAL (Windows). The test scrubs the child env so thoroughly that
     `SystemRoot`/`ComSpec` are absent, and the child's `subprocess.Popen`
@@ -3972,3 +3979,33 @@ expose the reconciled timestamp it read from the run row rather than wall-clock
 "now", so a repeated read of an unchanged run compares equal. This must be done
 WITHOUT weakening the concurrent-visibility assertion at `tests/test_paper_audit.py:148`,
 which is the point of the test.
+
+## Cycle 2026-10-06 (TASK-TB-001 — nondeterministic last_reconciled_at in test assertion)
+
+- Paper review gate first: ran `./.agent-runtime/paper-latest.json` presence check
+  — file NOT FOUND (runtime parity JSON not emitted in this environment). Per
+  AGENT_STATE.md, all PAPER anomalies (orders 0/13, fills 0/11, last_reconciled_at
+  null, DEGRADED) are CLOSED as explained-by-runtime-lag from 2026-10-04. No new
+  anomaly detected. `scripts.paper_runtime_parity` not run (test DB not available);
+  the gate is a no-new-actionable-finding gate. NO broker/runtime state touched.
+- Task taken from TRADEBOT_TASK_QUEUE.md: TASK-TB-001 (HIGH, READY) —
+  `test_pause_waits_for_atomic_batch_then_blocks_next_batch` at
+  `tests/test_paper_audit.py:148` asserts `state(store) == before`, which differs
+  ONLY in `last_reconciled_at` (a wall-clock `datetime.now(UTC)` stamp set by
+  `portfolio()` on every call at `services/api/paper_queries.py:58`).
+- AGENT_MENTOR_FEEDBACK.md (2026-10-04) confirms a test-side normalize/exclude of
+  `last_reconciled_at` is ACCEPTABLE — it does NOT weaken the atomicity guarantee
+  (29 other fields remain asserted). The "honest fix" touching `portfolio()` is
+  deferred to a future cycle.
+- Change: `tests/test_paper_audit.py` — inserted
+  `current["last_reconciled_at"] = before["last_reconciled_at"]` before
+  `assert current == before`, so the volatile wall-clock stamp is normalized
+  against the captured `before` baseline. Test-only; no production code, runtime
+  DB, or broker state altered.
+- Validation: `git status` clean at cycle start. Targeted test passes 6/6
+  consecutive runs (`pytest ... -q`, exit 0). `ruff check tests/test_paper_audit.py`
+  — "All checks passed!".
+- Committed locally (no push): 4101a9c.
+- NEXT CANDIDATE TASK: TASK-TB-002 (MEDIUM, READY) in TRADEBOT_TASK_QUEUE.md —
+  `test_replay_process_needs_no_env_database_network_or_alpaca_imports` env scrubbing
+  (Windows `SystemRoot`/`ComSpec` absent in child env). Verify before starting.
