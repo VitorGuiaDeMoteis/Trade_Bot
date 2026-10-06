@@ -4227,3 +4227,41 @@ which is the point of the test.
   `services/api/paper_queries.py:58` stays DEFERRED (coordinator sign-off).
   Alternatively, await a READY task from the coordinator. No work is in progress;
   tree returns to clean.
+
+## Cycle 2026-10-06 (§13 formatting sweep: I001 + E701 resolved; E501 deferred)
+
+- Tree state at start: CLEAN (post `b95100c`); no RECOVERY MODE.
+- Task: §13 formatting sweep (NEXT CANDIDATE per cycle-4222). Completed the
+  safe, auto-verifiable subset; deferred the line-length reflow.
+- Changes — 18 files across `services/` and `scripts/`; COSMETIC ONLY, zero
+  runtime-behavior change:
+  - I001 import-block normalization: `ruff --fix --select I001` across
+    services/api (analytics.py, models.py), services/observer (features.py)
+    and scripts/ (13 files incl. fix_dataset{2}.py, m87_*, model_bench, etc.).
+  - E701 `if/elif/else: stmt` compounds split to multi-line. ruff (even with
+    `--unsafe-fixes`) declines the `return`/+= bodies, so 8 lines were patched
+    manually (6 in scripts/m87_economic_ml.py, 2 in scripts/m87_ml_tournament.py)
+    as behavior-identical multi-line `if ...: return X` blocks. No argument
+    movement; py_compile OK.
+  - E402 in scripts/fix_dataset.py + fix_dataset2.py INTENTIONALLY LEFT
+    (env/hash-before-import ordering — deliberate project pattern; §13 excluded).
+    ruff I001 only added blank-line separators around the intentional late
+    import; it did NOT reorder imports, so the pattern is preserved.
+- Validation:
+  - Correctness gate `ruff check --select "B023,B017,B904,E741,E722,F821,F811,F841,B007,F401"`
+    -> "All checks passed!" (services/ = 0, scripts/ = 0); F821 = 0 (no refs broke).
+  - ruff formatting tally `select I001,E701,E402,E501`: I001 = 0, E701 = 0,
+    E402 = 2 (excluded), E501 = 66 (services/17 + scripts/49) -> deferred.
+  - py_compile 15 changed files -> "py_compile OK".
+  - PAPER_REVIEW gate: unaffected — all §13 edits are cosmetic (import reorder
+    + statement split), both proven behavior-identical (py_compile + correctness
+    0); prior gate exit 0, runtime ~670 commits behind HEAD, 4 anomalies
+    explained-by-runtime-lag.
+  - No secrets / broker state / runtime DB read or mutated; no push.
+- Committed locally (no push): `365714e` ("style(§13): resolve I001 import sorting and E701 compound statements (services/ + scripts/)"). Honest body records E501 deferral.
+- NEXT CANDIDATE TASK: finish §13 by reflowing the 66 E501 line-length findings
+  (services/17 + scripts/49) via implicit-string-concatenation / wrapping —
+  behavior-identical, NO argument movement (per §13: "reflow, prove no argument
+  movement"; never bundle E501 with correctness). The `last_reconciled_at`
+  production fix at services/api/paper_queries.py:58 stays DEFERRED
+  (coordinator sign-off). No work in progress; tree is clean.
