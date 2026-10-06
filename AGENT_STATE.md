@@ -143,6 +143,20 @@ Each line is pinned by an executable check; a violation now fails a test.
   `tests/test_alpaca_provider.py::test_no_production_code_reads_the_inert_smoke_opt_in_flag`
   and `::test_docs_do_not_promise_a_broker_smoke_opt_in`; both were proven
   non-vacuous by replaying the assertions against the `git show HEAD:<doc>` blobs.
+- `F401 unused-import debt in production code` — CLOSED this cycle. `ruff
+  --select F401` across `services/` returned 2 hits; both were plain
+  stdlib/third-party utility imports confirmed unused via grep on BOTH the dotted
+  name and the bare alias: `services/api/analytics.py:1` `import json` (zero
+  usages) and `services/observer/features.py:2` `import numpy as np` (zero `np.`
+  usages; `np` appears only on the import line). Both deleted; no runtime behavior
+  changed. This is the SAFE counter-case to the §13 ORM-import trap — `json` and
+  `numpy` are not model/migration side-effect imports (no `create_all` table
+  registration dependency), so trivial deletion is safe. `services/` is now
+  F401-clean. `ruff check services/api/analytics.py services/observer/features.py
+  --select "B023,B017,B904,E722,F821,F811,F841,B007,F401"` → "All checks passed!".
+  NOTE: the 3 residual `I001` import-sorting findings in `analytics.py`/`models.py`/
+  `features.py` are COSMETIC (§13) and intentionally NOT swept here — they stay in
+  the separate formatting bucket.
 
 ### Verified OPEN candidates (ordered; verify before starting)
 
@@ -4094,3 +4108,64 @@ which is the point of the test.
   at `services/api/paper_queries.py:58` (expose run-row timestamp instead of
   `datetime.now(UTC)`); OR derive a new task from fresh PAPER_REVIEW + parity
   output when the next clean cycle runs.
+
+## Cycle 2026-10-06 (lint: retire F401 unused-import debt in analytics.py and features.py — 4563db6)
+
+- Gate: worked tree was CLEAN at cycle start; this is a lint-retirement follow-up,
+  not RECOVERY MODE. PAPER_REVIEW gate carried over from the prior clean cycle
+  (2026-10-06 ollama cycle): `./.venv/Scripts/python.exe -m scripts.paper_runtime_
+  parity` → runtime ~670 commits behind HEAD; all 4 known fixes `explained-by-
+  runtime-lag`; observation ok; `1 of 130 anomalies` resolved by runtime lag — no
+  new paper anomaly. No broker / runtime state was touched; the deletion-only diffs
+  move zero arguments and cannot change runtime behavior, so the gate's observation
+  remains valid.
+- Queue check: TRADEBOT_TASK_QUEUE.md has no READY tasks — TASK-TB-001 and
+  TASK-TB-002 are both RESOLVED + committed (line 71-72 explicitly permits choosing
+  a safe high-value task when the queue is empty). AGENT_MENTOR_FEEDBACK.md
+  (2026-10-06) confirms no READY tasks and that the `last_reconciled_at`
+  production fix is DEFERRED ("do not attempt without coordinator sign-off"). Per
+  AGENT_STATE §202-205 and AGENT_LESSONS §13, with no READY queues and a clean
+  PAPER_REVIEW gate, this cycle retires correctness-class lint debt (F401) in
+  production code.
+- Task: retire the F401 (unused import) findings flagged as remaining debt in the
+  prior cycle's scan of `services/api/analytics.py`, `services/api/models.py`,
+  `services/observer/features.py`. F401 is a correctness class (§207 / §13 select
+  set includes it). IMPORTANT CAVEAT (§13 "F401 'unused' ORM imports are the mirror
+  of F821"): `models.py` is an ORM module whose `from ... import` lines can register
+  SQLAlchemy tables via `create_all` — the §13 probe is mandatory there. The
+  `ruff --select F401` scan returned exactly 2 hits, BOTH in non-ORM modules:
+  `services/api/analytics.py:1` `import json` (zero usages; grep on `json` and
+  `json.` returns only the import line) and `services/observer/features.py:2`
+  `import numpy as np` (zero `np.` usages; `np` appears only on the import line).
+  These are plain stdlib / third-party utility imports, NOT model imports, so the
+  §13 ORM trap does not apply and deletion is safe. `services/api/models.py` had
+  NO F401 hit (only cosmetic I001 — left for the separate §13 formatting sweep).
+- Changes (no runtime behavior change):
+  - `services/api/analytics.py`: removed unused `import json`.
+  - `services/observer/features.py`: removed unused `import numpy as np`.
+  - Intentionally NOT touched: the 3 residual `I001` import-sorting findings in
+    `analytics.py` / `models.py` / `features.py` are COSMETIC (§13 line 2449), swept
+    in a separate formatting commit — "never bundle E501 formatting fixes with
+    correctness fixes in the same commit" (§13 line 2450).
+- Validation:
+  - `ruff check services/api/analytics.py services/observer/features.py
+    --output-format=concise --select "B023,B017,B904,E722,F821,F811,F841,B007,F401"`
+    → "All checks passed!".
+  - `ruff check services/ --select F401 --output-format=concise` → "All checks
+    passed!" (services/ is now F401-clean).
+  - `ruff check services/ --select F401,I001` → 3 I001 only (no F401), confirming
+    only cosmetic import-sorting debt remains.
+  - `pytest tests/test_observer_real.py -q` → 42 passed (covers the `features.py`
+    module's consumers).
+  - No secrets / broker / runtime DB read or mutated; no push.
+- Committed locally (no push): `4563db6` ("fix(observer,api): retire F401
+  unused-import debt in analytics.py and features.py").
+- NEXT CANDIDATE TASK: TRADEBOT_TASK_QUEUE.md remains empty (all RESOLVED). The
+  ONLY residual lint debt in `services/` is COSMETIC I001 import-sorting (3
+  findings, `--fix`-able single-commit sweep per §13) — not a correctness gate.
+  The `last_reconciled_at` production fix at `services/api/paper_queries.py:58`
+  stays DEFERRED (requires coordinator sign-off, AGENT_MENTOR_FEEDBACK.md). No other
+  correctness-class lint debt remains in `services/`. A future clean cycle should
+  either (a) run the §13 formatting sweep for I001/E501, or (b) await a READY task
+  from the coordinator, or (c) pick a fresh PAPER_REVIEW-derived task. No work is
+  in progress; tree returns to clean.

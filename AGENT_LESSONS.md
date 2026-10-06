@@ -2460,4 +2460,9 @@ even when the target file has zero test coverage (e.g. `ollama_provider.py`).
 RULE: never bundle E501 formatting fixes with correctness fixes in the same
 commit — formatting debt (E501, I001) is swept per §13, correctness debt is
 committed. After fixing, re-run the same targeted scan to confirm the class is
-cleared for that file.
+cleared for that file. F401 on a name that LOOKS like an ORM model or
+carries import side effects needs the §13 probe. F401 on a plain stdlib or
+third-party utility import (e.g. `json`, `numpy as np`) that is grep-confirmed
+unused on BOTH the dotted name (`np.`) and the bare alias (`np`) is a safe
+trivial deletion — the deletion-only diff moves zero arguments and cannot change
+runtime behavior.
