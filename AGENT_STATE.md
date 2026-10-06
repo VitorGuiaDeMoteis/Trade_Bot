@@ -183,10 +183,15 @@ Each line is pinned by an executable check; a violation now fails a test.
     -q` passes 6/6 repeated runs; `ruff check tests/test_paper_audit.py` clean.
     No production / broker / runtime code touched.
   - `test_replay_process_needs_no_env_database_network_or_alpaca_imports` —
-    ENVIRONMENTAL (Windows). The test scrubs the child env so thoroughly that
-    `SystemRoot`/`ComSpec` are absent, and the child's `subprocess.Popen`
-    cannot spawn at all: `FileNotFoundError: [WinError 2]`. Not a TradingBot
-    defect; a Windows-only harness problem.
+    RESOLVED (2026-10-05, TASK-TB-002, `bc2829d`). Replaced the Unix-only
+    `Path('.venv/bin/python')` with `sys.executable`; rebuilt child env from
+    an explicit allowlist of OS-essential variables (`PATH`, `SYSTEMROOT`,
+    `COMSPEC`, `PATHEXT`, `PROGRAMDATA`, `PROGRAMFILES`, `PROGRAMFILES(X86)`,
+    `WINDIR`) + `PYTHONPATH`; `ALPACA`/`POSTGRES`/`EXECUTION_MODE` scrubbed by
+    omission. Validated: `pytest ... -q` → 1 passed; `ruff check
+    tests/test_replay_live.py` → "All checks passed!". Not a TradingBot
+    defect — a Windows-only harness problem corrected in the test itself. Two
+    durable lessons added to AGENT_LESSONS.md.
 - FALSIFIED PREMISE (recorded so it cannot seed another cycle): the prior cycle
   wrote that BOTH `test_paper_audit.py` failures "compare a full `state(store)`
   snapshot against an earlier one, and the differing key is `last_reconciled_at`
@@ -4009,3 +4014,35 @@ which is the point of the test.
 - NEXT CANDIDATE TASK: TASK-TB-002 (MEDIUM, READY) in TRADEBOT_TASK_QUEUE.md —
   `test_replay_process_needs_no_env_database_network_or_alpaca_imports` env scrubbing
   (Windows `SystemRoot`/`ComSpec` absent in child env). Verify before starting.
+
+## Cycle 2026-10-06 (TASK-TB-002 — backfill: Windows subprocess env + Python path in replay isolation test)
+
+- Worktree was CLEAN at cycle start (`git status` → nothing to commit). No WIP
+  code in the tree — `bc2829d` is already committed.
+- AGENT_STATE.md CURRENT BACKLOG still listed the replay isolation test as an
+  OPEN candidate (stale — it was RESOLVED by `bc2829d` on 2026-10-05). This
+  backfill cycle closes that gap in the state file.
+- Paper review gate: `./.agent-runtime/paper-latest.json` present (observed
+  2026-10-04T15:12:05Z); ran `./.venv/Scripts/python.exe -m scripts.paper_runtime_parity`
+  → runtime 65 commits behind HEAD; all 4 known fixes `explained-by-runtime-lag`;
+  observation ok; no new paper anomaly. NO broker/runtime state touched.
+- Confirmed `bc2829d` already did the right thing in `tests/test_replay_live.py`:
+  replaced hardcoded `Path('.venv/bin/python')` with `sys.executable`; rebuilt
+  child env from an explicit OS-essential allowlist so Windows
+  `subprocess.Popen` can spawn while `ALPACA`/`POSTGRES`/`EXECUTION_MODE`
+  remain scrubbed by omission. Two durable lessons added to AGENT_LESSONS.md
+  (Unix-only venv path; explicit env allowlist). No production/broker/runtime
+  code touched.
+- Validation this cycle:
+  - `pytest tests/test_replay_live.py::test_replay_process_needs_no_env_database_network_or_alpaca_imports -q` → 1 passed (0.95s).
+  - `pytest tests/test_paper_audit.py -q` → 13 passed.
+  - `pytest tests/test_paper_runtime_parity.py tests/test_paper_order_reconciled_at_contract.py -q` → 43 passed.
+  - `ruff check tests/test_replay_live.py tests/test_paper_audit.py` → "All checks passed!".
+- State file update committed locally (no push).
+- NEXT CANDIDATE TASK: none from TRADEBOT_TASK_QUEUE.md (both RESOLVED).
+  CURRENT BACKLOG OPEN candidates: none (all CLOSED). PAPER_REVIEW gate clean
+  (no new findings). The deferred production-side fix for `last_reconciled_at`
+  (exposing the run-row timestamp instead of `datetime.now(UTC)` at
+  `services/api/paper_queries.py:58`) remains deferred — it crosses runtime /
+  PAPER_REVIEW boundaries. Next clean cycle should either address that deferred
+  fix or derive a task from fresh paper observations + parity output.
