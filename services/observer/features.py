@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
     """
