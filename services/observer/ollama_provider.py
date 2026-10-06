@@ -1,8 +1,11 @@
-import re
 import json
+import os
+import re
+
 import httpx
-from datetime import datetime
+
 from services.observer.provider import Identity, ModelProvider
+
 
 class OllamaProvider(ModelProvider):
     def __init__(self, model: str = "qwen2.5-coder:7b", base_url: str = "http://127.0.0.1:11434") -> None:
@@ -13,12 +16,11 @@ class OllamaProvider(ModelProvider):
         self._cache = {}
         self.cache_hits = 0
         self.cache_misses = 0
-        import os, json
         if os.path.exists(self.cache_file):
             try:
-                with open(self.cache_file, "r") as f:
+                with open(self.cache_file) as f:
                     self._cache = json.load(f)
-            except:
+            except Exception:
                 pass
         else:
             os.makedirs("evaluations", exist_ok=True)
@@ -70,7 +72,6 @@ class OllamaProvider(ModelProvider):
                 
             # --- FIX OLLAMA HALLUCINATIONS ---
             try:
-                import json
                 parsed = json.loads(res_text)
                 risk_flags_parsed = parsed.get("risks", []) or parsed.get("risk_flags", [])
                 mapped_risks = []
@@ -106,10 +107,10 @@ class OllamaProvider(ModelProvider):
             # -----------------------------------
                 
             return res_text.encode("utf-8")
-        except httpx.TimeoutException:
-            raise TimeoutError("ollama_timeout")
+        except httpx.TimeoutException as err:
+            raise TimeoutError("ollama_timeout") from err
         except Exception as e:
-            raise RuntimeError(f"ollama_error: {e}")
+            raise RuntimeError(f"ollama_error: {e}") from e
             
     async def close(self) -> None:
         await self.client.aclose()
