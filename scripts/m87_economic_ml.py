@@ -108,7 +108,7 @@ def main():
     
     for h in horizons:
         dev_dfs, val_dfs = [], []
-        for sym, group in df.groupby('symbol'):
+        for _, group in df.groupby('symbol'):
             g = group.sort_values("open_time").reset_index(drop=True)
             g = calculate_features(g)
             

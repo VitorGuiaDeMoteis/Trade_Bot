@@ -1,8 +1,6 @@
 import json
-import os
 import urllib.request
 import urllib.error
-from decimal import Decimal
 from sqlalchemy import text
 from services.api.config import Settings
 from services.api.database import create_database_engine

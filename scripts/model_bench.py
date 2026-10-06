@@ -4,11 +4,10 @@ import time
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from collections import Counter, defaultdict
+from collections import defaultdict
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score
 from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
 
 from services.backtesting.artifacts import load_manifest
 from services.observer.ollama_provider import OllamaProvider
@@ -92,7 +91,7 @@ async def main():
         
         print(f"Testing LLM on {sym} ({len(indices)} samples)...")
         
-        async def process_idx(idx):
+        async def process_idx(idx, sym=sym, dev_df=dev_df):
             row = dev_df.loc[idx]
             feat_dict = {c: float(row[c]) for c in features_cols}
             
@@ -126,12 +125,10 @@ async def main():
                 bias = parsed.get("bias", "UNCERTAIN")
                 confidence = parsed.get("regime", {}).get("confidence", 0.0)
                 regime = parsed.get("regime", {}).get("label", "UNKNOWN")
-                evidence = parsed.get("regime", {}).get("evidence", [])
-            except Exception as e:
+            except Exception:
                 bias = "ERROR"
                 confidence = 0.0
                 regime = "ERROR"
-                evidence = str(e)
             t1 = time.time()
             
             # ML Predict

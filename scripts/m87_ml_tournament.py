@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from collections import defaultdict
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import (
@@ -28,7 +27,7 @@ def evaluate_ml(name, model, X_test, y_test, df_test, symbol="GLOBAL"):
     cm = confusion_matrix(y_test, preds)
     try:
         roc = roc_auc_score(y_test, probs)
-    except:
+    except Exception:
         roc = 0.5
     brier = brier_score_loss(y_test, probs)
     
@@ -114,7 +113,7 @@ def main():
     ]
     
     dev_dfs, val_dfs = [], []
-    for sym, group in df.groupby('symbol'):
+    for _, group in df.groupby('symbol'):
         g = group.sort_values("open_time").reset_index(drop=True)
         g = calculate_features(g)
         g['target_return'] = g['close'].pct_change(1).shift(-1)

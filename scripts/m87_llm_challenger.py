@@ -4,7 +4,6 @@ import time
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from tqdm import tqdm
 
 from services.backtesting.artifacts import load_manifest
 from services.observer.ollama_provider import OllamaProvider
@@ -58,7 +57,7 @@ async def main():
         np.random.seed(123) # different seed just in case
         indices = np.random.choice(dev_df.index, size=min(100, len(dev_df)), replace=False)
         
-        async def process(idx):
+        async def process(idx, sym=sym, dev_df=dev_df):
             row = dev_df.loc[idx]
             feat_dict = {c: float(row[c]) for c in features_cols}
             c_mock = ObserverCandle(
@@ -80,7 +79,7 @@ async def main():
                 parsed = json.loads(out_str)
                 bias = parsed.get("bias", "UNCERTAIN")
                 regime = parsed.get("regime", {}).get("label", "UNKNOWN")
-            except Exception as e:
+            except Exception:
                 bias = "ERROR"
                 regime = "ERROR"
             t1 = time.time()

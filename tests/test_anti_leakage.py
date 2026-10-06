@@ -1,5 +1,4 @@
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
 
 def test_snapshot_no_leakage():

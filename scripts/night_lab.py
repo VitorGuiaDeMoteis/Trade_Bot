@@ -2,16 +2,13 @@ import argparse
 import asyncio
 import json
 import logging
-import signal
 import sys
 import uuid
 import uvicorn
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from decimal import Decimal
-from collections import deque
 
 from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
@@ -19,8 +16,6 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
 from packages.domain.backtest import Dataset
-from packages.domain.paper import PaperConfig
-from packages.domain.strategy import Signal
 from packages.contracts.observer import (
     AIObserverSnapshot, ObserverCandle, ObserverSignal, ObserverPaper, ObserverPosition
 )

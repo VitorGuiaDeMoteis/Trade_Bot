@@ -4,9 +4,6 @@ from decimal import Decimal
 from uuid import uuid4
 from sqlalchemy import insert
 from services.api.models import (
-    broker_fills,
-    broker_orders,
-    broker_portfolio_snapshots,
     paper_runs,
 )
 from fastapi.testclient import TestClient

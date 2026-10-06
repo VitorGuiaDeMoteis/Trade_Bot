@@ -1,9 +1,8 @@
 import asyncio
-import json
 import os
 import sys
 from datetime import datetime, timezone
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from dotenv import load_dotenv
 
 from services.market_data.alpaca_provider import AlpacaMarketDataProvider

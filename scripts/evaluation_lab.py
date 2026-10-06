@@ -12,11 +12,10 @@ import csv
 import typing
 
 from services.replay.runtime import replay_steps  # type: ignore
-from services.backtesting.artifacts import Dataset, Candle, load_manifest  # type: ignore
-from packages.domain.paper import PaperConfig
+from services.backtesting.artifacts import Dataset, load_manifest  # type: ignore
 from services.observer.engine import evaluate
 from services.observer.ollama_provider import OllamaProvider
-from packages.contracts.observer import AIObserverSnapshot, ObserverPaper, ObserverCandle, ObserverSignal, ObserverPosition
+from packages.contracts.observer import AIObserverSnapshot, ObserverCandle
 
 async def run_evaluation() -> None:
     eval_id = str(uuid.uuid4())
@@ -119,26 +118,6 @@ async def run_evaluation() -> None:
                     should_observe = (current_signal in ["BUY", "SELL"]) or (step_count % 50 == 0) or (step_count == 1)
                     
                     if should_observe and c_candles:
-                        positions = []
-                        for p in portfolio.get("positions", []):
-                            try:
-                                positions.append(ObserverPosition(
-                                    symbol=p["symbol"],
-                                    quantity=int(p["quantity"]),
-                                    average_price=str(p["average_price"])
-                                ))
-                            except Exception:
-                                pass
-                                
-                        paper = ObserverPaper(
-                            as_of_utc=datetime.fromisoformat(portfolio["timestamp"]),
-                            cash=str(portfolio["cash"]),
-                            equity=str(portfolio["equity"]),
-                            total_pnl=str(portfolio["total_pnl"]),
-                            positions=tuple(positions),
-                            paused=False
-                        )
-                        
                         obs_candles = []
                         for c in c_candles[-30:]:
                             if isinstance(c, dict):
@@ -153,15 +132,7 @@ async def run_evaluation() -> None:
                                 c_dict["close_time"] = datetime.fromisoformat(c_dict["close_time"])
                             obs_candles.append(ObserverCandle(**c_dict))
                         
-                        obs_signals = [
-                            ObserverSignal(
-                                symbol=sym,
-                                strategy_version="v1-deterministic",
-                                signal_type=s["signal_type"] if isinstance(s, dict) else s.signal_type,
-                                generated_at=datetime.fromisoformat(portfolio["timestamp"])
-                            ) for s in c_signals
-                        ]
-                        
+
                         snapshot = AIObserverSnapshot(
                             schema_version="1.0",
                             as_of_utc=datetime.fromisoformat(portfolio["timestamp"]),

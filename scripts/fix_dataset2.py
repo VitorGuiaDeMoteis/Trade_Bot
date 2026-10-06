@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from packages.domain.backtest import Dataset
-from services.backtesting.artifacts import load_manifest, Candle, CandleResponse
+from services.backtesting.artifacts import Candle, CandleResponse
 
 path = Path("services/replay/data/large-history.json")
 raw = json.loads(path.read_text())

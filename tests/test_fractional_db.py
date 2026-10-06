@@ -3,7 +3,6 @@ from uuid import uuid4
 from sqlalchemy import text
 from services.api.database import create_database_engine
 from services.api.config import Settings
-from services.api.models import paper_orders
 
 def test_fractional_persistence():
     engine = create_database_engine(Settings())
