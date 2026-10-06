@@ -1106,7 +1106,10 @@ Tests: tests/test_worker_reconcile_unknown_open_orders.py (18 pure unit tests).
   C:/Users/vitor/OneDrive/Documentos/ChatGPT/TradingBot-unified/.venv/Scripts/python.exe
   (run it with workdir set to the TradingBot-agent repo)
 - Postgres is not running in the agent environment, so DB-backed tests fail at
-  fixture setup with psycopg ConnectionTimeout. These are environmental.
+  fixture setup: port 55432 is REFUSED (`ConnectionRefusedError`, not a timeout --
+  the process simply is not up on this host). These are environmental, not test
+  defects. This specifically blocks DB-backed validation of the Numeric-scale
+  assertion fix at `tests/test_paper_audit.py:179`.
   tests/test_replay_live.py also fails on Windows for lack of ComSpec/SystemRoot.
 - Check whether a failure happens at SETUP before treating it as a regression.
 

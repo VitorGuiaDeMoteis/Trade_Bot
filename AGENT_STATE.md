@@ -164,7 +164,10 @@ Each line is pinned by an executable check; a violation now fails a test.
     `services/api/models.py:212`; contract field `quantity: Decimal`
     (`packages/contracts/paper.py:25`). This is a SCALE-REPRESENTATION
     mismatch, NOT the `last_reconciled_at` wall-clock issue the previous cycle
-    recorded — see the falsified-premise note below.
+    recorded — see the falsified-premise note below. WIP (2026-10-05): the
+    numeric `Decimal(o["quantity"]) == 0` fix is applied in the tree but kept
+    UNCOMMITTED -- DB-backed validation is environment-blocked (PostgreSQL port
+    55432 refused); see AGENT_MENTOR_FEEDBACK.md.
   - `test_pause_waits_for_atomic_batch_then_blocks_next_batch`
     (`tests/test_paper_audit.py:148`) — `assert state(store) == before` differs
     ONLY in `last_reconciled_at` (e.g. `14:50:14.597670Z` vs `14:50:14.516178Z`).
@@ -267,6 +270,38 @@ Each line is pinned by an executable check; a violation now fails a test.
   the mandatory clean-cycle gate does not apply.)
 - Next candidate: was the `RUN_ALPACA_SMOKE_TEST` doc drift, which the next entry
   below records as CLOSED and pinned.
+
+## Latest cycle (2026-10-05, RECOVERY MODE -- worktree was DIRTY at start)
+
+- Task: none chosen (RECOVERY). The single dirty file, `tests/test_paper_audit.py`,
+  carries the WIP that the prior cycle already root-caused: the
+  `test_insufficient_capital_...` assertion at line 179 compares the serialized
+  numeric `quantity` to the string `"0"`, but a `Numeric(28,10)` column returns
+  `Decimal(0)` as `'0E-10'`. The fix applies the already-documented direction
+  (AGENT_LESSONS.md "A Numeric(28,10) column never returns the string you wrote"):
+  compare numerically via `Decimal(o["quantity"]) == 0`.
+- NO TEMPORARY BREAKAGE. The diff is a one-line assertion tightening
+  (string -> Decimal), no `TEMP-BUG-RESTORE`, no loosening, no production code.
+- Validation performed:
+  - `ruff check tests/test_paper_audit.py` -> "All checks passed!".
+  - Decimal logic probe (scratch): `Decimal("0E-10") == 0` is True (old
+    `"0E-10"=="0"` string form is False), confirming the new assertion is the
+    correct direction.
+  - DB-backed test COULD NOT be run: port 55432 is REFUSED
+    (`ConnectionRefusedError`), PostgreSQL is not running in the agent env, and
+    the test is gated on `RUN_DB_TESTS=1` + a dedicated PostgreSQL fixture
+    (`tests/test_paper_database.py:39`). Matches AGENT_MENTOR_FEEDBACK.md:
+    the assertion is correct but "should remain uncommitted until the targeted
+    test can reach its test database".
+- Per AGENT_MENTOR_FEEDBACK.md: PRESERVE the WIP, do NOT commit. The change is
+  safe and coherent but awaits DB-backed validation, which is environment-blocked.
+- PAPER_REVIEW gate applies to CLEAN cycles only; this cycle began DIRTY, so no
+  fresh paper observation is required. No broker/runtime/DB state was touched.
+- Outcome: WIP preserved uncommitted; worktree remains dirty with one modified
+  file (`tests/test_paper_audit.py`). Next CLEAN cycle should validate the
+  assertion against the DB when PostgreSQL 55432 is available, then commit.
+  Next READY task: TASK-TB-001 (`test_pause_waits_for_atomic_batch...`,
+  nondeterministic `last_reconciled_at`).
 
 ## Latest cycle (2026-10-04, RECOVERY MODE -- worktree was DIRTY at start)
 
