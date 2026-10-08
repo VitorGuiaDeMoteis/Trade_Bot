@@ -60,3 +60,6 @@ def create_replay_app(
         return replay.snapshot(after)
 
     return app
+
+
+app = create_replay_app()
