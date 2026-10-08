@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile_app/src/app.dart';
+import 'package:mobile_app/src/shell/app_shell.dart';
 import 'package:mobile_app/src/decisions/api.dart';
 import 'package:mobile_app/src/decisions/controller.dart';
 import 'package:mobile_app/src/decisions/models.dart';
@@ -85,10 +86,13 @@ Future<VoidCallback> openDecisions(
 ) async {
   final market = MarketController(api: FakeApi());
   await tester.pumpWidget(
-    TradingBotApp(controller: market, decisionsController: decisions),
+    TradingBotApp(
+      controller: market,
+      decisionsController: decisions,
+      initialDestination: AppDestination.decisions,
+      useMockLivePaper: true,
+    ),
   );
-  await tester.pump();
-  await tester.tap(find.text('Decisões'));
   await tester.pumpAndSettle();
   return () {
     market.dispose();
